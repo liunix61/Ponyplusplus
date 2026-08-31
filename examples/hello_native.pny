@@ -1,0 +1,12 @@
+actor main {
+  var count: U32
+
+  new create() => {
+    count = 42
+  }
+
+  be run() => {
+    print("Hello from Pony++ native (real backend)")
+    print(count)
+  }
+}

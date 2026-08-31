@@ -13,6 +13,7 @@
 #include "ponypp/wit.h"
 #include "ponypp/util.h"
 #include "ponypp/typecheck.h"
+#include "ponypp/codegen.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -219,12 +220,9 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
             fprintf(stderr, "错误: 无法写入 native 源文件\n");
             return EXIT_FAILURE;
         }
-        fprintf(sf, "/* Pony++ native stub */\n");
-        fprintf(sf, "#include <stdio.h>\n\n");
-        fprintf(sf, "int main(void) {\n");
-        fprintf(sf, "    printf(\"Hello from Pony++ native\\n\");\n");
-        fprintf(sf, "    return 0;\n");
-        fprintf(sf, "}\n");
+        Codegen *cg = codegen_new(sf);
+        codegen_program(cg, ast);
+        codegen_free(cg);
         fclose(sf);
         char cmdbuf[4096];
         int cmdlen = snprintf(cmdbuf, sizeof(cmdbuf), "gcc -o %s %s", binary_output, c_output);

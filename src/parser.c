@@ -398,20 +398,20 @@ static ASTNode *parse_method(Parser *p, bool is_be) {
     }
 
     /* 方法体 */
-    if (match(p, TK_ARROW_ARR) || (match(p, TK_COLON) && match_keyword(p, "=>"))) {
-        /* Pony 风格: => */
-    }
     if (match(p, TK_BRACE_L)) {
         ASTNode *body = parse_block(p);
         if (body) ast_node_add_child(node, body);
     } else if (match(p, TK_ARROW_ARR)) {
         advance(p);
-        ASTNode *expr = parse_expression(p);
-        if (expr) ast_node_add_child(node, expr);
+        if (match(p, TK_BRACE_L)) {
+            ASTNode *body = parse_block(p);
+            if (body) ast_node_add_child(node, body);
+        } else {
+            ASTNode *expr = parse_expression(p);
+            if (expr) ast_node_add_child(node, expr);
+        }
     } else if (match(p, TK_COLON)) {
-        /* Pony 风格: : 开头的方法体 */
         advance(p);
-        /* 简化: 解析块或表达式 */
         if (match(p, TK_BRACE_L)) {
             ASTNode *body = parse_block(p);
             if (body) ast_node_add_child(node, body);
@@ -420,7 +420,6 @@ static ASTNode *parse_method(Parser *p, bool is_be) {
             if (expr) ast_node_add_child(node, expr);
         }
     }
-
     return node;
 }
 
@@ -450,8 +449,13 @@ static ASTNode *parse_constructor(Parser *p) {
         if (body) ast_node_add_child(node, body);
     } else if (match(p, TK_ARROW_ARR)) {
         advance(p);
-        ASTNode *expr = parse_expression(p);
-        if (expr) ast_node_add_child(node, expr);
+        if (match(p, TK_BRACE_L)) {
+            ASTNode *body = parse_block(p);
+            if (body) ast_node_add_child(node, body);
+        } else {
+            ASTNode *expr = parse_expression(p);
+            if (expr) ast_node_add_child(node, expr);
+        }
     } else if (match(p, TK_COLON)) {
         advance(p);
         if (match(p, TK_BRACE_L)) {
