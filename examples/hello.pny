@@ -1,0 +1,6 @@
+// Pony++ Hello World 示例
+actor main {
+  new create() => {
+    print("Hello, World!")
+  }
+}
