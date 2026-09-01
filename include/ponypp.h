@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#define PONYPP_SOURCE_DIR "/home/liunix/Ponyplusplus"
 #define VERSION_STRING "0.1.0"
 
 /* 类型种类 */
@@ -127,6 +128,7 @@ typedef struct CompilerConfig {
     bool emit_debug;
     int mode;
     TargetKind target;
+    const char *source_dir; /* 源码根目录，native backend 用 */
 } CompilerConfig;
 
 /* 前向声明 */

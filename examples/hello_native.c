@@ -5,17 +5,23 @@
 #include <"ponypp/runtime.h">
 
 typedef struct {
-} main_t;
+  unsigned int count;} main_t;
 
 static main_t main_create() {
   main_t self;
   memset(&self, 0, sizeof(self));
-  /* stmt */printf("Hello, World!\n");
+  /* stmt */42;
   return self;
+}
+
+static void main_run(main_t *self) {
+  /* stmt */printf("Hello from Pony++ native (real backend)\n");
+  /* stmt */printf("0\n", count);
 }
 
 int main(int argc, char *argv[]) {
   main_t __main_obj = main_create();
+  main_run(&__main_obj);
   (void)__main_obj;
     return 0;
 }

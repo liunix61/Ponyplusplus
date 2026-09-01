@@ -275,7 +275,8 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
     cg_emit_raw(cg, "/* Pony++ native backend generated code */\n");
     cg_emit_raw(cg, "#include <stdio.h>\n");
     cg_emit_raw(cg, "#include <string.h>\n");
-    cg_emit_raw(cg, "#include <stdlib.h>\n\n");
+    cg_emit_raw(cg, "#include <stdlib.h>\n");
+    cg_emit_raw(cg, "#include <\"ponypp/runtime.h\">\n\n");
 
     for (size_t i = 0; ast && i < ast->child_count; i++) {
         if (ast->children[i] && ast->children[i]->type == NODE_ACTOR) cg_actor(cg, ast->children[i]);
