@@ -83,7 +83,7 @@ if(BUILD_TESTING)
 
     set(GTEST_EXECUTABLES gtest_lexer gtest_parser gtest_types gtest_typecheck
                           gtest_capabilities gtest_wasm gtest_wit gtest_codegen
-                          gtest_codegen_extra gtest_extra gtest_coverage gtest_tc_extra gtest_e2e gtest_util)
+                          gtest_codegen_extra gtest_extra gtest_coverage gtest_tc_extra gtest_more gtest_e2e gtest_util)
 
     foreach(tname IN LISTS GTEST_EXECUTABLES)
         add_executable(${tname} tests/${tname}.cpp)
