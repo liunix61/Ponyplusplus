@@ -1,8 +1,11 @@
 #ifndef PONYPP_LEXER_H
 #define PONYPP_LEXER_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include "ponypp.h"
-#include "ast.h"
+#include "ponypp/ast.h"
 
 /**
  * 初始化词法分析器
@@ -45,5 +48,9 @@ const char *lexer_error(Lexer *lex);
  * @return true 成功，false 失败
  */
 bool lexer_lex_all(Lexer *lex, Token **tokens, size_t *token_count);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PONYPP_LEXER_H */

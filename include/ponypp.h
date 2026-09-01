@@ -1,6 +1,10 @@
 #ifndef PONYPP_H
 #define PONYPP_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -139,5 +143,9 @@ typedef struct TypeContext TypeContext;
 typedef struct WasmWriter WasmWriter;
 typedef struct WITWriter WITWriter;
 typedef struct ASTNode ASTNode;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PONYPP_H */

@@ -1,5 +1,8 @@
 #ifndef PONYPP_PARSER_H
 #define PONYPP_PARSER_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include "ponypp.h"
 #include "ponypp/ast.h"
@@ -18,5 +21,9 @@ int parser_line(Parser *p);
 
 /* 获取错误信息 */
 const char *parser_error(Parser *p);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PONYPP_PARSER_H */

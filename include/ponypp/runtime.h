@@ -1,6 +1,10 @@
 #ifndef PONYPP_RUNTIME_H
 #define PONYPP_RUNTIME_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,4 +41,8 @@ void pny_actor_send(PnyActor *actor, const char *method, void *arg);
 void pny_scheduler_tick(PnyRuntime *r);
 void pny_gc_mark_root(PnyActor *a);
 
+#ifdef __cplusplus
+}
 #endif
+
+#endif /* PONYPP_RUNTIME_H */

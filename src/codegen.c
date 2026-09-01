@@ -256,7 +256,13 @@ static void cg_actor(Codegen *cg, ASTNode *actor) {
     for (size_t i = 0; i < actor->child_count; i++) {
         ASTNode *ch = actor->children[i];
         if (ch && ch->type == NODE_VAR && ch->data) {
-            field_names = (char **)realloc(field_names, (fc + 1) * sizeof(char *));
+            char **tmp = (char **)realloc(field_names, (fc + 1) * sizeof(char *));
+            if (!tmp) {
+                for (size_t j = 0; j < fc; j++) free(field_names[j]);
+                free(field_names);
+                return;
+            }
+            field_names = tmp;
             field_names[fc++] = s_strdup((const char *)ch->data);
         }
     }

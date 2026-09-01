@@ -1,5 +1,8 @@
 #ifndef PONYPP_TYPES_H
 #define PONYPP_TYPES_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include "ponypp.h"
 #include "ast.h"
@@ -54,5 +57,9 @@ void type_context_free(TypeContext *ctx);
 
 /* 类型显示 */
 void type_print(const Type *t, char *buf, size_t buf_size);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PONYPP_TYPES_H */

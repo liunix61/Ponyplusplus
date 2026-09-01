@@ -1,5 +1,6 @@
 # Build
 build/
+build-*
 bin/
 
 # IDE
@@ -14,6 +15,9 @@ Thumbs.db
 *.o
 *.wasm
 *.c$
+*.gcno
+*.gcda
+*.gcov
 
 # Native binary
 ponypp-native

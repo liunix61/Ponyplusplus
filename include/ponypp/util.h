@@ -1,5 +1,8 @@
 #ifndef PONYPP_UTIL_H
 #define PONYPP_UTIL_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include "ponypp.h"
 
@@ -35,5 +38,9 @@ const char *type_kind_name(TypeKind kind);
 /* AST 工具 */
 void ast_node_print(const ASTNode *node, FILE *out);
 void ast_node_print_dot(const ASTNode *node, FILE *out);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PONYPP_UTIL_H */

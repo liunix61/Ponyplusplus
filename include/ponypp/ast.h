@@ -1,5 +1,8 @@
 #ifndef PONYPP_AST_H
 #define PONYPP_AST_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include "ponypp.h"
 
@@ -176,5 +179,9 @@ ASTNode *ast_call_new(ASTNode *callee, const char *method, bool async, int line,
 void ast_actor_free(Actor *actor);
 void ast_method_free(Method *method);
 void ast_field_free(Field *field);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PONYPP_AST_H */
