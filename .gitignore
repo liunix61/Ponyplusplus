@@ -1,0 +1,6 @@
+bin/
+build/
+examples/*.c
+examples/*.wasm
+examples/hello-native
+examples/hello_native
