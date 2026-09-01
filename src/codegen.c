@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include "ponypp/util.h"
+#include "ponypp/runtime.h"
 
 struct Codegen {
     FILE *out;
@@ -418,6 +419,25 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
 
     for (size_t i = 0; ast && i < ast->child_count; i++) {
         if (ast->children[i] && ast->children[i]->type == NODE_ACTOR) cg_actor(cg, ast->children[i]);
+    }
+
+    /* 生成监督树注册代码 */
+    for (size_t i = 0; ast && i < ast->child_count; i++) {
+        if (ast->children[i] && ast->children[i]->type == NODE_SUPERVISE) {
+            ASTNode *sup = ast->children[i];
+            const char *child_name = sup->data ? (const char*)sup->data : "Worker";
+            int strategy = SUPERVISE_ONE_FOR_ONE;
+            int max_restarts = 3;
+            if (sup->child_count > 0 && sup->children[0] && sup->children[0]->data) {
+                const char *s = (const char*)sup->children[0]->data;
+                if (strcmp(s, "one_for_all") == 0) strategy = SUPERVISE_ONE_FOR_ALL;
+                else if (strcmp(s, "restart") == 0) strategy = SUPERVISE_RESTART;
+                else if (strcmp(s, "none") == 0) strategy = SUPERVISE_NONE;
+                else strategy = SUPERVISE_ONE_FOR_ONE;
+            }
+            cg_emit(cg, "/* supervise %s %s */\n", child_name, sup->child_count > 0 ? (const char*)sup->children[0]->data : "one_for_one");
+            cg_emit(cg, "pny_supervise_register(&__supervisor_self, &%s_self, %d, %d);\n", child_name, strategy, max_restarts);
+        }
     }
 
     cg_emit_raw(cg, "int main(int argc, char *argv[]) {\n");

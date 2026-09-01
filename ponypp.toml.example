@@ -1,0 +1,20 @@
+# ponypp.toml — Pony++ Package Manager Format
+
+[package]
+name = "myproject"
+version = "0.1.0"
+description = "My Pony++ project"
+authors = ["liunix"]
+
+[dependencies]
+std = "*"
+http = ">=1.0"
+json = ">=2.0"
+
+[build]
+target = "wasm"
+optimize = 2
+emit_debug = false
+
+[dev-dependencies]
+testing = ">=1.0"
