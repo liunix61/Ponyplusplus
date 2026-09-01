@@ -4,3 +4,7 @@ examples/*.c
 examples/*.wasm
 examples/hello-native
 examples/hello_native
+examples/hello-wasi.wasm
+examples/hello-comp.wasm
+examples/hello-browser.wasm
+examples/hello-mcu.wasm
