@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [gcc, clang]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with make
+        run: CC=${{ matrix.compiler }} make all
+
+      - name: Run unit tests
+        run: make test
+
+      - name: E2E compile example to Wasm
+        run: ./bin/ponyppc examples/hello.pny -o /tmp/hello.wasm && test -f /tmp/hello.wasm
+
+      - name: E2E compile example to WIT
+        run: ./bin/ponyppc examples/hello.pny --wit-only -o /tmp/hello.wit && test -f /tmp/hello.wit
+
+      - name: E2E native backend
+        run: |
+          ./bin/ponyppc examples/hello.pny --target native -o /tmp/hello_native
+          test -x /tmp/hello_native

@@ -1,95 +1,163 @@
 /*
- * wasm.c - Pony++ Wasm 代码生成器
+ * wasm.c - Pony++ Wasm 代码生成器（Phase 1）
  *
- * 生成最小有效的 Wasm 模块 (Phase 1)
- * Wasm 二进制格式: magic (0x00 0x61 0x73 0x6d) + version (0x01 0x00 0x00 0x00)
+ * 生成最小可执行 Wasm 模块：
+ *   - 魔术字 + 版本号
+ *   - type section:  (func (result i32)) 用于 main
+ *   - function section
+ *   - export section: 导出 "main"
+ *   - code section:   main() { return 42; }
  */
 
 #include "ponypp/wasm.h"
-#include "ponypp/util.h"
-#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
-struct WasmWriter {
-    char *path;
-    unsigned char *buf;
-    size_t len;
+/* 字节向量 */
+typedef struct {
+    unsigned char *data;
+    size_t size;
     size_t cap;
-};
+} ByteVec;
 
-WasmWriter *wasm_writer_new(const char *output_path) {
-    WasmWriter *w = (WasmWriter *)calloc(1, sizeof(WasmWriter));
-    if (!w) return NULL;
-    w->path = s_strdup(output_path);
-    w->cap = 256;
-    w->buf = (unsigned char *)malloc(w->cap);
-    if (!w->buf) {
-        free(w->path);
-        free(w);
-        return NULL;
-    }
-    return w;
+static void bv_grow(ByteVec *bv, size_t need) {
+    while (bv->cap < need) bv->cap = bv->cap ? bv->cap * 2 : 256;
+    bv->data = (unsigned char *)realloc(bv->data, bv->cap);
+}
+static void bv_write_u8(ByteVec *bv, unsigned char v) {
+    if (bv->size + 1 > bv->cap) bv_grow(bv, bv->size + 1);
+    bv->data[bv->size++] = v;
+}
+static void bv_write_i32_le(ByteVec *bv, uint32_t v) {
+    if (bv->size + 4 > bv->cap) bv_grow(bv, bv->size + 4);
+    bv->data[bv->size++] = v & 0xFF;
+    bv->data[bv->size++] = (v >> 8) & 0xFF;
+    bv->data[bv->size++] = (v >> 16) & 0xFF;
+    bv->data[bv->size++] = (v >> 24) & 0xFF;
+}
+static void bv_write_u32_leb128(ByteVec *bv, uint32_t v) {
+    do {
+        unsigned char byte = v & 0x7F;
+        v >>= 7;
+        if (v) byte |= 0x80;
+        bv_write_u8(bv, byte);
+    } while (v);
+}
+static void bv_write_str(ByteVec *bv, const char *s) {
+    size_t len = s ? strlen(s) : 0;
+    bv_write_u32_leb128(bv, (uint32_t)len);
+    if (len && bv->size + len > bv->cap) bv_grow(bv, bv->size + len);
+    memcpy(bv->data + bv->size, s, len);
+    bv->size += len;
+}
+static void bv_write_vec(ByteVec *bv, const ByteVec *inner) {
+    bv_write_u32_leb128(bv, (uint32_t)inner->size);
+    if (inner->size && bv->size + inner->size > bv->cap) bv_grow(bv, bv->size + inner->size);
+    memcpy(bv->data + bv->size, inner->data, inner->size);
+    bv->size += inner->size;
 }
 
-static void wasm_ensure(WasmWriter *w, size_t extra) {
-    if (w->len + extra > w->cap) {
-        while (w->len + extra > w->cap) {
-            w->cap *= 2;
-        }
-        w->buf = (unsigned char *)realloc(w->buf, w->cap);
-    }
-}
-
-static void wasm_write_bytes(WasmWriter *w, const unsigned char *data, size_t len) {
-    wasm_ensure(w, len);
-    memcpy(w->buf + w->len, data, len);
-    w->len += len;
-}
-
-static void wasm_write_u8(WasmWriter *w, unsigned char b) {
-    wasm_write_bytes(w, &b, 1);
-}
-
-static void wasm_write_u32(WasmWriter *w, uint32_t v) {
-    unsigned char b[4] = {
-        (unsigned char)(v & 0xff),
-        (unsigned char)((v >> 8) & 0xff),
-        (unsigned char)((v >> 16) & 0xff),
-        (unsigned char)((v >> 24) & 0xff),
-    };
-    wasm_write_bytes(w, b, 4);
-}
-
-void wasm_writer_close(WasmWriter *w) {
-    if (!w) return;
-    if (w->path) {
-        s_file_write(w->path, (const char *)w->buf, w->len);
-    }
-    if (w->buf) free(w->buf);
-    if (w->path) free(w->path);
-    free(w);
-}
-
-int wasm_write_program(WasmWriter *w, ASTNode *ast, const CompilerConfig *cfg) {
+int wasm_write_program(ASTNode *ast, const char *output) {
     (void)ast;
-    (void)cfg;
-    if (!w) return -1;
+    if (!output) return 1;
 
-    /* Wasm magic number + version */
-    unsigned char magic[4] = { 0x00, 0x61, 0x73, 0x6d }; /* \0asm */
-    wasm_write_bytes(w, magic, 4);
-    wasm_write_u32(w, 1); /* version 1 */
+    ByteVec bv = {0};
 
-    /* Type section (section 1, empty) */
-    wasm_write_u8(w, 0x01); /* type section */
-    wasm_write_u8(w, 0x00); /* size 0 */
+    /* 魔术字 + 版本 */
+    bv_write_u8(&bv, 0x00); bv_write_u8(&bv, 0x61);
+    bv_write_u8(&bv, 0x73); bv_write_u8(&bv, 0x6d);
+    bv_write_u8(&bv, 0x01); bv_write_u8(&bv, 0x00);
+    bv_write_u8(&bv, 0x00); bv_write_u8(&bv, 0x00);
 
-    /* Function section (section 3, empty) */
-    wasm_write_u8(w, 0x03); /* function section */
-    wasm_write_u8(w, 0x00); /* size 0 */
+    /* type section: (func (result i32)) */
+    bv_write_u8(&bv, 0x01); /* section id */
+    {
+        ByteVec body = {0};
+        bv_write_u8(&body, 0x01); /* 1 type */
+        bv_write_u8(&body, 0x60); /* func type */
+        bv_write_u8(&body, 0x00); /* no params */
+        bv_write_u8(&body, 0x01); /* 1 result */
+        bv_write_u8(&body, 0x7F); /* i32 */
+        bv_write_u32_leb128(&bv, (uint32_t)body.size);
+        bv_write_vec(&bv, &body);
+        free(body.data);
+    }
 
-    /* Code section (section 10, empty) */
-    wasm_write_u8(w, 0x0a); /* code section */
-    wasm_write_u8(w, 0x00); /* size 0 */
+    /* function section: func 0 uses type 0 */
+    bv_write_u8(&bv, 0x03);
+    {
+        ByteVec body = {0};
+        bv_write_u8(&body, 0x01); /* 1 func */
+        bv_write_u8(&body, 0x00); /* type idx 0 */
+        bv_write_u32_leb128(&bv, (uint32_t)body.size);
+        bv_write_vec(&bv, &body);
+        free(body.data);
+    }
 
+    /* table section */
+    bv_write_u8(&bv, 0x04);
+    bv_write_u8(&bv, 0x04);
+    bv_write_u8(&bv, 0x70);
+    bv_write_u8(&bv, 0x01);
+    bv_write_u8(&bv, 0x00);
+
+    /* memory section */
+    bv_write_u8(&bv, 0x05);
+    bv_write_u8(&bv, 0x03);
+    bv_write_u8(&bv, 0x01);
+    bv_write_u8(&bv, 0x00);
+    bv_write_u8(&bv, 0x00);
+
+    /* export section: export "main" func 0 */
+    bv_write_u8(&bv, 0x07);
+    {
+        ByteVec body = {0};
+        bv_write_u8(&body, 0x01); /* 1 export */
+        bv_write_str(&body, "main");
+        bv_write_u8(&body, 0x00); /* func */
+        bv_write_u8(&body, 0x00); /* idx 0 */
+        bv_write_u32_leb128(&bv, (uint32_t)body.size);
+        bv_write_vec(&bv, &body);
+        free(body.data);
+    }
+
+    /* code section: (func (i32.const 42) (end)) */
+    bv_write_u8(&bv, 0x0a);
+    {
+        ByteVec body = {0};
+        bv_write_u8(&body, 0x01); /* 1 func */
+        {
+            ByteVec code = {0};
+            bv_write_u8(&code, 0x41); /* i32.const */
+            bv_write_u8(&code, 0x2A); /* 42 */
+            bv_write_u8(&code, 0x0B); /* end */
+            bv_write_u32_leb128(&body, (uint32_t)code.size);
+            bv_write_vec(&body, &code);
+            free(code.data);
+        }
+        bv_write_u32_leb128(&bv, (uint32_t)body.size);
+        bv_write_vec(&bv, &body);
+        free(body.data);
+    }
+
+    /* Write to file */
+    FILE *f = fopen(output, "wb");
+    if (!f) return 1;
+    if (fwrite(bv.data, 1, bv.size, f) != bv.size) { fclose(f); free(bv.data); return 1; }
+    fclose(f);
+
+    free(bv.data);
     return 0;
+}
+
+const char *wasm_target_name(TargetKind target) {
+    switch (target) {
+        case TARGET_WASI_P2:   return "wasi-p2";
+        case TARGET_COMPONENT: return "component";
+        case TARGET_BROWSER:   return "browser";
+        case TARGET_MCU_WASM:  return "mcu-wasm";
+        case TARGET_NATIVE:    return "native";
+        default: return "unknown";
+    }
 }

@@ -152,12 +152,10 @@ static int test_supervise(void) {
 
 static int test_error_handling(void) {
     printf("test_error_handling\n");
-    /* 不完整代码 - 应该返回 NULL 或设置错误 */
     Parser *p = parse_source("actor {");
     CHECK(p != NULL, "创建 Parser");
     if (p) {
-        ASTNode *ast = parser_parse_program(p);
-        /* 即使解析失败，也不应崩溃 */
+        (void)parser_parse_program(p);
         CHECK(1, "不完整代码不崩溃");
     }
     parser_free(p);

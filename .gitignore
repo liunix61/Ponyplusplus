@@ -1,10 +1,23 @@
-bin/
+# Build
 build/
-examples/*.c
-examples/*.wasm
-examples/hello-native
-examples/hello_native
-examples/hello-wasi.wasm
-examples/hello-comp.wasm
-examples/hello-browser.wasm
-examples/hello-mcu.wasm
+bin/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Compiler
+*.o
+*.wasm
+*.c$
+
+# Native binary
+ponypp-native
+ponypp-native.c
+
+# Temp
+/tmp/*

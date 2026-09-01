@@ -4,13 +4,13 @@
 #include "ponypp.h"
 #include "ponypp/ast.h"
 
-/* 验证 AST 的引用能力 */
-bool cap_verify_ast(const ASTNode *ast);
+typedef struct {
+    bool ok;
+    int error_count;
+    const char **errors;
+} CapCheckResult;
 
-/* 获取最后错误信息 */
-const char *cap_last_error(void);
-
-/* 获取最后错误行号 */
-int cap_last_line(void);
+int capabilities_check_program(ASTNode *ast, CapCheckResult *result);
+void cap_check_free_result(CapCheckResult *result);
 
 #endif /* PONYPP_CAPABILITIES_H */

@@ -1262,7 +1262,7 @@ actor DistributedSupervisor() {
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  Pony++ 代码          WIT 接口         外部代码             │
-│  (.pny)               (.wit)           (.rs/.c/.js/.go)     │
+│  (.pny)               (.wit)           (.c/.c/.js/.go)     │
 │      │                    │                  │              │
 │      ▼                    ▼                  ▼              │
 │  ┌──────────────────────────────────────────────────────┐  │
@@ -1516,12 +1516,12 @@ ponypp profiler myapp.pny --mode concurrency --output trace.json
 
 | 工作项 | 交付物 | 验收标准 |
 |--------|--------|----------|
-| 词法分析器 | lexer.rs | 正确解析所有 Pony++ 语法 |
-| 语法分析器 | parser.rs | 生成正确的 AST |
-| 类型系统 | checker.rs | 含泛型，类型推断 |
-| 引用能力验证 | cap.rs | 编译时拒绝非法引用能力 |
-| Wasm 代码生成 | codegen.rs | 生成有效 Wasm |
-| WIT 接口生成 | wit_gen.rs | 生成 WIT 文件 |
+| 词法分析器 | lexer.c | 正确解析所有 Pony++ 语法 |
+| 语法分析器 | parser.c | 生成正确的 AST |
+| 类型系统 | checker.c | 含泛型，类型推断 |
+| 引用能力验证 | cap.c | 编译时拒绝非法引用能力 |
+| Wasm 代码生成 | codegen.c | 生成有效 Wasm |
+| WIT 接口生成 | wit_gen.c | 生成 WIT 文件 |
 | 单元测试 | tests/ | > 80% 覆盖率 |
 | 端到端测试 | e2e/ | hello world → Wasm → 运行 |
 
@@ -1531,13 +1531,13 @@ ponypp profiler myapp.pny --mode concurrency --output trace.json
 
 | 工作项 | 交付物 | 验收标准 |
 |--------|--------|----------|
-| 调度器 (协作式) | scheduler.rs | 单线程协作调度 |
-| 消息传递系统 | messaging.rs | Actor 间消息传递 |
-| Actor 生命周期 | lifecycle.rs | 创建、启动、停止、销毁 |
-| 每 Actor GC | gc.rs | Wasm GC 集成 |
-| Wasm 实例管理 | instances.rs | 实例池 + 复用 |
-| 内存管理 | memory.rs | 线性内存 + GC 堆 |
-| 错误处理 | errors.rs | 异常捕获 + 传播 |
+| 调度器 (协作式) | scheduler.c | 单线程协作调度 |
+| 消息传递系统 | messaging.c | Actor 间消息传递 |
+| Actor 生命周期 | lifecycle.c | 创建、启动、停止、销毁 |
+| 每 Actor GC | gc.c | Wasm GC 集成 |
+| Wasm 实例管理 | instances.c | 实例池 + 复用 |
+| 内存管理 | memory.c | 线性内存 + GC 堆 |
+| 错误处理 | errors.c | 异常捕获 + 传播 |
 | 性能基准 | benchmarks/ | 基准测试框架 |
 
 ### Phase 3: 完整运行时 (9个月)
@@ -1546,12 +1546,12 @@ ponypp profiler myapp.pny --mode concurrency --output trace.json
 
 | 工作项 | 交付物 | 验收标准 |
 |--------|--------|----------|
-| M:N 调度器 | scheduler.rs (v2) | 工作窃取 + gas 计数 |
-| 监督树 | supervisor.rs | 三种策略 + 重启 |
-| 热代码升级 | hot_upgrade.rs | 不停机升级 |
-| WASI Preview 2/3 | wasi.rs | 文件、网络、时钟 |
-| 浏览器适配 | browser.rs | Web Workers + JS API |
-| 调试支持 | debug.rs | Source Map + DWARF |
+| M:N 调度器 | scheduler.c (v2) | 工作窃取 + gas 计数 |
+| 监督树 | supervisor.c | 三种策略 + 重启 |
+| 热代码升级 | hot_upgrade.c | 不停机升级 |
+| WASI Preview 2/3 | wasi.c | 文件、网络、时钟 |
+| 浏览器适配 | browser.c | Web Workers + JS API |
+| 调试支持 | debug.c | Source Map + DWARF |
 | 性能优化 | optimizations/ | AOT + 内联 |
 
 ### Phase 4: 生态工具 (9个月)

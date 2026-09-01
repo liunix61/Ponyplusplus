@@ -1,6 +1,6 @@
 /*
  * ponyppc - Pony++ C 语言编译器
- * 编译 Pony++ 源代码为 Wasm 组件
+ * 编译 Pony++ 源代码为 Wasm 组件或 Native 可执行文件
  */
 
 #include "ponypp.h"
@@ -31,8 +31,8 @@ static void print_usage(const char *prog) {
     printf("Pony++ C 语言编译器 (ponyppc) v%s\n", VERSION_STRING);
     printf("\n用法: %s [选项] <源文件>\n", prog);
     printf("\n选项:\n");
-    printf("  -o <输出>    指定输出 Wasm 文件名 (默认 <源文件名>.wasm)\n");
-    printf("  -g           生成调试信息 (WASM_GC_DEBUG)\n");
+    printf("  -o <输出>    指定输出文件名 (默认 <源文件名>.wasm)\n");
+    printf("  -g           生成调试信息\n");
     printf("  -O <level>   优化级别 (0-4, 默认 2)\n");
     printf("  --wit-only   仅生成 WIT 接口定义文件\n");
     printf("  --target     目标后端 (wasi-p2|component|browser|mcu-wasm|native, 默认 wasi-p2)\n");
@@ -45,6 +45,7 @@ static void print_usage(const char *prog) {
     printf("  %s -O2 -o hello.wasm hello.pny\n", prog);
     printf("  %s -g --pretty hello.pny\n", prog);
     printf("  %s --wit-only hello.pny\n", prog);
+    printf("  %s --target native -o hello hello.pny\n", prog);
 }
 
 static void print_version(void) {
@@ -56,24 +57,24 @@ static void print_version(void) {
     printf("Wasm GC: Cheney 半空间复制 (默认启用)\n");
 }
 
-static char *resolve_output(const char *input, const char *opt_output) {
+static char *resolve_output(const char *input, const char *opt_output, const char *fallback_ext) {
     if (opt_output) {
         return s_strdup(opt_output);
     }
-    /* 默认: <输入>.wasm */
+    /* 默认: <输入>.<ext> */
     size_t len = s_strlen(input);
     const char *ext = strrchr(input, '.');
     if (ext) {
         char *out = s_malloc(len);
         s_memcpy(out, input, len);
-        s_memcpy(out + len - 3, "wasm", 5);
+        s_strcpy(out + len - 3, fallback_ext);
         return out;
     }
-    size_t total = len + 6;
+    size_t total = len + s_strlen(fallback_ext) + 1;
     char *out = s_malloc(total);
     s_memset(out, 0, total);
     s_memcpy(out, input, len);
-    s_strcpy(out + len, ".wasm");
+    s_strcpy(out + len, fallback_ext);
     return out;
 }
 
@@ -166,85 +167,101 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
 
     /* 3. 类型检查 */
     printf("  [3/6] 类型检查...\n");
-    TypeContext ctx = type_context_new();
-    bool type_ok = typecheck_check_ast(ast, &ctx);
-    if (!type_ok) {
-        fprintf(stderr, "类型错误: %s (第 %d 行)\n",
-                typecheck_last_error(&ctx), typecheck_last_line(&ctx));
-        type_context_free(&ctx);
+    TypeCheckResult *tc_result = (TypeCheckResult *)calloc(1, sizeof(TypeCheckResult));
+    if (typecheck_program(ast, tc_result) != 0) {
+        fprintf(stderr, "类型错误: %d 个错误\n", tc_result->error_count);
+        for (int i = 0; i < tc_result->error_count; i++) {
+            fprintf(stderr, "  - %s\n", tc_result->errors[i]);
+        }
+        typecheck_free_result(tc_result);
         parser_free(parser);
         lexer_free(lexer);
         s_free(source);
         return EXIT_FAILURE;
     }
+    typecheck_free_result(tc_result);
 
     /* 4. 引用能力验证 */
     printf("  [4/6] 引用能力验证...\n");
-    bool cap_ok = cap_verify_ast(ast);
-    if (!cap_ok) {
-        fprintf(stderr, "引用能力错误: %s (第 %d 行)\n",
-                cap_last_error(), cap_last_line());
-        type_context_free(&ctx);
+    CapCheckResult *cap_result = (CapCheckResult *)calloc(1, sizeof(CapCheckResult));
+    if (capabilities_check_program(ast, cap_result) != 0) {
+        fprintf(stderr, "引用能力错误: %d 个错误\n", cap_result->error_count);
+        for (int i = 0; i < cap_result->error_count; i++) {
+            fprintf(stderr, "  - %s\n", cap_result->errors[i]);
+        }
+        cap_check_free_result(cap_result);
         parser_free(parser);
         lexer_free(lexer);
         s_free(source);
         return EXIT_FAILURE;
     }
+    cap_check_free_result(cap_result);
 
-    /* 5. 代码生成 (WIT 或 Wasm) */
+    /* 5. 代码生成 (WIT 或 Wasm 或 Native) */
     printf("  [5/6] 代码生成...\n");
     if (cfg->wit_only) {
-        char *wit_output = s_resolve_output(cfg->output, "wit");
-        WITWriter *wit = wit_writer_new(wit_output);
-        wit_write_program(wit, ast);
-        wit_writer_close(wit);
-        s_free(wit_output);
-        printf("  已生成 WIT 接口定义: %s\n", wit_output);
-    } else if (cfg->target == TARGET_NATIVE) {
-        size_t out_len = cfg->output ? s_strlen(cfg->output) : 0;
-        char *c_output = NULL;
-        char *binary_output = cfg->output ? s_strdup(cfg->output) : s_strdup("ponypp-native");
-        char *print_name = s_strdup(binary_output);
-        if (out_len > 0) {
-            c_output = s_malloc(out_len + 4);
-            s_memcpy(c_output, cfg->output, out_len);
-            s_strcpy(c_output + out_len, ".c");
-        } else {
-            c_output = s_strdup("ponypp-native.c");
+        char *wit_output = resolve_output(input_path, cfg->output, ".wit");
+        if (wit_write_program(ast, wit_output) != 0) {
+            fprintf(stderr, "错误: 无法写入 WIT 文件\n");
+            s_free(wit_output);
+            parser_free(parser);
+            lexer_free(lexer);
+            s_free(source);
+            return EXIT_FAILURE;
         }
+        printf("  已生成 WIT 接口定义: %s\n", wit_output);
+        s_free(wit_output);
+    } else if (cfg->target == TARGET_NATIVE) {
+        /* Native backend: 生成 C 代码并用 gcc 编译 */
+        char *binary_output = cfg->output ? s_strdup(cfg->output) : s_strdup("ponypp-native");
+        size_t out_len = s_strlen(binary_output);
+        char *c_output = s_malloc(out_len + 4);
+        s_memcpy(c_output, binary_output, out_len);
+        s_strcpy(c_output + out_len, ".c");
+
         FILE *sf = fopen(c_output, "w");
         if (!sf) {
-            s_free(print_name);
             s_free(binary_output);
             s_free(c_output);
-            fprintf(stderr, "错误: 无法写入 native 源文件\n");
+            fprintf(stderr, "错误: 无法写入 native 源文件 '%s'\n", c_output);
+            parser_free(parser);
+            lexer_free(lexer);
+            s_free(source);
             return EXIT_FAILURE;
         }
         Codegen *cg = codegen_new(sf);
         codegen_program(cg, ast);
         codegen_free(cg);
         fclose(sf);
+
         char cmdbuf[4096];
         int cmdlen = snprintf(cmdbuf, sizeof(cmdbuf),
-            "gcc -o %s %s", binary_output, c_output);
+            "gcc -std=c11 -Wall -o %s %s", binary_output, c_output);
         if (cmdlen <= 0 || cmdlen >= (int)sizeof(cmdbuf) || system(cmdbuf) != 0) {
-            s_free(print_name);
             s_free(binary_output);
             s_free(c_output);
             fprintf(stderr, "错误: native 编译失败\n");
+            parser_free(parser);
+            lexer_free(lexer);
+            s_free(source);
             return EXIT_FAILURE;
         }
+        printf("  已生成 native 可执行文件: %s\n", binary_output);
         s_free(binary_output);
         s_free(c_output);
-        printf("  已生成 native 可执行文件: %s\n", print_name);
-        s_free(print_name);
     } else {
-        char *output_path = s_resolve_output(cfg->output, "wasm");
-        WasmWriter *writer = wasm_writer_new(output_path);
-        wasm_write_program(writer, ast, cfg);
-        wasm_writer_close(writer);
-        s_free(output_path);
-        printf("  已生成 Wasm 组件: %s\n", cfg->output ? cfg->output : "default.wasm");
+        /* Wasm backend */
+        char *wasm_output = resolve_output(input_path, cfg->output, ".wasm");
+        if (wasm_write_program(ast, wasm_output) != 0) {
+            fprintf(stderr, "错误: 无法写入 Wasm 文件\n");
+            s_free(wasm_output);
+            parser_free(parser);
+            lexer_free(lexer);
+            s_free(source);
+            return EXIT_FAILURE;
+        }
+        printf("  已生成 Wasm 组件: %s\n", wasm_output);
+        s_free(wasm_output);
     }
 
     /* 6. 清理 */
@@ -253,7 +270,6 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
     parser_free(parser);
     lexer_free(lexer);
     s_free(source);
-    type_context_free(&ctx);
 
     printf("[ponyppc] 编译成功 ✓\n");
     return EXIT_SUCCESS;
@@ -269,7 +285,8 @@ int main(int argc, char *argv[]) {
         .wit_only = false,
         .optimize = OPT_OPTIMIZE_2,
         .emit_debug = false,
-        .mode = OPT_DEFAULT
+        .mode = OPT_DEFAULT,
+        .target = TARGET_WASI_P2
     };
 
     struct option longopts[] = {

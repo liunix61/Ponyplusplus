@@ -3,15 +3,14 @@
 
 #include "ponypp.h"
 #include "ponypp/ast.h"
-#include "ponypp/types.h"
 
-/* 检查 AST 类型 */
-bool typecheck_check_ast(const ASTNode *ast, TypeContext *ctx);
+typedef struct {
+    bool ok;
+    int error_count;
+    const char **errors;
+} TypeCheckResult;
 
-/* 获取最后错误信息 */
-const char *typecheck_last_error(TypeContext *ctx);
-
-/* 获取最后错误行号 */
-int typecheck_last_line(TypeContext *ctx);
+int typecheck_program(ASTNode *ast, TypeCheckResult *result);
+void typecheck_free_result(TypeCheckResult *result);
 
 #endif /* PONYPP_TYPECHECK_H */

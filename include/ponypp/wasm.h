@@ -4,11 +4,7 @@
 #include "ponypp.h"
 #include "ponypp/ast.h"
 
-/* Wasm 写入器 */
-WasmWriter *wasm_writer_new(const char *output_path);
-void wasm_writer_close(WasmWriter *writer);
-
-/* 写入程序 */
-int wasm_write_program(WasmWriter *writer, ASTNode *ast, const CompilerConfig *cfg);
+int wasm_write_program(ASTNode *ast, const char *output);
+const char *wasm_target_name(TargetKind target);
 
 #endif /* PONYPP_WASM_H */

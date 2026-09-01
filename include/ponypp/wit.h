@@ -4,11 +4,6 @@
 #include "ponypp.h"
 #include "ponypp/ast.h"
 
-/* WIT 写入器 */
-WITWriter *wit_writer_new(const char *output_path);
-void wit_writer_close(WITWriter *writer);
-
-/* 写入程序 */
-int wit_write_program(WITWriter *writer, const ASTNode *ast);
+int wit_write_program(ASTNode *ast, const char *output);
 
 #endif /* PONYPP_WIT_H */

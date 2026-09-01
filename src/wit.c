@@ -1,108 +1,162 @@
 /*
- * wit.c - Pony++ WIT 接口生成器
+ * wit.c - Pony++ WIT 接口生成器（Phase 1）
+ *
+ * 根据 AST 中的 Actor 和方法生成 WIT 文件。
+ * 格式：
+ *   package ponypp:<name>;
+ *   interface <actor> {
+ *     record <ctor> { <fields> }
+ *     fn <be_method>(<args>) -> ?<return>
+ *   }
+ *   world <actor> { use ponypp:common:print; }
  */
 
 #include "ponypp/wit.h"
-#include "ponypp/util.h"
-#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
-struct WITWriter {
-    char *path;
-    FILE *file;
-};
+static void wit_indent(FILE *f, int depth) {
+    for (int i = 0; i < depth; i++) fputs("  ", f);
+}
 
-WITWriter *wit_writer_new(const char *output_path) {
-    WITWriter *w = (WITWriter *)calloc(1, sizeof(WITWriter));
-    if (!w) return NULL;
-    w->path = s_strdup(output_path);
-    w->file = fopen(output_path, "w");
-    if (!w->file) {
-        free(w->path);
-        free(w);
-        return NULL;
+static const char *wit_c_type_of(ASTNode *t) {
+    if (!t || !t->data) return "i32";
+    const char *n = (const char *)t->data;
+    if (strcmp(n, "U8") == 0) return "u8";
+    if (strcmp(n, "U16") == 0) return "u16";
+    if (strcmp(n, "U32") == 0) return "u32";
+    if (strcmp(n, "U64") == 0) return "u64";
+    if (strcmp(n, "I8") == 0) return "s8";
+    if (strcmp(n, "I16") == 0) return "s16";
+    if (strcmp(n, "I32") == 0) return "s32";
+    if (strcmp(n, "I64") == 0) return "s64";
+    if (strcmp(n, "F32") == 0) return "f32";
+    if (strcmp(n, "F64") == 0) return "f64";
+    if (strcmp(n, "String") == 0) return "string";
+    if (strcmp(n, "Bool") == 0) return "bool";
+    if (strcmp(n, "None") == 0 || strcmp(n, "NoneType") == 0) return "option<nothing>";
+    if (strcmp(n, "Byte") == 0) return "bytes";
+    return "i32";
+}
+
+int wit_write_program(ASTNode *ast, const char *output) {
+    if (!ast || !output) return 1;
+    FILE *f = fopen(output, "w");
+    if (!f) return 1;
+
+    if (ast->child_count == 0) {
+        fprintf(f, "package ponypp:default;\n");
+        fclose(f);
+        return 0;
     }
-    return w;
-}
-
-void wit_writer_close(WITWriter *w) {
-    if (!w) return;
-    if (w->file) fclose(w->file);
-    if (w->path) free(w->path);
-    free(w);
-}
-
-static void wit_write_actor(WITWriter *w, const ASTNode *actor) {
-    const char *name = (const char *)actor->data;
-    fprintf(w->file, "resource %s {\n", name);
-
-    size_t child_idx = 0;
-    for (size_t i = 0; i < actor->child_count; i++) {
-        const ASTNode *child = actor->children[i];
-        if (!child) continue;
-        switch (child->type) {
-            case NODE_BE: {
-                const char *method = (const char *)child->data;
-                fprintf(w->file, "  %s:\n", method);
-                /* 参数 */
-                if (child->child_count > 0 && child->children[0]) {
-                    const ASTNode *params = child->children[0];
-                    fprintf(w->file, "    {\n");
-                    for (size_t j = 0; j < params->child_count; j++) {
-                        if (params->children[j] && params->children[j]->data) {
-                            fprintf(w->file, "      %s,\n",
-                                    (const char *)params->children[j]->data);
-                        }
-                    }
-                    fprintf(w->file, "    }\n");
-                } else {
-                    fprintf(w->file, "    {}\n");
-                }
-                break;
-            }
-            case NODE_FUN: {
-                const char *method = (const char *)child->data;
-                fprintf(w->file, "  %s:\n", method);
-                if (child->child_count > 0 && child->children[0]) {
-                    const ASTNode *params = child->children[0];
-                    fprintf(w->file, "    {\n");
-                    for (size_t j = 0; j < params->child_count; j++) {
-                        if (params->children[j] && params->children[j]->data) {
-                            fprintf(w->file, "      %s,\n",
-                                    (const char *)params->children[j]->data);
-                        }
-                    }
-                    fprintf(w->file, "    }\n");
-                } else {
-                    fprintf(w->file, "    {}\n");
-                }
-                break;
-            }
-            default:
-                child_idx++;
-                break;
-        }
-    }
-    (void)child_idx;
-    fprintf(w->file, "}\n\n");
-}
-
-int wit_write_program(WITWriter *w, const ASTNode *ast) {
-    if (!w || !ast) return -1;
-
-    /* WIT 文件头 */
-    fprintf(w->file, "package ponypp:program\n\n");
 
     for (size_t i = 0; i < ast->child_count; i++) {
-        const ASTNode *child = ast->children[i];
-        if (!child) continue;
-        switch (child->type) {
-            case NODE_ACTOR:
-                wit_write_actor(w, child);
-                break;
-            default:
-                break;
+        ASTNode *actor = ast->children[i];
+        if (!actor || actor->type != NODE_ACTOR) continue;
+        const char *name = (const char *)actor->data;
+        if (!name) name = "default";
+
+        fprintf(f, "package ponypp:%s;\n", name);
+        fprintf(f, "interface %s {\n", name);
+
+        /* Constructor record */
+        for (size_t j = 0; j < actor->child_count; j++) {
+            ASTNode *m = actor->children[j];
+            if (!m || m->type != NODE_NEW) continue;
+            const char *ctor = (const char *)m->data;
+            if (!ctor) ctor = "new";
+            wit_indent(f, 1);
+            fprintf(f, "record %s {\n", ctor);
+            if (m->child_count > 0 && m->children[0] &&
+                m->children[0]->data &&
+                strcmp((const char *)m->children[0]->data, "params") == 0) {
+                for (size_t k = 0; k < m->children[0]->child_count; k++) {
+                    ASTNode *p = m->children[0]->children[k];
+                    if (!p) continue;
+                    const char *pname = (const char *)p->data;
+                    const char *ptype = (p->child_count > 0 && p->children[0])
+                                        ? wit_c_type_of(p->children[0]) : "i32";
+                    wit_indent(f, 2);
+                    fprintf(f, "%s: %s,\n", pname ? pname : "arg", ptype);
+                }
+            }
+            wit_indent(f, 1);
+            fprintf(f, "}\n");
         }
+
+        /* Fields as record */
+        size_t fcount = 0;
+        for (size_t j = 0; j < actor->child_count; j++) {
+            ASTNode *ch = actor->children[j];
+            if (ch && ch->type == NODE_VAR) fcount++;
+        }
+        if (fcount > 0) {
+            wit_indent(f, 1);
+            fprintf(f, "record state {\n");
+            for (size_t j = 0; j < actor->child_count; j++) {
+                ASTNode *ch = actor->children[j];
+                if (!ch || ch->type != NODE_VAR) continue;
+                const char *fname = (const char *)ch->data;
+                const char *ftype = (ch->child_count > 0 && ch->children[0])
+                                    ? wit_c_type_of(ch->children[0]) : "i32";
+                wit_indent(f, 2);
+                fprintf(f, "%s: %s,\n", fname ? fname : "field", ftype);
+            }
+            wit_indent(f, 1);
+            fprintf(f, "}\n");
+        }
+
+        /* Methods */
+        for (size_t j = 0; j < actor->child_count; j++) {
+            ASTNode *m = actor->children[j];
+            if (!m) continue;
+            if (m->type != NODE_BE && m->type != NODE_FUN) continue;
+            const char *mname = (const char *)m->data;
+            if (!mname) continue;
+            wit_indent(f, 1);
+            if (m->type == NODE_BE) {
+                fprintf(f, "fn %s(", mname);
+            } else {
+                fprintf(f, "fn %s(", mname);
+            }
+            /* params */
+            ASTNode *params = NULL;
+            for (size_t k = 0; k < m->child_count; k++) {
+                ASTNode *c2 = m->children[k];
+                if (c2 && c2->type == NODE_EMPTY && params == NULL) params = c2;
+                break;
+            }
+            if (params && params->data && strcmp((const char *)params->data, "params") == 0) {
+                size_t first = 1;
+                for (size_t k = 0; k < params->child_count; k++) {
+                    ASTNode *p = params->children[k];
+                    if (!p) continue;
+                    if (!first) fprintf(f, ", ");
+                    first = 0;
+                    const char *pname = (const char *)p->data;
+                    const char *ptype = (p->child_count > 0 && p->children[0])
+                                        ? wit_c_type_of(p->children[0]) : "i32";
+                    fprintf(f, "%s: %s", pname ? pname : "arg", ptype);
+                }
+            }
+            fprintf(f, ")");
+            /* return type */
+            if (m->type == NODE_FUN) {
+                fprintf(f, " -> i32");
+            }
+            fprintf(f, "\n");
+        }
+
+        fprintf(f, "}\n");
+
+        /* world */
+        fprintf(f, "world %s {\n", name);
+        wit_indent(f, 1);
+        fprintf(f, "use self:%s;\n", name);
+        fprintf(f, "}\n");
     }
 
+    fclose(f);
     return 0;
 }
