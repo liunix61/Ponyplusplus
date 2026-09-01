@@ -29,6 +29,7 @@ typedef enum {
     NODE_YIELD,         /* yield */
     NODE_SEND,          /* 消息发送 */
     NODE_CALL,          /* 方法调用 */
+    NODE_IDENT,         /* 标识符 / 变量名 */
     NODE_LAMBDA,        /* Lambda */
     NODE_LIST,          /* 列表字面量 */
     NODE_MAP,           /* 映射字面量 */

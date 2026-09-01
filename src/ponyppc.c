@@ -226,8 +226,7 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
         fclose(sf);
         char cmdbuf[4096];
         int cmdlen = snprintf(cmdbuf, sizeof(cmdbuf),
-            "gcc -I%s/include -o %s %s %s/src/ponypp/runtime.c",
-            PONYPP_SOURCE_DIR, binary_output, c_output, PONYPP_SOURCE_DIR);
+            "gcc -o %s %s", binary_output, c_output);
         if (cmdlen <= 0 || cmdlen >= (int)sizeof(cmdbuf) || system(cmdbuf) != 0) {
             s_free(print_name);
             s_free(binary_output);

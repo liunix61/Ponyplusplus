@@ -111,24 +111,18 @@ static ASTNode *parse_type(Parser *p) {
     Token *t = cur(p);
     if (t->type == TK_TYPE || t->type == TK_IDENT || t->type == TK_CAP) {
         advance(p);
-        ASTNode *node = ast_node_new(NODE_EMPTY, t->line, t->column);
-        /* 简单类型，数据存名字 */
-        if (node && node->data == NULL) {
-            node->data = s_strdup(t->value);
-        }
-        /* 泛型类型 List[U64] */
+        ASTNode *node = ast_node_new(NODE_IDENT, t->line, t->column);
+        if (node) node->data = s_strdup(t->value);
         if (match(p, TK_BRACKET_L)) {
             advance(p);
             ASTNode *args = ast_node_new(NODE_EMPTY, t->line, t->column);
-            if (args) args->data = s_strdup("");
+            if (args) args->data = s_strdup("typeargs");
             node->child_count = 1;
             node->children = (ASTNode **)malloc(sizeof(ASTNode *));
             if (node->children) node->children[0] = args;
             while (!match(p, TK_BRACKET_R) && p->pos < p->token_count) {
                 ASTNode *arg = parse_type(p);
-                if (arg) {
-                    ast_node_add_child(args, arg);
-                }
+                if (arg) ast_node_add_child(args, arg);
                 if (match(p, TK_COMMA)) advance(p);
             }
             if (match(p, TK_BRACKET_R)) advance(p);
@@ -138,41 +132,36 @@ static ASTNode *parse_type(Parser *p) {
     return NULL;
 }
 
-/* 解析参数列表 */
-static ASTNode *parse_params(Parser *p) {
-    ASTNode *params = ast_node_new(NODE_EMPTY, cur(p)->line, cur(p)->column);
-    if (!params) return NULL;
-
-    while (!match(p, TK_PAREN_R) && p->pos < p->token_count) {
-        /* 解析参数: [cap] name: Type [= default] */
-        parse_capability(p);
-        if (match(p, TK_IDENT)) {
-            Token *name_tok = advance(p);
-            ASTNode *param = ast_node_new(NODE_EMPTY, name_tok->line, name_tok->column);
-            if (param) {
-                param->data = s_strdup(name_tok->value);
-                ast_node_add_child(params, param);
-            }
-            if (match(p, TK_COLON)) {
-                advance(p);
-                ASTNode *type = parse_type(p);
-                if (type && param) {
-                    ast_node_add_child(param, type);
-                }
-            }
-            if (match(p, TK_EQ)) {
-                advance(p);
-                /* 默认值解析 (简化: 跳过表达式) */
-            }
-        }
-        if (match(p, TK_COMMA)) advance(p);
-    }
-    return params;
-}
-
 /* 前向声明 */
 static ASTNode *parse_statement(Parser *p);
 static ASTNode *parse_expression(Parser *p);
+
+/* 解析参数列表 */
+static ASTNode *parse_params(Parser *p) {
+Token *t = cur(p);
+ASTNode *params = ast_node_new(NODE_EMPTY, t->line, t->column);
+if (!params) return NULL;
+params->data = s_strdup("params");
+if (!match(p, TK_PAREN_L)) return params;
+advance(p);
+
+while (!match(p, TK_PAREN_R) && p->pos < p->token_count) {
+    parse_capability(p);
+    if (match(p, TK_IDENT)) {
+        Token *name_tok = cur(p);
+        advance(p);
+        ASTNode *param = ast_node_new(NODE_EMPTY, name_tok->line, name_tok->column);
+        if (param) {
+            param->data = s_strdup(name_tok->value);
+            ast_node_add_child(params, param);
+            if (match(p, TK_COLON)) { advance(p); ASTNode *type = parse_type(p); if (type) ast_node_add_child(param, type); }
+        }
+        if (match(p, TK_EQ)) { advance(p); (void)parse_expression(p); }
+    }
+    if (match(p, TK_COMMA)) advance(p);
+}
+return params;
+}
 
 /* 解析块 { ... } */
 static ASTNode *parse_block(Parser *p) {
@@ -338,32 +327,38 @@ static ASTNode *parse_expression(Parser *p) {
         return node;
     }
 
-    /* 标识符或方法调用 */
+    /* 标识符 */
     if (t->type == TK_IDENT) {
+    advance(p);
+    ASTNode *node = ast_node_new(NODE_IDENT, line, col);
+    if (node) node->data = s_strdup(t->value);
+    if (match(p, TK_PAREN_L)) {
         advance(p);
-        ASTNode *node = ast_node_new(NODE_EMPTY, line, col);
-        if (node) node->data = s_strdup(t->value);
-        /* 方法调用 */
-        if (match(p, TK_PAREN_L)) {
-            advance(p);
-            ASTNode *call = ast_node_new(NODE_CALL, line, col);
-            if (call) call->data = s_strdup(t->value);
-            if (node) {
-                ast_node_add_child(call, node);
-                /* 参数列表 */
-                ASTNode *args = ast_node_new(NODE_EMPTY, line, col);
-                if (args) args->data = s_strdup("");
-                ast_node_add_child(call, args);
-                while (!match(p, TK_PAREN_R) && p->pos < p->token_count) {
-                    ASTNode *arg = parse_expression(p);
-                    if (arg) ast_node_add_child(args, arg);
-                    if (match(p, TK_COMMA)) advance(p);
-                }
-                if (match(p, TK_PAREN_R)) advance(p);
-                return call;
-            }
+        ASTNode *call = ast_node_new(NODE_CALL, line, col);
+        if (call) call->data = s_strdup(t->value);
+        ASTNode *args = ast_node_new(NODE_EMPTY, line, col);
+        if (args) { args->data = s_strdup("args"); ast_node_add_child(call, args); }
+        while (!match(p, TK_PAREN_R) && p->pos < p->token_count) {
+            ASTNode *arg = parse_expression(p);
+            if (arg) ast_node_add_child(args, arg);
+            if (match(p, TK_COMMA)) advance(p);
         }
-        return node;
+        if (match(p, TK_PAREN_R)) advance(p);
+        return call;
+    }
+    /* 赋值表达式: ident = expr */
+    if (match(p, TK_EQ)) {
+        advance(p);
+        ASTNode *assign = ast_node_new(NODE_EMPTY, line, col);
+        if (assign) {
+            assign->data = s_strdup("assign");
+            ast_node_add_child(assign, node);
+            ASTNode *rhs = parse_expression(p);
+            if (rhs) ast_node_add_child(assign, rhs);
+        }
+        return assign;
+    }
+    return node;
     }
 
     return NULL;
