@@ -14,6 +14,7 @@
 #include "ponypp/util.h"
 #include "ponypp/typecheck.h"
 #include "ponypp/codegen.h"
+#include "ponypp/tool.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -41,10 +42,18 @@ static void print_usage(const char *prog) {
     printf("  --pretty     美化输出 (pretty print)\n");
     printf("  --version    显示版本信息\n");
     printf("  -h, --help   显示帮助\n");
+    printf("\n子命令:\n");
+    printf("  build <file>   编译 .pny 为目标产物\n");
+    printf("  run <file>     编译并运行\n");
+    printf("  test           运行所有 *_test.pny 测试\n");
+    printf("  fmt <file>     格式化 .pny 文件\n");
+    printf("  pkg new <name> 创建新项目\n");
+    printf("  pkg add <dep>  添加依赖\n");
     printf("\n示例:\n");
-    printf("  %s -O2 -o hello.wasm hello.pny\n", prog);
-    printf("  %s -g --pretty hello.pny\n", prog);
-    printf("  %s --wit-only hello.pny\n", prog);
+    printf("  %s build -O2 -o hello hello.pny\n", prog);
+    printf("  %s run hello.pny\n", prog);
+    printf("  %s test\n", prog);
+    printf("  %s pkg new myapp\n", prog);
     printf("  %s --target native -o hello hello.pny\n", prog);
 }
 
@@ -346,6 +355,17 @@ int main(int argc, char *argv[]) {
     }
 
     char *input_path = argv[optind];
+
+    /* Phase 3 toolchain: if first arg after opts is a subcommand, dispatch */
+    if (argc > optind && (strcmp(argv[optind], "build") == 0 || strcmp(argv[optind], "run") == 0 ||
+        strcmp(argv[optind], "test") == 0 || strcmp(argv[optind], "fmt") == 0 ||
+        strcmp(argv[optind], "pkg") == 0 || strcmp(argv[optind], "help") == 0 ||
+        strcmp(argv[optind], "docs") == 0)) {
+        ToolConfig tc;
+        if (tool_parse_args(argc - optind, argv + optind, &tc) == 0) {
+            return tool_execute(&tc);
+        }
+    }
 
     /* 检查文件扩展名 */
     const char *ext = strrchr(input_path, '.');
