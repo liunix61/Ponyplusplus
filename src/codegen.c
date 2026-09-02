@@ -207,6 +207,36 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
         case NODE_IDENT:
             cg_emit_field_access(cg, (const char *)n->data);
             break;
+        /* 引用能力: 类型修饰, 代码生成只输出子类型 */
+        case NODE_CAP:
+            if (n->child_count > 0) cg_expr(cg, n->children[0]);
+            else if (n->data) cg_emit_raw(cg, "%s", (const char *)n->data);
+            break;
+        /* import/use: 生成预处理 include 或注释 */
+        case NODE_IMPORT:
+            if (n->data) {
+                cg_emit_raw(cg, "// import %s\n", (const char *)n->data);
+            }
+            break;
+        /* match 表达式: 生成 switch/if-else 链 */
+        case NODE_MATCH: {
+            if (n->child_count >= 2 && n->children[0]) {
+                cg_emit_raw(cg, "int _match_expr = ");
+                cg_expr(cg, n->children[0]);
+                cg_emit_raw(cg, ";\n");
+                for (size_t i = 1; i < n->child_count; i++) {
+                    ASTNode *arm = n->children[i];
+                    if (!arm || arm->child_count < 2) continue;
+                    cg_emit_raw(cg, "if (");
+                    cg_expr(cg, arm->children[0]);
+                    cg_emit_raw(cg, " == _match_expr) {\n");
+                    cg_expr(cg, arm->children[1]);
+                    cg_emit_raw(cg, "; } else ");
+                }
+                cg_emit_raw(cg, "{ }\n");
+            }
+            break;
+        }
         case NODE_EMPTY:
             if (n->data) {
                 const char *d = (const char *)n->data;
