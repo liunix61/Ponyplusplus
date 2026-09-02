@@ -106,10 +106,19 @@ static CapabilityKind parse_capability(Parser *p) {
     return CAP_UNKNOWN;
 }
 
-/* 解析类型表达式（简化版） */
+/* 解析类型表达式（含引用能力前缀） */
 static ASTNode *parse_type(Parser *p) {
     Token *t = cur(p);
-    if (t->type == TK_TYPE || t->type == TK_IDENT || t->type == TK_CAP) {
+    /* 检查引用能力前缀: iso/trn/ref/val/box foo() */
+    if (t->type == TK_CAP) {
+        advance(p);
+        ASTNode *cap = ast_node_new(NODE_CAP, t->line, t->column);
+        if (cap) cap->data = s_strdup(t->value);
+        ASTNode *type = parse_type(p);
+        if (cap && type) ast_node_add_child(cap, type);
+        return cap;
+    }
+    if (t->type == TK_TYPE || t->type == TK_IDENT) {
         advance(p);
         ASTNode *node = ast_node_new(NODE_IDENT, t->line, t->column);
         if (node) node->data = s_strdup(t->value);
@@ -279,6 +288,36 @@ static ASTNode *parse_statement(Parser *p) {
         if (cond) ast_node_add_child(node, cond);
         ASTNode *body = parse_block(p);
         if (body) ast_node_add_child(node, body);
+        return node;
+    }
+
+    /* match 表达式 */
+    if (is_keyword_token(t, "match")) {
+        advance(p);
+        ASTNode *node = ast_node_new(NODE_MATCH, line, col);
+        if (!node) return NULL;
+        ASTNode *expr = parse_expression(p);
+        if (expr) ast_node_add_child(node, expr);
+        /* 兼容: match x => { ... } 和 match x { ... } */
+        if (match_keyword(p, "=>")) advance(p);
+        if (match(p, TK_BRACE_L)) advance(p);
+        /* match arms: pattern => body */
+        while (!match(p, TK_BRACE_R) && p->pos < p->token_count) {
+            ASTNode *arm = ast_node_new(NODE_MATCH_ARM, line, col);
+            if (arm) {
+                ASTNode *pat = parse_expression(p);
+                if (pat) ast_node_add_child(arm, pat);
+                if (match_keyword(p, "=>")) advance(p);
+                ASTNode *body = parse_expression(p);
+                if (body) ast_node_add_child(arm, body);
+                ast_node_add_child(node, arm);
+            } else {
+                if (match(p, TK_SEMI)) advance(p);
+                continue;
+            }
+            if (match(p, TK_SEMI)) advance(p);
+        }
+        if (match(p, TK_BRACE_R)) advance(p);
         return node;
     }
 
@@ -602,12 +641,28 @@ ASTNode *parser_parse_program(Parser *p) {
             ASTNode *sup = parse_supervise(p);
             if (sup) ast_node_add_child(program, sup);
         } else if (is_keyword_token(t, "import")) {
+            /* import "module" or import Module */
             advance(p);
-            if (match(p, TK_IDENT)) advance(p);
+            ASTNode *imp = ast_node_new(NODE_IMPORT, t->line, t->column);
+            if (imp && match(p, TK_IDENT)) {
+                Token *m = advance(p);
+                imp->data = s_strdup(m->value);
+                ast_node_add_child(program, imp);
+            } else if (imp) {
+                ast_node_add_child(program, imp);
+            }
             if (match(p, TK_SEMI)) advance(p);
         } else if (is_keyword_token(t, "use")) {
+            /* use Module or use "path/to/module" */
             advance(p);
-            if (match(p, TK_IDENT)) advance(p);
+            ASTNode *imp = ast_node_new(NODE_IMPORT, t->line, t->column);
+            if (imp && match(p, TK_IDENT)) {
+                Token *m = advance(p);
+                imp->data = s_strdup(m->value);
+                ast_node_add_child(program, imp);
+            } else if (imp) {
+                ast_node_add_child(program, imp);
+            }
             if (match(p, TK_SEMI)) advance(p);
         } else {
             /* 跳过未知内容 */

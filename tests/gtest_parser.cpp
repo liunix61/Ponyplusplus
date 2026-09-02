@@ -2,6 +2,18 @@
 #include "gtest_helpers.h"
 #include "ponypp/lexer.h"
 #include "ponypp/parser.h"
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+static bool ast_has_node(const ASTNode* node, int target_type) {
+    if (!node) return false;
+    if (node->type == target_type) return true;
+    for (size_t i = 0; node->child_count > 0 && i < node->child_count; i++) {
+        if (ast_has_node(node->children[i], target_type)) return true;
+    }
+    return false;
+}
 
 TEST(Parser, EmptyProgram) {
     ASTNode* ast = parse_to_ast("");
@@ -88,6 +100,69 @@ TEST(Parser, NestedBlock) {
         "  }\n"
         "}";
     ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    ast_node_free(ast);
+}
+
+/* import statement creates NODE_IMPORT */
+TEST(Parser, ImportStatement) {
+    ASTNode* ast = parse_to_ast("import std.io\n");
+    ASSERT_NE(ast, nullptr);
+    ASSERT_TRUE(ast_has_node(ast, NODE_IMPORT));
+    ast_node_free(ast);
+}
+
+TEST(Parser, UseStatement) {
+    ASTNode* ast = parse_to_ast("use net/http;\n");
+    ASSERT_NE(ast, nullptr);
+    ASSERT_TRUE(ast_has_node(ast, NODE_IMPORT));
+    ast_node_free(ast);
+}
+
+/* CAP prefix on type: ref Foo */
+TEST(Parser, CapRefType) {
+    ASTNode* ast = parse_to_ast(
+        "actor A {\n"
+        "  var x: ref B\n"
+        "  new create() => {}\n"
+        "}\n");
+    ASSERT_NE(ast, nullptr);
+    ASSERT_TRUE(ast_has_node(ast, NODE_CAP));
+    ast_node_free(ast);
+}
+
+TEST(Parser, CapIsoValBox) {
+    for (const char* cap : {"iso", "trn", "val", "box"}) {
+        char src[128];
+        snprintf(src, sizeof(src),
+            "actor A {\n var x: %s B\n new create() => {}\n}\n", cap);
+        ASTNode* ast = parse_to_ast(src);
+        ASSERT_NE(ast, nullptr) << "failed for cap=" << cap;
+        ASSERT_TRUE(ast_has_node(ast, NODE_CAP));
+        ast_node_free(ast);
+    }
+}
+
+/* match expression: match x { 1 => a, _ => b } */
+TEST(Parser, MatchExpression) {
+    ASTNode* ast = parse_to_ast(
+        "actor A {\n"
+        "  new create() => {\n"
+        "    match x { 1 => a; _ => b }\n"
+        "  }\n"
+        "}");
+    ASSERT_NE(ast, nullptr);
+    ASSERT_TRUE(ast_has_node(ast, NODE_MATCH));
+    ast_node_free(ast);
+}
+
+TEST(Parser, MatchMultipleArms) {
+    ASTNode* ast = parse_to_ast(
+        "actor A {\n"
+        "  new create() => {\n"
+        "    match v { 0 => x; 1 => y; _ => z }\n"
+        "  }\n"
+        "}");
     ASSERT_NE(ast, nullptr);
     ast_node_free(ast);
 }

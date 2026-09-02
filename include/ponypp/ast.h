@@ -19,11 +19,14 @@ typedef enum {
     NODE_NEW,           /* Constructor */
     NODE_VAR,           /* 可变字段 */
     NODE_LET,           /* 不可变字段 */
+    NODE_CAP,           /* 引用能力 iso/trn/ref/val/box */
+    NODE_IMPORT,        /* import/use 模块导入 */
+    NODE_MATCH,         /* 模式匹配 */
+    NODE_MATCH_ARM,     /* match 分支 */
     NODE_IF,            /* if 语句 */
     NODE_ELSE,          /* else 分支 */
     NODE_WHILE,         /* while 循环 */
     NODE_FOR,           /* for 循环 */
-    NODE_MATCH,         /* 模式匹配 */
     NODE_RETURN,        /* return 语句 */
     NODE_PRINT,         /* 打印语句 */
     NODE_ASSERT,        /* 断言 */
