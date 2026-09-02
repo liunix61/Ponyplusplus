@@ -361,6 +361,31 @@ static ASTNode *parse_expression(Parser *p) {
         }
         ASTNode *node = ast_node_new(NODE_IDENT, line, col);
         if (node) node->data = s_strdup(t->value);
+
+        /* 检查 ! (异步发送) 和 @ (同步调用) 后缀操作 */
+        if (match(p, TK_BANG)) {
+            advance(p);
+            ASTNode *msg = ast_node_new(NODE_SEND, line, col);
+            if (msg) {
+                msg->data = s_strdup("send");
+                if (node) ast_node_add_child(msg, node);
+                ASTNode *payload = parse_expression(p);
+                if (payload) ast_node_add_child(msg, payload);
+            }
+            return msg;
+        }
+        if (match(p, TK_AT)) {
+            advance(p);
+            ASTNode *sync = ast_node_new(NODE_MSG_CALL, line, col);
+            if (sync) {
+                sync->data = s_strdup("call");
+                if (node) ast_node_add_child(sync, node);
+                ASTNode *payload = parse_expression(p);
+                if (payload) ast_node_add_child(sync, payload);
+            }
+            return sync;
+        }
+
         return node;
     }
 

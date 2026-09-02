@@ -178,6 +178,32 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
             cg_emit_raw(cg, ")");
             break;
         }
+        case NODE_SEND: {
+            /* receiver ! payload -> pny_actor_send(receiver_self, "method", payload) */
+            if (n->child_count >= 1 && n->children[0]->type == NODE_IDENT) {
+                const char *recv = n->children[0]->data;
+                const char *recv_name = recv ? (const char*)recv : "?";
+                cg_emit_raw(cg, "pny_actor_send(&%s_self, \"%s\", ", recv_name,
+                            n->data && strcmp((const char*)n->data, "send") == 0 ? "handle" : (const char*)n->data);
+                if (n->child_count >= 2) cg_expr(cg, n->children[1]);
+                else cg_emit_raw(cg, "NULL");
+                cg_emit_raw(cg, ")");
+            }
+            break;
+        }
+        case NODE_MSG_CALL: {
+            /* receiver @ payload -> pny_actor_send_sync(receiver_self, "method", payload) */
+            if (n->child_count >= 1 && n->children[0]->type == NODE_IDENT) {
+                const char *recv = n->children[0]->data;
+                const char *recv_name = recv ? (const char*)recv : "?";
+                cg_emit_raw(cg, "pny_actor_send_sync(&%s_self, \"%s\", ", recv_name,
+                            n->data && strcmp((const char*)n->data, "call") == 0 ? "handle" : (const char*)n->data);
+                if (n->child_count >= 2) cg_expr(cg, n->children[1]);
+                else cg_emit_raw(cg, "NULL");
+                cg_emit_raw(cg, ")");
+            }
+            break;
+        }
         case NODE_IDENT:
             cg_emit_field_access(cg, (const char *)n->data);
             break;
