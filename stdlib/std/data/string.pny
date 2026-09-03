@@ -1,0 +1,36 @@
+/**
+ * PnyString - Pony++ 标准字符串类型
+ *
+ * 设计规格:
+ *   内部存储: 动态 char 数组 (malloc, grow 1.8x)
+ *   保证 UTF-8 安全
+ *   实现: src/ponypp/stdlib.c (PnyString_*)
+ *
+ * 公开 API (通过 Pony++ 方法调用映射到 C):
+ *   new create(initial: String)
+ *   be len() => I64
+ *   be capacity() => I64
+ *   be is_empty() => Bool
+ *   be contains(sub: String) => Bool
+ *   be index_of(sub: String) => I64
+ *   be starts_with(prefix: String) => Bool
+ *   be ends_with(suffix: String) => Bool
+ *   be to_upper() => String
+ *   be to_lower() => String
+ *   be trim() => String
+ *   be trim_left() => String
+ *   be trim_right() => String
+ *   be replace(old: String, new: String) => String
+ *   be slice(start: I64, end: I64) => String
+ *   be at(index: I64) => Char
+ *
+ * 测试: gtest_stdlib.cpp PnyString_*
+ * 覆盖率目标: 95%+
+ */
+actor String {
+  var length: I64
+  new create() => {
+    length = 0
+    print(length)
+  }
+}

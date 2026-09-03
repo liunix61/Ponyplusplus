@@ -1,0 +1,31 @@
+/**
+ * PnyList - Pony++ 动态数组（双链表）
+ *
+ * 设计规格:
+ *   内部存储: 双链表节点 (prev/next)
+ *   实现: src/ponypp/stdlib.c (PnyList_*)
+ *
+ * API:
+ *   new create()
+ *   new create(size: I64)
+ *   be append(item: Any)
+ *   be insert(index: I64, item: Any)
+ *   be remove(index: I64) => Any
+ *   be pop() => Any
+ *   be pop(index: I64) => Any
+ *   be len() => I64
+ *   be is_empty() => Bool
+ *   be contains(item: Any) => Bool
+ *   be index_of(item: Any) => I64
+ *   be slice(start: I64, end: I64) => List
+ *   be reverse()
+ *   be sort()
+ *   be at(index: I64) => Any
+ */
+actor List {
+  var length: I64
+  new create() => {
+    length = 0
+    print(length)
+  }
+}

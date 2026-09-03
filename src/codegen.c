@@ -80,9 +80,15 @@ static void cg_emit_field_access(Codegen *cg, const char *name) {
     }
 }
 
-static const char *cg_type_of(ASTNode *t) {
+static const char *cg_type_of(ASTNode *t, const char **actor_types, size_t atc) {
     if (!t || !t->data) return "int";
     const char *n = (const char *)t->data;
+    /* Actor 类型 → _t 后缀 */
+    for (size_t i = 0; i < atc; i++) {
+        if (actor_types && actor_types[i] && strcmp(actor_types[i], n) == 0) {
+            return actor_types[i]; /* caller handles _t suffix */
+        }
+    }
     if (strcmp(n, "U8") == 0) return "unsigned char";
     if (strcmp(n, "U16") == 0) return "unsigned short";
     if (strcmp(n, "U32") == 0) return "unsigned int";
@@ -115,7 +121,8 @@ static char *cg_cstr_escape(const char *s, char *buf, size_t sz) {
 
 static void cg_expr(Codegen *cg, ASTNode *n);
 static void cg_stmt(Codegen *cg, ASTNode *n);
-static void cg_actor(Codegen *cg, ASTNode *actor);
+static void cg_actor(Codegen *cg, ASTNode *actor,
+                        const char **actor_types, size_t atc);
 
 static void cg_expr(Codegen *cg, ASTNode *n) {
     if (!n) return;
@@ -304,7 +311,8 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
     }
 }
 
-static void cg_actor(Codegen *cg, ASTNode *actor) {
+static void cg_actor(Codegen *cg, ASTNode *actor,
+                         const char **actor_types, size_t atc) {
     const char *name = (const char *)actor->data;
     if (!name) return;
 
@@ -332,7 +340,20 @@ static void cg_actor(Codegen *cg, ASTNode *actor) {
         ASTNode *ch = actor->children[i];
         if (ch && ch->type == NODE_VAR) {
             const char *fn = (const char *)ch->data;
-            const char *ft = (ch->child_count > 0 && ch->children[0]) ? cg_type_of(ch->children[0]) : "int";
+            const char *ft = NULL;
+            if (ch->child_count > 0 && ch->children[0]) {
+                ft = cg_type_of(ch->children[0], actor_types, atc);
+                /* 检测是否为 Actor 类型名（需在末尾加 _t） */
+                int is_actor = 0;
+                for (size_t ai = 0; ai < atc; ai++) {
+                    if (actor_types[ai] && strcmp(actor_types[ai], ft) == 0) { is_actor = 1; break; }
+                }
+                if (is_actor) {
+                    static char buf[64];
+                    snprintf(buf, sizeof(buf), "%s_t", ft);
+                    ft = buf;
+                }
+            } else ft = "int";
             cg_emit(cg, "%s %s;", ft, fn ? fn : "f");
         }
     }
@@ -350,7 +371,7 @@ static void cg_actor(Codegen *cg, ASTNode *actor) {
                 for (size_t j = 0; j < ch->children[0]->child_count; j++) {
                     ASTNode *p = ch->children[0]->children[j];
                     if (j) cg_emit_raw(cg, ", ");
-                    const char *pt = (p->child_count > 0 && p->children[0]) ? cg_type_of(p->children[0]) : "int";
+                    const char *pt = (p->child_count > 0 && p->children[0]) ? cg_type_of(p->children[0], actor_types, atc) : "int";
                     const char *pn = (const char *)p->data;
                     cg_emit_raw(cg, "%s %s", pt, pn ? pn : "a");
                 }
@@ -384,7 +405,7 @@ static void cg_actor(Codegen *cg, ASTNode *actor) {
                 for (size_t j = 0; j < params->child_count; j++) {
                     ASTNode *p = params->children[j];
                     if (j) cg_emit_raw(cg, ", ");
-                    const char *pt = (p->child_count > 0 && p->children[0]) ? cg_type_of(p->children[0]) : "int";
+                    const char *pt = (p->child_count > 0 && p->children[0]) ? cg_type_of(p->children[0], actor_types, atc) : "int";
                     const char *pn = (const char *)p->data;
                     cg_emit_raw(cg, "%s %s", pt, pn ? pn : "a");
                 }
@@ -433,7 +454,7 @@ static void cg_emit_runtime(Codegen *cg) {
         "static PnyMessage *pny_msg_new(const char *m, void *arg) {\n"
         "    PnyMessage *msg = (PnyMessage *)malloc(sizeof(PnyMessage));\n"
         "    if (!msg) return NULL;\n"
-        "    msg->method = m ? strdup(m) : NULL;\n"
+        "    if (m) { msg->method = (char *)malloc(strlen(m) + 1); strcpy(msg->method, m); }\n        else msg->method = NULL;\n"
         "    msg->arg = arg;\n"
         "    msg->next = NULL;\n"
         "    return msg;\n}\n\n"
@@ -473,9 +494,26 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
     cg_emit_raw(cg, "#include <stdint.h>\n\n");
     cg_emit_runtime(cg);
 
+    /* 收集所有 Actor 类型名（用于字段类型推断） */
+    const char **actor_type_names = NULL;
+    size_t atn_count = 0;
     for (size_t i = 0; ast && i < ast->child_count; i++) {
-        if (ast->children[i] && ast->children[i]->type == NODE_ACTOR) cg_actor(cg, ast->children[i]);
+        if (ast->children[i] && ast->children[i]->type == NODE_ACTOR) {
+            const char *nm = (const char *)ast->children[i]->data;
+            if (nm) {
+                atn_count++;
+                actor_type_names = (const char **)realloc(actor_type_names, atn_count * sizeof(char *));
+                actor_type_names[atn_count - 1] = nm;
+            }
+        }
     }
+
+    for (size_t i = 0; ast && i < ast->child_count; i++) {
+        if (ast->children[i] && ast->children[i]->type == NODE_ACTOR) {
+            cg_actor(cg, ast->children[i], actor_type_names, atn_count);
+        }
+    }
+    free(actor_type_names);
 
     /* 生成监督树注册代码 */
     for (size_t i = 0; ast && i < ast->child_count; i++) {
