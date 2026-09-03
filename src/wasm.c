@@ -350,7 +350,6 @@ int wasm_write_program(ASTNode *ast, const char *output) {
         bv_write_u8(&body, 0x7F); bv_write_u8(&body, 0x7F);
         bv_write_u8(&body, 0x01);
         bv_write_u8(&body, 0x7F);
-        bv_write_u32_leb128(&bv, (uint32_t)body.size);
         bv_write_vec(&bv, &body);
         bv_free(&body);
     }
@@ -359,20 +358,15 @@ int wasm_write_program(ASTNode *ast, const char *output) {
     bv_write_u8(&bv, 0x02);
     {
         ByteVec body = {0};
-        /* import 0: wasi_snapshot_preview1.fd_write */
-        bv_write_u8(&body, 0x01);
+        bv_write_u8(&body, 0x02); /* 2 imports */
         bv_write_str(&body, "wasi_snapshot_preview1");
         bv_write_str(&body, "fd_write");
         bv_write_u8(&body, 0x00); /* func */
         bv_write_u8(&body, 0x01); /* type idx 1 */
-
-        /* import 1: wasi_snapshot_preview1.proc_exit */
-        bv_write_u8(&body, 0x01);
         bv_write_str(&body, "wasi_snapshot_preview1");
         bv_write_str(&body, "proc_exit");
         bv_write_u8(&body, 0x00);
-        bv_write_u8(&body, 0x02); /* print_i32 辅助函数 (自定义) */
-        bv_write_u32_leb128(&bv, (uint32_t)body.size);
+        bv_write_u8(&body, 0x02);
         bv_write_vec(&bv, &body);
         bv_free(&body);
     }
@@ -384,7 +378,6 @@ int wasm_write_program(ASTNode *ast, const char *output) {
         bv_write_u8(&body, 0x02); /* main + print_i32 */
         bv_write_u8(&body, 0x00); /* main -> type 0 */
         bv_write_u8(&body, 0x00); /* print_i32 -> type 0 */
-        bv_write_u32_leb128(&bv, (uint32_t)body.size);
         bv_write_vec(&bv, &body);
         bv_free(&body);
     }
@@ -411,7 +404,6 @@ int wasm_write_program(ASTNode *ast, const char *output) {
         bv_write_str(&body, "main");
         bv_write_u8(&body, 0x00);
         bv_write_u8(&body, 0x01);
-        bv_write_u32_leb128(&bv, (uint32_t)body.size);
         bv_write_vec(&bv, &body);
         bv_free(&body);
     }
@@ -426,7 +418,6 @@ int wasm_write_program(ASTNode *ast, const char *output) {
         bv_write_i32_leb128(&body, 8);
         bv_write_u8(&body, 0x0B);
         bv_write_str(&body, "\00\00");
-        bv_write_u32_leb128(&bv, (uint32_t)body.size);
         bv_write_vec(&bv, &body);
         bv_free(&body);
     }
@@ -443,31 +434,30 @@ int wasm_write_program(ASTNode *ast, const char *output) {
         {
             ByteVec code = {0};
             /* main() { print("Hello"); return 0; } */
-            /* Call fd_write with "Hello\n" string */
             bv_write_u8(&code, WASM_OPCODE_I32_CONST);
-            bv_write_i32_leb128(&code, 1);           /* fd = 1 */
+            bv_write_i32_leb128(&code, 1);
             bv_write_u8(&code, WASM_OPCODE_I32_CONST);
-            bv_write_i32_leb128(&code, 16);          /* iovs = mem[16] */
+            bv_write_i32_leb128(&code, 16);
             bv_write_u8(&code, WASM_OPCODE_I32_CONST);
-            bv_write_i32_leb128(&code, 1);           /* iovs count */
+            bv_write_i32_leb128(&code, 1);
             bv_write_u8(&code, WASM_OPCODE_I32_CONST);
-            bv_write_i32_leb128(&code, 24);          /* rets = mem[24] */
+            bv_write_i32_leb128(&code, 24);
             bv_write_u8(&code, WASM_OPCODE_CALL);
-            bv_write_u32_leb128(&code, 0);           /* $fd_write */
-            bv_write_u8(&code, WASM_OPCODE_DROP);    /* drop fd_write result */
+            bv_write_u32_leb128(&code, 0);
+            bv_write_u8(&code, WASM_OPCODE_DROP);
 
-            /* Parse AST if available and emit Actor main func */
             if (ast) {
                 for (size_t i = 0; i < ast->child_count; i++) {
                     ASTNode *ch = ast->children[i];
                     if (!ch || ch->type != NODE_ACTOR) continue;
-                    /* Find create method */
                     for (size_t j = 0; j < ch->child_count; j++) {
                         ASTNode *m = ch->children[j];
                         if (!m || m->type != NODE_NEW) continue;
                         for (size_t k = 0; k < m->child_count; k++) {
                             if (m->children[k]) {
-                                emit_stmt(&wg, m->children[k]);
+                                WasmGen stmt_wg = wg;
+                                stmt_wg.out = code;
+                                emit_stmt(&stmt_wg, m->children[k]);
                             }
                         }
                     }
@@ -493,7 +483,6 @@ int wasm_write_program(ASTNode *ast, const char *output) {
             bv_free(&code);
         }
 
-        bv_write_u32_leb128(&bv, (uint32_t)body.size);
         bv_write_vec(&bv, &body);
         bv_free(&body);
     }
