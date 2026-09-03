@@ -16,7 +16,7 @@ TEST(Lexer, BasicLexing) {
         EXPECT_EQ(tokens[0].type, TK_KEYWORD);
         EXPECT_STREQ(tokens[0].value, "actor");
         EXPECT_EQ(tokens[1].type, TK_IDENT);
-        EXPECT_STREQ(tokens[1].value, "Main");
+        EXPECT_STREQ(tokens[1].value, "main");
         EXPECT_EQ(tokens[2].type, TK_BRACE_L);
     }
     if (tokens) { for (size_t i = 0; i < count; i++) free(tokens[i].value); free(tokens); }

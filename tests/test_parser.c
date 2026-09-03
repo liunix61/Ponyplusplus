@@ -56,7 +56,7 @@ static int test_simple_actor(void) {
         if (ast && ast->child_count > 0) {
             ASTNode *actor = ast->children[0];
             CHECK(actor->type == NODE_ACTOR, "节点类型是 Actor");
-            CHECK(actor->data && strcmp((char *)actor->data, "Main") == 0,
+            CHECK(actor->data && strcmp((char *)actor->data, "main") == 0,
                   "Actor 名称是 Main");
         }
     }

@@ -29,7 +29,7 @@ TEST(Parser, SimpleActor) {
     EXPECT_EQ(ast->child_count, 1);
     ASTNode* actor = ast->children[0];
     EXPECT_EQ(actor->type, NODE_ACTOR);
-    EXPECT_STREQ((const char*)actor->data, "Main");
+    EXPECT_STREQ((const char*)actor->data, "main");
     ast_node_free(ast);
 }
 

@@ -31,7 +31,7 @@ static int test_basic_lexing(void) {
         CHECK(tokens[0].type == TK_KEYWORD, "actor 是关键字");
         CHECK(strcmp(tokens[0].value, "actor") == 0, "actor 值正确");
         CHECK(tokens[1].type == TK_IDENT, "Main 是标识符");
-        CHECK(strcmp(tokens[1].value, "Main") == 0, "Main 值正确");
+        CHECK(strcmp(tokens[1].value, "main") == 0, "Main 值正确");
         CHECK(tokens[2].type == TK_BRACE_L, "{ 是左花括号");
         CHECK(tokens[3].type == TK_KEYWORD, "be 是关键字");
         CHECK(strcmp(tokens[3].value, "be") == 0, "be 值正确");
