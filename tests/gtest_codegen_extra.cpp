@@ -152,7 +152,7 @@ TEST(CodegenExtra, PrintEmpty) {
 }
 
 TEST(CodegenExtra, WasmOutput) {
-    ASTNode *ast = parse_to_ast("actor Main { new create() => {} }\n");
+    ASTNode *ast = parse_to_ast("actor main { new create() => {} }\n");
     assert(ast != nullptr);
     const char *path = "/tmp/ponypp_wasm_cov.wasm";
     remove(path);

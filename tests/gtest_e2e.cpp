@@ -27,7 +27,7 @@ TEST(E2E, CompileToWasm) {
     const char* src_path = "/tmp/ponypp_e2e.pny";
     FILE* f = fopen(src_path, "w");
     ASSERT_NE(f, nullptr);
-    fprintf(f, "actor Main {\n  new create() => { print(\"Hello\") }\n}\n");
+    fprintf(f, "actor main {\n  new create() => { print(\"Hello\") }\n}\n");
     fclose(f);
 
     char cmd[2048];
@@ -78,7 +78,7 @@ TEST(E2E, NativeBackend) {
     const char* src_path = "/tmp/ponypp_native.pny";
     FILE* f = fopen(src_path, "w");
     ASSERT_NE(f, nullptr);
-    fprintf(f, "actor Main {\n  new create() => {}\n}\n");
+    fprintf(f, "actor main {\n  new create() => {}\n}\n");
     fclose(f);
 
     char cmd[2048];
@@ -120,7 +120,7 @@ TEST(E2E, ActorMessageNative) {
         "  new create(n: String) => { name = n }\n"
         "  be run(msg: String) => { print(msg) }\n"
         "}\n"
-        "actor Main {\n"
+        "actor main {\n"
         "  var w: Worker\n"
         "  new create() => {}\n"
         "  be run() => {\n"
@@ -147,7 +147,7 @@ TEST(E2E, TypecheckActorTypes) {
     ASSERT_NE(f, nullptr);
     fprintf(f,
         "actor A { new create() => {} }\n"
-        "actor Main {\n"
+        "actor main {\n"
         "  var a: A\n"
         "  new create() => { a = A() }\n"
         "}\n");
@@ -181,7 +181,7 @@ TEST(E2E, NativePrint) {
     FILE* f = fopen(src_path, "w");
     ASSERT_NE(f, nullptr);
     fprintf(f,
-        "actor Main {\n"
+        "actor main {\n"
         "  new create() => {}\n"
         "  be run() => { print(\"hello world\") }\n"
         "}\n");
@@ -204,7 +204,7 @@ TEST(E2E, MatchExpression) {
     FILE* f = fopen(src_path, "w");
     ASSERT_NE(f, nullptr);
     fprintf(f,
-        "actor Main {\n"
+        "actor main {\n"
         "  new create() => {}\n"
         "  be run() => {\n"
         "    var x: I32 = 1\n"

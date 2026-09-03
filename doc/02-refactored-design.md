@@ -279,7 +279,7 @@ Actor 寻址模型：
 // 同组件内: 直接 Actor 引用 (tag)
 // 跨组件: 远程引用 (含序列化数据)
 
-actor Main() {
+actor main() {
   new create() =>
     // 同组件：直接引用
     let counter: Counter = new Counter(0)
@@ -819,7 +819,7 @@ actor JSON() {
 }
 
 // 示例
-actor Main() {
+actor main() {
   new create() =>
     let data = {
       name: "Pony++",

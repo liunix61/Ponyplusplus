@@ -5,7 +5,7 @@
 #include "ponypp/wasm.h"
 
 TEST(Wasm, GeneratesFile) {
-    const char* src = "actor Main { be hello() => {} }";
+    const char* src = "actor main { be hello() => {} }";
     ASTNode* ast = parse_to_ast(src);
     ASSERT_NE(ast, nullptr);
     EXPECT_EQ(wasm_write_program(ast, "/tmp/ponypp_test.wasm"), 0);

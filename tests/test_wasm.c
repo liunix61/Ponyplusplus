@@ -31,7 +31,7 @@ static ASTNode *parse_to_ast(const char *src) {
 
 static int test_wasm_generates_file(void) {
     printf("test_wasm_generates_file\n");
-    const char *src = "actor Main { be hello() => {} }";
+    const char *src = "actor main { be hello() => {} }";
     ASTNode *ast = parse_to_ast(src);
     CHECK(ast != NULL, "解析成功");
     if (ast) {

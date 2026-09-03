@@ -48,7 +48,7 @@ static int test_empty_program(void) {
 
 static int test_simple_actor(void) {
     printf("test_simple_actor\n");
-    Parser *p = parse_source("actor Main { }");
+    Parser *p = parse_source("actor main { }");
     CHECK(p != NULL, "创建 Parser");
     if (p) {
         ASTNode *ast = parser_parse_program(p);

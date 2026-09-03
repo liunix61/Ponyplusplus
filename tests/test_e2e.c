@@ -23,7 +23,7 @@ static int compile_to_wasm(void) {
     FILE *f = fopen(src_path, "w");
     CHECK(f != NULL, "写源文件");
     if (f) {
-        fputs("actor Main {\n  new create() => { print(\"Hello\") }\n}\n", f);
+        fputs("actor main {\n  new create() => { print(\"Hello\") }\n}\n", f);
         fclose(f);
     }
 

@@ -24,7 +24,7 @@ TEST(Parser, EmptyProgram) {
 }
 
 TEST(Parser, SimpleActor) {
-    ASTNode* ast = parse_to_ast("actor Main { }");
+    ASTNode* ast = parse_to_ast("actor main { }");
     ASSERT_NE(ast, nullptr);
     EXPECT_EQ(ast->child_count, 1);
     ASTNode* actor = ast->children[0];
@@ -93,7 +93,7 @@ TEST(Parser, ErrorHandling) {
 
 TEST(Parser, NestedBlock) {
     const char* src =
-        "actor Main {\n"
+        "actor main {\n"
         "  be run() => {\n"
         "    if (1) {}\n"
         "    while (1) {}\n"

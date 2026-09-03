@@ -40,7 +40,7 @@ static int test_empty_program(void) {
 
 static int test_valid_actor(void) {
     printf("test_valid_actor\n");
-    const char *src = "actor Main {\n  var count: U64 = 0\n  be run() => {}\n}";
+    const char *src = "actor main {\n  var count: U64 = 0\n  be run() => {}\n}";
     ASTNode *ast = parse_to_ast(src);
     CHECK(ast != NULL, "解析成功");
     if (ast) {

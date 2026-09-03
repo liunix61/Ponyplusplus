@@ -40,7 +40,7 @@ ctest --output-on-failure
 ## Examples
 
 ```pony
-actor Main {
+actor main {
   var count: U64 = 0
   new create() => {}
   be run() => {

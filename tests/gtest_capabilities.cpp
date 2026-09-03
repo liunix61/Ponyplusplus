@@ -12,7 +12,7 @@ TEST(Capabilities, EmptyProgram) {
 
 TEST(Capabilities, ValidActor) {
     const char* src =
-        "actor Main {\n"
+        "actor main {\n"
         "  var count: U64 = 0\n"
         "  be run() => {}\n"
         "}";

@@ -4,7 +4,7 @@
 #include "ponypp/codegen.h"
 
 TEST(Codegen, GeneratesC) {
-    const char* src = "actor Main { be run() => { print(\"hi\") } }";
+    const char* src = "actor main { be run() => { print(\"hi\") } }";
     ASTNode* ast = parse_to_ast(src);
     ASSERT_NE(ast, nullptr);
     FILE* f = fopen("/tmp/ponypp_gen.c", "w");

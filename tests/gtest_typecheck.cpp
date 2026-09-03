@@ -13,7 +13,7 @@ TEST(TypeCheck, EmptyProgram) {
 
 TEST(TypeCheck, ValidActor) {
     const char* src =
-        "actor Main {\n"
+        "actor main {\n"
         "  var count: U64 = 0\n"
         "  be run() => {}\n"
         "}";
@@ -42,7 +42,7 @@ TEST(TypeCheck, MultipleActors) {
 
 TEST(TypeCheck, PrintCall) {
     const char* src =
-        "actor Main {\n"
+        "actor main {\n"
         "  be run() => { print(\"hi\") }\n"
         "}";
     ASTNode* ast = parse_to_ast(src);

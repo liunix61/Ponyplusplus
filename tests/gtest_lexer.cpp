@@ -4,7 +4,7 @@
 #include "ponypp/util.h"
 
 TEST(Lexer, BasicLexing) {
-    const char* src = "actor Main { be hello() => {} }";
+    const char* src = "actor main { be hello() => {} }";
     Lexer* lex = lexer_new("test.pny", src, std::strlen(src));
     ASSERT_NE(lex, nullptr);
 
@@ -87,7 +87,7 @@ TEST(Lexer, Operators) {
 }
 
 TEST(Lexer, Comments) {
-    const char* src = "// 注释\nactor Main {}";
+    const char* src = "// 注释\nactor main {}";
     Lexer* lex = lexer_new("test.pny", src, std::strlen(src));
     Token* tokens = nullptr;
     size_t count = 0;

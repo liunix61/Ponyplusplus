@@ -18,7 +18,7 @@ static int tests_failed = 0;
 
 static int test_basic_lexing(void) {
     printf("test_basic_lexing\n");
-    const char *src = "actor Main { be hello() => {} }";
+    const char *src = "actor main { be hello() => {} }";
     Lexer *lex = lexer_new("test.pny", src, strlen(src));
     CHECK(lex != NULL, "创建 Lexer");
 
@@ -149,7 +149,7 @@ static int test_operators(void) {
 
 static int test_comments(void) {
     printf("test_comments\n");
-    const char *src = "// 注释\nactor Main {}";
+    const char *src = "// 注释\nactor main {}";
     Lexer *lex = lexer_new("test.pny", src, strlen(src));
 
     Token *tokens = NULL;

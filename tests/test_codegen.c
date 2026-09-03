@@ -31,7 +31,7 @@ static ASTNode *parse_to_ast(const char *src) {
 
 static int test_codegen_generates_c(void) {
     printf("test_codegen_generates_c\n");
-    const char *src = "actor Main { be run() => { print(\"hi\") } }";
+    const char *src = "actor main { be run() => { print(\"hi\") } }";
     ASTNode *ast = parse_to_ast(src);
     CHECK(ast != NULL, "解析成功");
     if (ast) {
