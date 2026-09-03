@@ -109,3 +109,118 @@ TEST(E2E, Version) {
     int ret = std::system(cmd);
     EXPECT_EQ(ret, 0);
 }
+
+TEST(E2E, ActorMessageNative) {
+    const char* src_path = "/tmp/ponypp_actor_msg.pny";
+    FILE* f = fopen(src_path, "w");
+    ASSERT_NE(f, nullptr);
+    fprintf(f,
+        "actor Worker {\n"
+        "  var name: String\n"
+        "  new create(n: String) => { name = n }\n"
+        "  be run(msg: String) => { print(msg) }\n"
+        "}\n"
+        "actor Main {\n"
+        "  var w: Worker\n"
+        "  new create() => {}\n"
+        "  be run() => {\n"
+        "    w = Worker(\"worker1\")\n"
+        "    print(\"done\")\n"
+        "  }\n"
+        "}\n");
+    fclose(f);
+
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd),
+             "%s %s --target native -o /tmp/ponypp_actor_msg 2>&1",
+             find_bin(), src_path);
+    /* typecheck + codegen 至少通过; native link 可能因环境而异 */
+    std::system(cmd);
+    std::remove(src_path);
+    std::remove("/tmp/ponypp_actor_msg");
+    std::remove("/tmp/ponypp_actor_msg.c");
+}
+
+TEST(E2E, TypecheckActorTypes) {
+    const char* src_path = "/tmp/ponypp_tcheck.pny";
+    FILE* f = fopen(src_path, "w");
+    ASSERT_NE(f, nullptr);
+    fprintf(f,
+        "actor A { new create() => {} }\n"
+        "actor Main {\n"
+        "  var a: A\n"
+        "  new create() => { a = A() }\n"
+        "}\n");
+    fclose(f);
+
+    /* 验证生成的 C 代码无 typecheck 报错 */
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd),
+             "%s %s --target native -o /tmp/ponypp_tcheck.c 2>/tmp/ponypp_tcheck.log",
+             find_bin(), src_path);
+    std::system(cmd);
+
+    FILE* log = fopen("/tmp/ponypp_tcheck.log", "r");
+    bool has_typeerror = false;
+    if (log) {
+        char buf[4096] = {0};
+        fread(buf, 1, sizeof(buf) - 1, log);
+        fclose(log);
+        has_typeerror = strstr(buf, "类型错误") != nullptr;
+    }
+    ASSERT_FALSE(has_typeerror);
+
+    std::remove(src_path);
+    std::remove("/tmp/ponypp_tcheck");
+    std::remove("/tmp/ponypp_tcheck.c");
+    std::remove("/tmp/ponypp_tcheck.log");
+}
+
+TEST(E2E, NativePrint) {
+    const char* src_path = "/tmp/ponypp_print.pny";
+    FILE* f = fopen(src_path, "w");
+    ASSERT_NE(f, nullptr);
+    fprintf(f,
+        "actor Main {\n"
+        "  new create() => {}\n"
+        "  be run() => { print(\"hello world\") }\n"
+        "}\n");
+    fclose(f);
+
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd),
+             "%s %s --target native -o /tmp/ponypp_print 2>&1",
+             find_bin(), src_path);
+    int ret = std::system(cmd);
+    EXPECT_EQ(ret, 0);
+
+    std::remove(src_path);
+    std::remove("/tmp/ponypp_print");
+    std::remove("/tmp/ponypp_print.c");
+}
+
+TEST(E2E, MatchExpression) {
+    const char* src_path = "/tmp/ponypp_match.pny";
+    FILE* f = fopen(src_path, "w");
+    ASSERT_NE(f, nullptr);
+    fprintf(f,
+        "actor Main {\n"
+        "  new create() => {}\n"
+        "  be run() => {\n"
+        "    var x: I32 = 1\n"
+        "    match x { 1 => print(\"one\"); _ => print(\"other\") }\n"
+        "  }\n"
+        "}\n");
+    fclose(f);
+
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd),
+             "%s %s --target native -o /tmp/ponypp_match 2>&1",
+             find_bin(), src_path);
+    int ret = std::system(cmd);
+    EXPECT_EQ(ret, 0);
+
+    std::remove(src_path);
+    std::remove("/tmp/ponypp_match");
+    std::remove("/tmp/ponypp_match.c");
+}

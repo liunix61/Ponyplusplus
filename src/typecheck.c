@@ -75,7 +75,8 @@ static void tc_collect_fields(ASTNode *actor, const char ***fields_out, size_t *
 }
 
 /* 检查一个表达式节点 */
-static int tc_check_expr(ASTNode *n, const char **actor_fields, size_t fcount) {
+static int tc_check_expr(ASTNode *n, const char **actor_fields, size_t fcount,
+                             const char **actor_types, size_t atype_count) {
     if (!n) return 0;
     int errs = 0;
     switch (n->type) {
@@ -96,6 +97,13 @@ static int tc_check_expr(ASTNode *n, const char **actor_fields, size_t fcount) {
                         }
                     }
                     if (!found) {
+                        for (size_t i = 0; i < atype_count; i++) {
+                            if (actor_types && actor_types[i] && strcmp(actor_types[i], name) == 0) {
+                                found = 1; break;
+                            }
+                        }
+                    }
+                    if (!found) {
                         const char *msg = "unknown identifier (may be an actor field)";
                         tc_add_error(n->line, msg);
                         errs++;
@@ -106,15 +114,11 @@ static int tc_check_expr(ASTNode *n, const char **actor_fields, size_t fcount) {
 
         case NODE_CALL:
             if (n->data && strcmp((const char *)n->data, "print") == 0) {
-                /* print 允许 0 或 1 个参数 */
                 if (n->child_count > 0 && n->children[0] && n->children[0]->child_count > 1) {
                     const char *msg = "print() accepts at most one argument";
                     tc_add_error(n->line, msg);
                     errs++;
                 }
-            }
-            if (n->child_count > 0 && n->children[0]) {
-                errs += tc_check_expr(n->children[0], actor_fields, fcount);
             }
             return errs;
 
@@ -122,8 +126,8 @@ static int tc_check_expr(ASTNode *n, const char **actor_fields, size_t fcount) {
             if (n->data && strcmp((const char *)n->data, "assign") == 0) {
                 /* 赋值：lhs = rhs，递归检查两端 */
                 if (n->child_count >= 2) {
-                    errs += tc_check_expr(n->children[0], actor_fields, fcount);
-                    errs += tc_check_expr(n->children[1], actor_fields, fcount);
+                    errs += tc_check_expr(n->children[0], actor_fields, fcount, actor_types, atype_count);
+                    errs += tc_check_expr(n->children[1], actor_fields, fcount, actor_types, atype_count);
                 }
             }
             return errs;
@@ -132,19 +136,20 @@ static int tc_check_expr(ASTNode *n, const char **actor_fields, size_t fcount) {
             break;
     }
     for (size_t i = 0; i < n->child_count; i++) {
-        errs += tc_check_expr(n->children[i], actor_fields, fcount);
+        errs += tc_check_expr(n->children[i], actor_fields, fcount, actor_types, atype_count);
     }
     return errs;
 }
 
 /* 检查一个方法/构造器 */
-static int tc_check_method(ASTNode *m, const char **fields, size_t fcount) {
+static int tc_check_method(ASTNode *m, const char **fields, size_t fcount,
+                        const char **actor_types, size_t atype_count) {
     int errs = 0;
     if (!m) return 0;
     for (size_t i = 0; i < m->child_count; i++) {
         ASTNode *c = m->children[i];
         if (c && c->type != NODE_EMPTY && !c->data) continue; /* body */
-        errs += tc_check_expr(c, fields, fcount);
+        errs += tc_check_expr(c, fields, fcount, actor_types, atype_count);
     }
     return errs;
 }
@@ -166,6 +171,19 @@ int typecheck_program(ASTNode *ast, TypeCheckResult *result) {
 
     int total_errs = 0;
 
+    /* 收集所有 Actor 名称作为类型集合 */
+    const char **actor_types = NULL;
+    size_t atype_count = 0;
+    for (size_t i = 0; i < ast->child_count; i++) {
+        ASTNode *ch = ast->children[i];
+        if (!ch || ch->type != NODE_ACTOR) continue;
+        if (ch->data) {
+            atype_count++;
+            actor_types = (const char **)realloc(actor_types, atype_count * sizeof(char *));
+            actor_types[atype_count - 1] = (const char *)ch->data;
+        }
+    }
+
     for (size_t i = 0; i < ast->child_count; i++) {
         ASTNode *ch = ast->children[i];
         if (!ch || ch->type != NODE_ACTOR) continue;
@@ -178,15 +196,16 @@ int typecheck_program(ASTNode *ast, TypeCheckResult *result) {
             ASTNode *m = ch->children[j];
             if (!m) continue;
             if (m->type == NODE_NEW || m->type == NODE_BE || m->type == NODE_FUN) {
-                total_errs += tc_check_method(m, fields, fcount);
+                total_errs += tc_check_method(m, fields, fcount, actor_types, atype_count);
             } else if (m->type == NODE_VAR || m->type == NODE_LET) {
                 if (m->child_count > 0) {
-                    total_errs += tc_check_expr(m->children[0], fields, fcount);
+                    total_errs += tc_check_expr(m->children[0], fields, fcount, actor_types, atype_count);
                 }
             }
         }
         free(fields);
     }
+    free(actor_types);
 
     if (total_errs > 0) {
         result->ok = 0;
