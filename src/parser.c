@@ -291,6 +291,32 @@ static ASTNode *parse_statement(Parser *p) {
         return node;
     }
 
+    /* for 语句: for i in 0..10 do { body } */
+    if (is_keyword_token(t, "for")) {
+        advance(p);
+        ASTNode *node = ast_node_new(NODE_FOR, line, col);
+        if (!node) return NULL;
+        /* 解析迭代变量 */
+        if (cur_type(p) == TK_IDENT || match_keyword(p, "it") || match_keyword(p, "_")) {
+            Token *var_t = cur(p);
+            advance(p);
+            ASTNode *var_node = ast_node_new(NODE_IDENT, var_t->line, var_t->column);
+            if (var_node && var_t->value) var_node->ident = var_t->value;
+            if (var_node) ast_node_add_child(node, var_node);
+        }
+        /* in 关键字 */
+        match_keyword(p, "in");
+        /* 解析 range 表达式 (start..end) */
+        ASTNode *range_expr = parse_expression(p);
+        if (range_expr) ast_node_add_child(node, range_expr);
+        /* do 关键字 (可选) */
+        match_keyword(p, "do");
+        /* 循环体 */
+        ASTNode *body = parse_block(p);
+        if (body) ast_node_add_child(node, body);
+        return node;
+    }
+
     /* match 表达式 */
     if (is_keyword_token(t, "match")) {
         advance(p);
@@ -356,9 +382,30 @@ static ASTNode *parse_expression(Parser *p) {
     /* 数字 */
     if (t->type == TK_INT) {
         advance(p);
-        ASTNode *node = ast_node_new(NODE_INT, line, col);
-        if (node) node->data = s_strdup(t->value);
-        return node;
+        ASTNode *start_node = ast_node_new(NODE_INT, line, col);
+        if (start_node) {
+            start_node->data = s_strdup(t->value);
+            start_node->value_int = atoi(t->value);
+        }
+        /* 范围: start..end */
+        if (match(p, TK_RANGE)) {
+            advance(p);
+            Token *end_t = cur(p);
+            if (end_t->type == TK_INT) {
+                advance(p);
+                ASTNode *end_node = ast_node_new(NODE_INT, end_t->line, end_t->column);
+                if (end_node) {
+                    end_node->data = s_strdup(end_t->value);
+                    end_node->value_int = atoi(end_t->value);
+                }
+                ASTNode *range_node = ast_node_new(NODE_EMPTY, line, col);
+                range_node->data = s_strdup("range");
+                if (start_node) ast_node_add_child(range_node, start_node);
+                if (end_node) ast_node_add_child(range_node, end_node);
+                return range_node;
+            }
+        }
+        return start_node;
     }
 
     /* 布尔 */

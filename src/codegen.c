@@ -298,6 +298,39 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
             cg_emit(cg, "}\n");
             break;
         }
+        case NODE_FOR: {
+            /* children[0]=var, [1]=range_expr, [2]=body */
+            char *var_name = n->child_count > 0 ? n->children[0]->ident : "_i";
+            if (!var_name) var_name = "_i";
+            int start = 0, end = 10;
+            if (n->child_count > 1) {
+                ASTNode *re = n->children[1];
+                if (re && re->child_count >= 2) {
+                    start = re->children[0]->value_int;
+                    end = re->children[1]->value_int;
+                } else if (re && re->value_int) {
+                    end = re->value_int;
+                }
+            }
+            cg_emit_raw(cg, "for (unsigned long long ");
+            cg_emit(cg, var_name);
+            cg_emit_raw(cg, " = ");
+            cg_emit(cg, start);
+            cg_emit_raw(cg, "; ");
+            cg_emit(cg, var_name);
+            cg_emit_raw(cg, " < ");
+            cg_emit(cg, end);
+            cg_emit_raw(cg, "; ");
+            cg_emit(cg, var_name);
+            cg_emit_raw(cg, "++) {\n");
+            cg_push(cg);
+            if (n->child_count > 2) {
+                for (size_t i = 0; i < n->children[2]->child_count; i++) cg_stmt(cg, n->children[2]->children[i]);
+            }
+            cg_pop(cg);
+            cg_emit(cg, "}\n");
+            break;
+        }
         case NODE_RETURN:
             cg_emit(cg, "return");
             if (n->child_count > 0) { cg_emit_raw(cg, " "); cg_expr(cg, n->children[0]); }

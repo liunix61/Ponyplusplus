@@ -346,7 +346,19 @@ static TokenType advance(Lexer *lex) {
         case '}': lex->current.type = TK_BRACE_R; return TK_BRACE_R;
         case '[': lex->current.type = TK_BRACKET_L; return TK_BRACKET_L;
         case ']': lex->current.type = TK_BRACKET_R; return TK_BRACKET_R;
-        case '.': lex->current.type = TK_DOT; return TK_DOT;
+        case '.':
+            if (peek_next(lex) == '.') {
+                advance_char(lex);
+                advance_char(lex);
+                lex->current.type = TK_RANGE;
+                lex->current.value = s_strdup("..");
+                lex->current.line = start_line;
+                lex->current.column = start_col;
+                lex->current.length = 2;
+                return TK_RANGE;
+            }
+            lex->current.type = TK_DOT;
+            return TK_DOT;
         case ',': lex->current.type = TK_COMMA; return TK_COMMA;
         case ';': lex->current.type = TK_SEMI; return TK_SEMI;
         case ':': lex->current.type = TK_COLON; return TK_COLON;

@@ -60,6 +60,7 @@ typedef enum {
     TK_CAP,       /* iso, trn, ref, val, box, tag */
     TK_PUNCT,     /* ( ) { } . , ; => - + * / = ! < > <= >= == != */
     TK_ARROW,     /* => 箭头 */
+    TK_RANGE,     /* .. 范围 */
     TK_HASH,      /* # */
     TK_DOLLAR,    /* $ */
     TK_AMP,       /* & */
