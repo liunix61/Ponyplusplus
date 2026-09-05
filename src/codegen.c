@@ -17,6 +17,7 @@ struct Codegen {
     char **fields;
     char **field_types; /* 字段类型: "String"/"U32"/"U64" 等 */
     int in_constructor; /* 1=self 值类型 self.field, 0=指针 self->field */
+    char actor_name[64]; /* 当前 Actor 名称, 用于方法调用 */
 };
 
 Codegen *codegen_new(FILE *out) {
@@ -119,6 +120,10 @@ static const char *cg_type_of(ASTNode *t, const char **actor_types, size_t atc) 
     if (strcmp(n, "F32") == 0) return "float";
     if (strcmp(n, "F64") == 0) return "double";
     if (strcmp(n, "String") == 0) return "const char *";
+    if (strcmp(n, "Char") == 0) return "char";
+    if (strcmp(n, "Bool") == 0) return "int";
+    if (strcmp(n, "Int") == 0) return "long long";
+    if (strcmp(n, "U8") == 0) return "unsigned char";
     if (strcmp(n, "Bool") == 0) return "int";
     if (strcmp(n, "None") == 0 || strcmp(n, "NoneType") == 0) return "void";
     return n;
@@ -159,8 +164,22 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
             cg_emit_raw(cg, "%s", n->data ? (const char *)n->data : "0.0");
             break;
         case NODE_BOOL:
-            cg_emit_raw(cg, "%s", n->data && strcmp(n->data, "true") == 0 ? "1" : "0");
+            cg_emit_raw(cg, "%d", n->value_int ? 1 : 0);
             break;
+        case NODE_CHAR: {
+            /* data = 实际字符值 (e.g. 'a'=0x61, '\n'=0x0A) */
+            char c = ' ';
+            const char *ds = (const char *)n->data;
+            if (ds && ds[0]) c = ds[0];
+            if (c == '\n') cg_emit_raw(cg, "'\\n'");
+            else if (c == '\t') cg_emit_raw(cg, "'\\t'");
+            else if (c == '\r') cg_emit_raw(cg, "'\\r'");
+            else if (c == '\\') cg_emit_raw(cg, "'\\\\'");
+            else if (c == '\'') cg_emit_raw(cg, "'\\''");
+            else if (c == '\0') cg_emit_raw(cg, "0");
+            else cg_emit_raw(cg, "'%c'", (unsigned char)c);
+            break;
+        }
         case NODE_CALL: {
             const char *func = (const char *)n->data;
             ASTNode *args = (n->child_count > 0 && n->children[0] &&
@@ -196,6 +215,12 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     } else if (a0->type == NODE_CALL) {
                         /* print(s.len()) — 嵌套方法调用 */
                         cg_emit_raw(cg, "printf(\"%%d\\n\", ");
+                        cg_expr(cg, a0);
+                        cg_emit_raw(cg, ")");
+                        break;
+                    } else if (a0->type == NODE_EMPTY || a0->type == NODE_CHAR || a0->type == NODE_BOOL || a0->type == NODE_INDEX_ACCESS) {
+                        /* print(1+2), print('a'), print(true), print(arr[0]) — 复杂表达式 */
+                        cg_emit_raw(cg, "printf(\"%%d\\n\", (int)");
                         cg_expr(cg, a0);
                         cg_emit_raw(cg, ")");
                         break;
@@ -262,12 +287,15 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 cg_emit_raw(cg, "0"); /* stub: unknown method returns 0 */
                 break;
             }
-            cg_emit_raw(cg, "%s(", func ? func : "?");
+            cg_emit_raw(cg, "%s_%s(", cg->actor_name[0] ? cg->actor_name : "main", func ? func : "?");
             if (args) {
+                cg_emit_raw(cg, "self");
                 for (size_t i = 0; i < args->child_count; i++) {
-                    if (i) cg_emit_raw(cg, ", ");
+                    cg_emit_raw(cg, ", ");
                     cg_expr(cg, args->children[i]);
                 }
+            } else {
+                cg_emit_raw(cg, "self");
             }
             cg_emit_raw(cg, ")");
             break;
@@ -348,6 +376,46 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     if (n->child_count > 0) cg_expr(cg, n->children[0]);
                     cg_emit_raw(cg, " = ");
                     if (n->child_count > 1) cg_expr(cg, n->children[1]);
+                } else if (strcmp(d, "or") == 0 || strcmp(d, "and") == 0) {
+                    /* 逻辑运算符 */
+                    cg_emit_raw(cg, "(");
+                    if (n->child_count > 0) cg_expr(cg, n->children[0]);
+                    cg_emit_raw(cg, " %s ", strcmp(d, "and") == 0 ? "&&" : "||");
+                    if (n->child_count > 1) cg_expr(cg, n->children[1]);
+                    cg_emit_raw(cg, ")");
+                } else if (strcmp(d, "==") == 0 || strcmp(d, "!=") == 0 ||
+                           strcmp(d, "<") == 0 || strcmp(d, ">") == 0 ||
+                           strcmp(d, "<=") == 0 || strcmp(d, ">=") == 0) {
+                    /* 比较运算符 */
+                    cg_emit_raw(cg, "(");
+                    if (n->child_count > 0) cg_expr(cg, n->children[0]);
+                    cg_emit_raw(cg, " %s ", d);
+                    if (n->child_count > 1) cg_expr(cg, n->children[1]);
+                    cg_emit_raw(cg, ")");
+                } else if (strcmp(d, "+") == 0) {
+                    /* 加法: 需要处理 char 和 int */
+                    cg_emit_raw(cg, "((int)(");
+                    if (n->child_count > 0) cg_expr(cg, n->children[0]);
+                    cg_emit_raw(cg, ") + (int)(");
+                    if (n->child_count > 1) cg_expr(cg, n->children[1]);
+                    cg_emit_raw(cg, "))");
+                } else if (strcmp(d, "-") == 0 || strcmp(d, "*") == 0 || strcmp(d, "/") == 0) {
+                    /* 算术运算符 */
+                    cg_emit_raw(cg, "((int)(");
+                    if (n->child_count > 0) cg_expr(cg, n->children[0]);
+                    cg_emit_raw(cg, ") %s (int)(", d);
+                    if (n->child_count > 1) cg_expr(cg, n->children[1]);
+                    cg_emit_raw(cg, "))");
+                } else if (strcmp(d, "not") == 0) {
+                    /* 一元取反 */
+                    cg_emit_raw(cg, "!(");
+                    if (n->child_count > 0) cg_expr(cg, n->children[0]);
+                    cg_emit_raw(cg, ")");
+                } else if (strcmp(d, "neg") == 0) {
+                    /* 一元负号 */
+                    cg_emit_raw(cg, "-(");
+                    if (n->child_count > 0) cg_expr(cg, n->children[0]);
+                    cg_emit_raw(cg, ")");
                 } else {
                     cg_emit_raw(cg, "%s", d);
                 }
@@ -460,6 +528,7 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
                          const char **actor_types, size_t atc) {
     const char *name = (const char *)actor->data;
     if (!name) return;
+    snprintf(cg->actor_name, sizeof(cg->actor_name), "%s", name);
 
     char **field_names = NULL;
     char **field_type_names = NULL;
@@ -523,6 +592,21 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
     cg_pop(cg);
     cg_emit(cg, "} %s_t;\n\n", name);
 
+    /* 如果没有显式构造函数, 生成默认构造器 */
+    int has_ctor = 0;
+    for (size_t i = 0; i < actor->child_count; i++) {
+        if (actor->children[i] && actor->children[i]->type == NODE_NEW) { has_ctor = 1; break; }
+    }
+    if (!has_ctor) {
+        cg_emit(cg, "static %s_t %s_create() {\n", name, name);
+        cg_push(cg);
+        cg_emit(cg, "%s_t self;\n", name);
+        cg_emit(cg, "memset(&self, 0, sizeof(self));\n");
+        cg_emit(cg, "return self;\n");
+        cg_pop(cg);
+        cg_emit(cg, "}\n\n");
+    }
+
     for (size_t i = 0; i < actor->child_count; i++) {
         ASTNode *ch = actor->children[i];
         if (!ch) continue;
@@ -561,7 +645,7 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
             cg_set_ctor(cg, 0);
         } else if (ch->type == NODE_BE || ch->type == NODE_FUN) {
             const char *fn = (const char *)ch->data;
-            const char *rtype = "void";
+            const char *rtype = (ch->type == NODE_FUN) ? "int" : "void";
             ASTNode *params = NULL;
             ASTNode *body = NULL;
             for (size_t j = 0; j < ch->child_count; j++) {

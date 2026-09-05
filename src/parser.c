@@ -144,6 +144,15 @@ static ASTNode *parse_type(Parser *p) {
 /* 前向声明 */
 static ASTNode *parse_statement(Parser *p);
 static ASTNode *parse_expression(Parser *p);
+static ASTNode *parse_binary_op(Parser *p, TokenType *ops, int op_count,
+    const char **op_names, ASTNode *(*next_level)(Parser *));
+static ASTNode *parse_or_expr(Parser *p);
+static ASTNode *parse_and_expr(Parser *p);
+static ASTNode *parse_compare_expr(Parser *p);
+static ASTNode *parse_add_expr(Parser *p);
+static ASTNode *parse_mul_expr(Parser *p);
+static ASTNode *parse_unary_expr(Parser *p);
+static ASTNode *parse_expression_primary(Parser *p);
 
 /* 解析参数列表 */
 static ASTNode *parse_params(Parser *p) {
@@ -375,7 +384,7 @@ static ASTNode *parse_statement(Parser *p) {
 }
 
 /* 解析表达式（简化：支持基本字面量和变量引用） */
-static ASTNode *parse_expression(Parser *p) {
+static ASTNode *parse_expression_primary(Parser *p) {
     Token *t = cur(p);
     int line = t->line;
     int col = t->column;
@@ -384,6 +393,14 @@ static ASTNode *parse_expression(Parser *p) {
     if (t->type == TK_STRING) {
         advance(p);
         ASTNode *node = ast_string_new(t->value, line, col);
+        return node;
+    }
+
+    /* 字符字面量 'a' */
+    if (t->type == TK_CHAR) {
+        advance(p);
+        ASTNode *node = ast_node_new(NODE_CHAR, line, col);
+        if (node) node->data = s_strdup(t->value ? t->value : "' '");
         return node;
     }
 
@@ -526,6 +543,92 @@ static ASTNode *parse_expression(Parser *p) {
     }
 
     return NULL;
+}
+
+/* 通用左结合二元运算符解析 */
+static ASTNode *parse_binary_op(Parser *p, TokenType *ops, int op_count,
+    const char **op_names, ASTNode *(*next_level)(Parser *)) {
+    ASTNode *lhs = next_level(p);
+    while (lhs && p->pos < p->token_count) {
+        int found = -1;
+        for (int i = 0; i < op_count; i++) {
+            if (cur(p)->type == ops[i]) { found = i; break; }
+        }
+        if (found < 0) break;
+        advance(p);
+        ASTNode *rhs = next_level(p);
+        if (!rhs) break;
+        ASTNode *node = ast_node_new(NODE_EMPTY, cur(p)->line, cur(p)->column);
+        if (!node) break;
+        node->data = s_strdup(op_names[found]);
+        ast_node_add_child(node, lhs);
+        ast_node_add_child(node, rhs);
+        lhs = node;
+    }
+    return lhs;
+}
+
+/* || (最低优先级) */
+static ASTNode *parse_or_expr(Parser *p) {
+    static const TokenType ops[] = { TK_PIPEPIPE };
+    static const char *names[] = { "or" };
+    return parse_binary_op(p, ops, 1, names, parse_and_expr);
+}
+
+/* && */
+static ASTNode *parse_and_expr(Parser *p) {
+    static const TokenType ops[] = { TK_AMPAMP };
+    static const char *names[] = { "and" };
+    return parse_binary_op(p, ops, 1, names, parse_compare_expr);
+}
+
+/* == != < > <= >= */
+static ASTNode *parse_compare_expr(Parser *p) {
+    static const TokenType ops[] = { TK_EQEQ, TK_NEQ, TK_LT, TK_GT, TK_LE, TK_GE };
+    static const char *names[] = { "==", "!=", "<", ">", "<=", ">=" };
+    return parse_binary_op(p, ops, 6, names, parse_add_expr);
+}
+
+/* + - */
+static ASTNode *parse_add_expr(Parser *p) {
+    static const TokenType ops[] = { TK_PLUS, TK_DASH };
+    static const char *names[] = { "+", "-" };
+    return parse_binary_op(p, ops, 2, names, parse_mul_expr);
+}
+
+/* * / */
+static ASTNode *parse_mul_expr(Parser *p) {
+    static const TokenType ops[] = { TK_STAR, TK_SLASH };
+    static const char *names[] = { "*", "/" };
+    return parse_binary_op(p, ops, 2, names, parse_unary_expr);
+}
+
+/* 一元: ! - */
+static ASTNode *parse_unary_expr(Parser *p) {
+    if (cur(p)->type == TK_BANG) {
+        advance(p);
+        ASTNode *node = ast_node_new(NODE_EMPTY, cur(p)->line, cur(p)->column);
+        if (node) {
+            node->data = s_strdup("not");
+            ast_node_add_child(node, parse_unary_expr(p));
+        }
+        return node;
+    }
+    if (cur(p)->type == TK_DASH) {
+        advance(p);
+        ASTNode *node = ast_node_new(NODE_EMPTY, cur(p)->line, cur(p)->column);
+        if (node) {
+            node->data = s_strdup("neg");
+            ast_node_add_child(node, parse_unary_expr(p));
+        }
+        return node;
+    }
+    return parse_expression_primary(p);
+}
+
+/* 顶层表达式入口 */
+static ASTNode *parse_expression(Parser *p) {
+    return parse_or_expr(p);
 }
 
 /* 解析 Actor 方法 */

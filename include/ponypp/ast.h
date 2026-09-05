@@ -44,6 +44,7 @@ typedef enum {
     NODE_INT,           /* 整数 */
     NODE_FLOAT,         /* 浮点数 */
     NODE_BOOL,          /* 布尔值 */
+    NODE_CHAR,          /* 字符字面量 'a' */
     NODE_UNION,         /* Union 类型 */
     NODE_TUPLE,         /* 元组类型 */
     NODE_ARRAY,         /* 数组类型 */

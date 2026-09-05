@@ -91,7 +91,10 @@ typedef enum {
     TK_EQEQ,      /* == */
     TK_NEQ,       /* != */
     TK_COLONCOLON,/* :: */
-    TK_ARROW_ARR /* => */
+    TK_ARROW_ARR, /* => */
+    TK_AMPAMP,    /* && */
+    TK_PIPEPIPE,  /* || */
+    TK_CHAR       /* 字符字面量 'a' */
 } TokenType;
 
 /* Token 结构 */

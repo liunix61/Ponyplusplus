@@ -263,7 +263,7 @@ static TokenType advance(Lexer *lex) {
         return TK_INT;
     }
 
-    if (c == '"' || c == '\'') {
+    if (c == '"') {
         char *str = lex_string(lex);
         lex->current.type = TK_STRING;
         lex->current.value = str;
@@ -271,6 +271,42 @@ static TokenType advance(Lexer *lex) {
         lex->current.column = start_col;
         lex->current.length = (int)strlen(str);
         return TK_STRING;
+    }
+
+    /* 字符字面量 'a' */
+    if (c == '\'') {
+        advance_char(lex); /* 跳过开引号 */
+        char cval = '\0';
+        if (lex->pos < lex->length) {
+            if (lex->source[lex->pos] == '\\' && lex->pos + 1 < lex->length) {
+                advance_char(lex);
+                char esc = lex->source[lex->pos];
+                switch (esc) {
+                    case 'n': cval = '\n'; break;
+                    case 't': cval = '\t'; break;
+                    case 'r': cval = '\r'; break;
+                    case '\\': cval = '\\'; break;
+                    case '\'': cval = '\''; break;
+                    default: cval = esc; break;
+                }
+                advance_char(lex);
+            } else {
+                cval = lex->source[lex->pos];
+                advance_char(lex);
+            }
+        }
+        if (lex->pos < lex->length && lex->source[lex->pos] == '\'') {
+            advance_char(lex); /* 跳过闭引号 */
+        }
+        char *cv = s_malloc(2);
+        cv[0] = cval;
+        cv[1] = '\0';
+        lex->current.type = TK_CHAR;
+        lex->current.value = cv;
+        lex->current.line = start_line;
+        lex->current.column = start_col;
+        lex->current.length = 1;
+        return TK_CHAR;
     }
 
     /* 多字符运算符 */
@@ -332,6 +368,26 @@ static TokenType advance(Lexer *lex) {
         lex->current.column = start_col;
         lex->current.length = 2;
         return TK_COLONCOLON;
+    }
+
+    if (c == '&' && peek_next(lex) == '&') {
+        advance_char(lex); advance_char(lex);
+        lex->current.type = TK_AMPAMP;
+        lex->current.value = s_strdup("&&");
+        lex->current.line = start_line;
+        lex->current.column = start_col;
+        lex->current.length = 2;
+        return TK_AMPAMP;
+    }
+
+    if (c == '|' && peek_next(lex) == '|') {
+        advance_char(lex); advance_char(lex);
+        lex->current.type = TK_PIPEPIPE;
+        lex->current.value = s_strdup("||");
+        lex->current.line = start_line;
+        lex->current.column = start_col;
+        lex->current.length = 2;
+        return TK_PIPEPIPE;
     }
 
     /* 多字符: range operator .. */

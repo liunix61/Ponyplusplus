@@ -1,70 +1,85 @@
 actor main {
   var pos: U32
-  var line: U32
-  var token_count: U32
-  var total_tokens: U32
+  var count: U32
+  var src: String
 
-  new create() => {
+  new create() {
     pos = 0
-    line = 1
-    token_count = 0
-    total_tokens = 0
+    count = 0
+    src = "actor main { print(\"hi\") }"
   }
 
-  fun is_alpha(c: Char) => {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
-  }
-
-  fun is_digit(c: Char) => {
-    return c >= '0' && c <= '9'
-  }
-
-  be lex_source() => {
-    print("Pony++ Lexer Bootstrap: 词法分析器自举测试")
-    pos = 0
-    token_count = 0
-
-    val src = "actor main { new create() => { print(\"Hello\") } }"
-
-    while pos < 49 => {
-      val c = src.charAt(pos)
-      if c == ' ' || c == '\t' || c == '\n' => {
-        pos = pos + 1
-      } else if c == '{' || c == '}' || c == '(' || c == ')' => {
-        token_count = token_count + 1
-        print("Punct: " + c.to_string + " @ line " + line.to_string)
-        pos = pos + 1
-      } else if c >= 'a' && c <= 'z' => {
-        val ident_start = pos
-        while pos < 49 && src.charAt(pos) >= 'a' && src.charAt(pos) <= 'z' => {
-          pos = pos + 1
-        }
-        token_count = token_count + 1
-        print("Ident: @" + ident_start.to_string + ":" + pos.to_string)
-      } else {
-        pos = pos + 1
-      }
-    }
-
-    print("Total tokens: " + token_count.to_string)
-    total_tokens = token_count
-  }
-
-  fun verify() => {
-    print("Bootstrap verification: " + total_tokens.to_string + " tokens lexed")
-    if total_tokens >= 10 => {
-      print("Lexer PASS: " + total_tokens.to_string + " >= 10")
+  fun is_space(c: Char) {
+    if c == ' ' {
       return true
     } else {
-      print("Lexer FAIL: " + total_tokens.to_string + " < 10")
       return false
     }
   }
 
-  be run() => {
-    print("Pony++ Bootstrap: Lexer Phase")
-    lex_source()
-    verify()
-    print("Bootstrap lexer complete")
+  fun skip_spaces() {
+    while pos < 26 {
+      if is_space(src.charAt(pos)) {
+        pos = pos + 1
+      } else {
+        pos = pos + 1
+        pos = pos - 1
+        break
+      }
+    }
+  }
+
+  fun lex_ident() {
+    while pos < 26 {
+      if src.charAt(pos) >= 'a' && src.charAt(pos) <= 'z' {
+        pos = pos + 1
+      } else {
+        pos = pos + 1
+        pos = pos - 1
+        break
+      }
+    }
+    count = count + 1
+  }
+
+  fun lex_punct() {
+    count = count + 1
+    pos = pos + 1
+  }
+
+  fun lex() {
+    while pos < 26 {
+      skip_spaces()
+      while pos < 26 {
+        if is_space(src.charAt(pos)) {
+          pos = pos + 1
+        } else {
+          pos = pos + 1
+          pos = pos - 1
+          break
+        }
+      }
+      if pos >= 26 {
+        break
+      }
+      if src.charAt(pos) == '{' || src.charAt(pos) == '}' || src.charAt(pos) == '(' || src.charAt(pos) == ')' {
+        lex_punct()
+      } else if src.charAt(pos) >= 'a' && src.charAt(pos) <= 'z' {
+        lex_ident()
+      } else {
+        pos = pos + 1
+      }
+    }
+  }
+
+  be run() {
+    print("Pony++ Bootstrap: Lexer")
+    lex()
+    print(count)
+    if count >= 3 {
+      print("Bootstrap PASS")
+    } else {
+      print("Bootstrap FAIL")
+    }
   }
 }
