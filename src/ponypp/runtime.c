@@ -30,6 +30,7 @@ void pny_runtime_free(PnyRuntime *r) {
         while (m) { PnyMessage *mn = m->next; pny_msg_free(m); m = mn; }
         if (a->supervise) { s_free(a->supervise); }
         if (a->children) { s_free(a->children); }
+        if (a->delivered_ids) { s_free(a->delivered_ids); }
         s_free(a->state_data);
         s_free(a);
         a = next;
@@ -101,6 +102,7 @@ void pny_actor_destroy(PnyRuntime *r, ActorRef *ref) {
     s_free(a->state_data);
     s_free(a->supervise);
     if (a->children) s_free(a->children);
+    if (a->delivered_ids) s_free(a->delivered_ids);
     s_free(a->self.name);
     s_free(a);
     r->stats.actors_destroyed++;
@@ -353,4 +355,128 @@ void pny_supervisor_handle_crash(PnyRuntime *r, ActorRef *crashed) {
 void pny_runtime_stats(PnyRuntime *r, RuntimeStats *out) {
     if (!r || !out) return;
     memcpy(out, &r->stats, sizeof(RuntimeStats));
+}
+
+/* ======================== 跨组件序列化 ======================== */
+
+int pny_msg_serialize(PnyMessage *msg, void *buf, size_t buf_size, size_t *out_size) {
+    if (!msg || !buf || !out_size) return -1;
+
+    PnyMsgHeader hdr;
+    hdr.version = 0x0001;
+    hdr.actor_id = (uint32_t)(msg->sender.actor ? msg->sender.actor->id : 0);
+    hdr.method_id = 0;
+
+    size_t pos = 0;
+    size_t need = sizeof(PnyMsgHeader) + 1 + 2;
+    if (msg->method) need += strlen(msg->method);
+    need += 4;
+    if (msg->arg && msg->arg_size > 0) need += msg->arg_size;
+
+    if (buf_size < need) return -2;
+
+    memcpy(buf, &hdr, sizeof(hdr));
+    pos += sizeof(hdr);
+
+    ((uint8_t *)buf)[pos++] = (uint8_t)(msg->cap_mark ? msg->cap_mark : PNY_CAP_VAL);
+
+    uint16_t method_len = msg->method ? (uint16_t)strlen(msg->method) : 0;
+    memcpy((uint8_t *)buf + pos, &method_len, 2);
+    pos += 2;
+    if (msg->method && method_len > 0) {
+        memcpy((uint8_t *)buf + pos, msg->method, method_len);
+        pos += method_len;
+    }
+
+    uint32_t arg_size = msg->arg_size;
+    memcpy((uint8_t *)buf + pos, &arg_size, 4);
+    pos += 4;
+    if (msg->arg && arg_size > 0) {
+        memcpy((uint8_t *)buf + pos, msg->arg, arg_size);
+        pos += arg_size;
+    }
+
+    *out_size = pos;
+    return 0;
+}
+
+int pny_msg_deserialize(void *buf, size_t buf_size, PnyMessage **out) {
+    if (!buf || !out || buf_size < 11) return -1;
+    if (*out) return -2;
+
+    size_t pos = 0;
+    PnyMsgHeader hdr;
+    memcpy(&hdr, buf, sizeof(hdr));
+    pos += sizeof(hdr);
+
+    uint8_t cap_mark = ((uint8_t *)buf)[pos++];
+    uint16_t method_len;
+    memcpy(&method_len, (uint8_t *)buf + pos, 2);
+    pos += 2;
+
+    if (buf_size < pos + method_len + 4) return -3;
+
+    PnyMessage *msg = (PnyMessage *)s_malloc(sizeof(PnyMessage));
+    if (!msg) return -4;
+    memset(msg, 0, sizeof(PnyMessage));
+    msg->cap_mark = (PnyCapMark)cap_mark;
+
+    if (method_len > 0) {
+        msg->method = s_malloc(method_len + 1);
+        if (!msg->method) { s_free(msg); return -5; }
+        memcpy(msg->method, (uint8_t *)buf + pos, method_len);
+        msg->method[method_len] = 0;
+        pos += method_len;
+    }
+
+    uint32_t arg_size;
+    memcpy(&arg_size, (uint8_t *)buf + pos, 4);
+    pos += 4;
+
+    if (arg_size > 0 && buf_size >= pos + arg_size) {
+        msg->arg = s_malloc(arg_size);
+        if (!msg->arg) { s_free(msg->method); s_free(msg); return -6; }
+        memcpy(msg->arg, (uint8_t *)buf + pos, arg_size);
+        msg->arg_size = arg_size;
+    }
+
+    *out = msg;
+    return 0;
+}
+
+/* ======================== 背压 ======================== */
+
+BackpressureState pny_backpressure_check(PnyActor *a) {
+    if (!a) return BACKPRESSURE_FULL;
+    if (a->message_count >= a->max_messages) return BACKPRESSURE_FULL;
+    if (a->message_count >= a->max_messages / 2) return BACKPRESSURE_WARN;
+    return BACKPRESSURE_OK;
+}
+
+void pny_backpressure_set_limit(PnyActor *a, size_t max_messages) {
+    if (!a) return;
+    a->max_messages = max_messages > 0 ? max_messages : 65536;
+}
+
+/* ======================== exactly-once 去重 ======================== */
+
+int pny_msg_delivered(PnyActor *a, uint64_t msg_id) {
+    if (!a) return -1;
+
+    for (size_t i = 0; i < a->delivered_count; i++) {
+        if (a->delivered_ids[i] == msg_id) return 1;
+    }
+
+    if (a->delivered_count >= a->delivered_cap) {
+        a->delivered_cap = a->delivered_cap ? a->delivered_cap * 2 : 128;
+        uint64_t *new_ids = (uint64_t *)s_malloc(sizeof(uint64_t) * a->delivered_cap);
+        if (!new_ids) return -2;
+        if (a->delivered_ids) {
+            memcpy(new_ids, a->delivered_ids, sizeof(uint64_t) * a->delivered_count);
+            s_free(a->delivered_ids);
+        }
+        a->delivered_ids = new_ids;
+    }
+    a->delivered_ids[a->delivered_count++] = msg_id;
+    return 0;
 }

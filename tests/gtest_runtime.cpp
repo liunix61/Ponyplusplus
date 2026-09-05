@@ -339,3 +339,151 @@ TEST(RuntimeSupervision, NoSupervisionNoCrash) {
     ASSERT_EQ(a->actor_state, ACTOR_STATE_RUNNING);
     pny_runtime_free(r);
 }
+
+/* ======================== Phase P1: 跨组件序列化 ======================== */
+
+TEST(P1Serialization, SerializeDeserialize) {
+    uint8_t arg_data[] = {0x34, 0x32};
+    PnyMessage *msg = pny_msg_new("increment", arg_data, 2);
+    ASSERT_NE(msg, nullptr);
+    msg->cap_mark = PNY_CAP_VAL;
+
+    uint8_t buf[256];
+    size_t out_size = 0;
+    int rc = pny_msg_serialize(msg, buf, sizeof(buf), &out_size);
+    ASSERT_EQ(rc, 0);
+    EXPECT_GT(out_size, 0);
+
+    PnyMessage *deserialized = NULL;
+    rc = pny_msg_deserialize(buf, out_size, &deserialized);
+    ASSERT_EQ(rc, 0);
+    ASSERT_NE(deserialized, nullptr);
+    ASSERT_NE(deserialized->method, nullptr);
+    EXPECT_STREQ(deserialized->method, "increment");
+    EXPECT_EQ(deserialized->cap_mark, PNY_CAP_VAL);
+
+    pny_msg_free(msg);
+    pny_msg_free(deserialized);
+}
+
+TEST(P1Serialization, SerializeNull) {
+    int rc = pny_msg_serialize(NULL, NULL, 0, NULL);
+    EXPECT_EQ(rc, -1);
+}
+
+TEST(P1Serialization, DeserializeNull) {
+    PnyMessage *out = NULL;
+    int rc = pny_msg_deserialize(NULL, 0, &out);
+    EXPECT_EQ(rc, -1);
+}
+
+TEST(P1Serialization, RoundTripWithArg) {
+    uint8_t arg_data[12] = {0};
+    PnyMessage *msg = pny_msg_new("add", arg_data, 12);
+    ASSERT_NE(msg, nullptr);
+    msg->cap_mark = PNY_CAP_ISO;
+
+    uint8_t buf[512];
+    size_t out_size = 0;
+    int rc = pny_msg_serialize(msg, buf, sizeof(buf), &out_size);
+    ASSERT_EQ(rc, 0);
+
+    PnyMessage *out = NULL;
+    rc = pny_msg_deserialize(buf, out_size, &out);
+    ASSERT_EQ(rc, 0);
+    ASSERT_NE(out, nullptr);
+    EXPECT_STREQ(out->method, "add");
+    EXPECT_EQ(out->arg_size, 12);
+    EXPECT_EQ(out->cap_mark, PNY_CAP_ISO);
+
+    pny_msg_free(msg);
+    pny_msg_free(out);
+}
+
+/* ======================== Phase P1: 背压 ======================== */
+
+TEST(P1Backpressure, CheckEmptyActor) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "BP1", 0);
+    ASSERT_EQ(pny_backpressure_check(a), BACKPRESSURE_OK);
+    pny_runtime_free(r);
+}
+
+TEST(P1Backpressure, CheckFullActor) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "BP2", 0);
+    pny_backpressure_set_limit(a, 2);
+    /* 发送 2 条消息填满 */
+    ActorRef sender = {0, NULL, NULL};
+    pny_actor_send(&sender, &a->self, "m1", NULL, 0);
+    pny_actor_send(&sender, &a->self, "m2", NULL, 0);
+    EXPECT_EQ(pny_backpressure_check(a), BACKPRESSURE_FULL);
+    /* 第三条应失败 */
+    int rc = pny_actor_send(&sender, &a->self, "m3", NULL, 0);
+    EXPECT_EQ(rc, -3);
+    pny_runtime_free(r);
+}
+
+TEST(P1Backpressure, SetLimit) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "BP3", 0);
+    pny_backpressure_set_limit(a, 100);
+    EXPECT_EQ(a->max_messages, 100);
+    pny_backpressure_set_limit(a, 0); /* 默认回退 */
+    EXPECT_EQ(a->max_messages, 65536);
+    pny_runtime_free(r);
+}
+
+/* ======================== Phase P1: exactly-once 去重 ======================== */
+
+TEST(P1ExactlyOnce, NewMessage) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "EOC1", 0);
+    EXPECT_EQ(pny_msg_delivered(a, 1), 0); /* 新消息 */
+    pny_runtime_free(r);
+}
+
+TEST(P1ExactlyOnce, DuplicateDetection) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "EOC2", 0);
+    EXPECT_EQ(pny_msg_delivered(a, 42), 0); /* 首次 */
+    EXPECT_EQ(pny_msg_delivered(a, 42), 1); /* 重复 */
+    EXPECT_EQ(pny_msg_delivered(a, 43), 0); /* 新消息 */
+    EXPECT_EQ(pny_msg_delivered(a, 42), 1); /* 仍重复 */
+    pny_runtime_free(r);
+}
+
+TEST(P1ExactlyOnce, MultipleMessages) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "EOC3", 0);
+    for (int i = 0; i < 100; i++) {
+        EXPECT_EQ(pny_msg_delivered(a, (uint64_t)i), 0);
+    }
+    for (int i = 0; i < 100; i++) {
+        EXPECT_EQ(pny_msg_delivered(a, (uint64_t)i), 1);
+    }
+    pny_runtime_free(r);
+}
+
+TEST(P1ExactlyOnce, NullActor) {
+    EXPECT_EQ(pny_msg_delivered(NULL, 1), -1);
+}
+
+TEST(P1Serialization, CapabilityMarks) {
+    PnyMessage *msg = pny_msg_new("test", NULL, 0);
+    ASSERT_NE(msg, nullptr);
+
+    msg->cap_mark = PNY_CAP_ISO;
+    uint8_t buf[64];
+    size_t out_size = 0;
+    int rc = pny_msg_serialize(msg, buf, sizeof(buf), &out_size);
+    ASSERT_EQ(rc, 0);
+
+    PnyMessage *out = NULL;
+    rc = pny_msg_deserialize(buf, out_size, &out);
+    ASSERT_EQ(rc, 0);
+    EXPECT_EQ(out->cap_mark, PNY_CAP_ISO);
+
+    pny_msg_free(msg);
+    pny_msg_free(out);
+}

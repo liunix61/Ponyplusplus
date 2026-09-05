@@ -11,6 +11,28 @@ extern "C" {
 #include <stdbool.h>
 #include <stdint.h>
 
+/* 跨组件序列化：消息头 */
+typedef struct PnyMsgHeader {
+    uint16_t version;    /* 当前 = 0x0001 */
+    uint32_t actor_id;
+    uint16_t method_id;
+} PnyMsgHeader;
+
+/* 能力标记 */
+typedef enum {
+    PNY_CAP_ISO  = 0x01,  /* 消费语义 */
+    PNY_CAP_VAL  = 0x02,  /* 值复制 */
+    PNY_CAP_TAG  = 0x03,  /* 句柄 */
+    PNY_CAP_ERR  = 0xFF   /* 不可发送类型 */
+} PnyCapMark;
+
+/* 背压状态 */
+typedef enum {
+    BACKPRESSURE_OK,
+    BACKPRESSURE_WARN,
+    BACKPRESSURE_FULL
+} BackpressureState;
+
 /* Actor 引用 */
 typedef struct ActorRef {
     int id;
@@ -61,6 +83,8 @@ typedef struct PnyMessage {
     struct PnyMessage *next;
     ActorRef sender;
     PnyReply *reply;    /* 非 NULL 时为同步调用，behavior 需调用 pny_actor_reply */
+    uint64_t msg_id;        /* exactly-once 消息唯一 ID */
+    PnyCapMark cap_mark;    /* 能力标记: iso/val/tag */
 } PnyMessage;
 
 /* Actor 结构 */
@@ -79,6 +103,10 @@ typedef struct PnyActor {
     size_t child_count;
     int id;
     void (*behavior)(struct PnyActor *self, PnyMessage *msg);
+    uint64_t *delivered_ids;    /* exactly-once: 已投递消息 ID 数组 */
+    size_t delivered_count;
+    size_t delivered_cap;
+    uint64_t next_msg_id;       /* exactly-once: 下一条消息 ID */
 } PnyActor;
 
 /* 调度器 */
@@ -142,6 +170,17 @@ void pny_supervisor_handle_crash(PnyRuntime *r, ActorRef *crashed);
 
 /* 统计 */
 void pny_runtime_stats(PnyRuntime *r, RuntimeStats *out);
+
+/* 跨组件序列化 */
+int pny_msg_serialize(PnyMessage *msg, void *buf, size_t buf_size, size_t *out_size);
+int pny_msg_deserialize(void *buf, size_t buf_size, PnyMessage **out);
+
+/* 背压 */
+BackpressureState pny_backpressure_check(PnyActor *a);
+void pny_backpressure_set_limit(PnyActor *a, size_t max_messages);
+
+/* exactly-once */
+int pny_msg_delivered(PnyActor *a, uint64_t msg_id);  /* 检查是否已投递 (去重) */
 
 #ifdef __cplusplus
 }
