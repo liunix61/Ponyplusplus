@@ -227,6 +227,121 @@ void pny_assert_not_null(void *p, AssertCtx ctx);
 #define PNY_ASSERT_EQ(a,b) pny_assert_eq_int((int64_t)(a), (int64_t)(b), (AssertCtx){__LINE__, __FILE__, #a " == " #b})
 #define PNY_ASSERT_EQ_STR(a,b) pny_assert_eq_str((a),(b), (AssertCtx){__LINE__, __FILE__, #a " == " #b})
 
+/* ==================== JSON ==================== */
+
+typedef enum {
+    JSON_NULL = 0,
+    JSON_BOOL,
+    JSON_INT,
+    JSON_DOUBLE,
+    JSON_STRING,
+    JSON_ARRAY,
+    JSON_OBJECT
+} JsonType;
+
+typedef struct JsonValue {
+    JsonType type;
+    union {
+        bool b;
+        int64_t i;
+        double d;
+        char *s;
+        struct {
+            struct JsonValue **items;
+            size_t count;
+        } arr;
+        struct {
+            char **keys;
+            struct JsonValue **vals;
+            size_t count;
+        } obj;
+    };
+} JsonValue;
+
+JsonValue *json_parse(const char *input, size_t len);
+void json_free(JsonValue *v);
+char *json_stringify(const JsonValue *v);
+JsonValue *json_obj_get(const JsonValue *obj, const char *key);
+bool json_obj_has(const JsonValue *obj, const char *key);
+int json_obj_set(JsonValue *obj, const char *key, JsonValue *val);
+
+/* JSON shorthand constructors */
+JsonValue *json_new_null(void);
+JsonValue *json_new_bool(bool b);
+JsonValue *json_new_int(int64_t i);
+JsonValue *json_new_double(double d);
+JsonValue *json_new_string(const char *s);
+JsonValue *json_new_array(void);
+JsonValue *json_new_object(void);
+int json_arr_push(JsonValue *arr, JsonValue *val);
+
+/* ==================== Timer ==================== */
+
+typedef struct PnyTimer PnyTimer;
+
+typedef void (*TimerCallback)(void *ctx);
+
+PnyTimer *pny_timer_new(int64_t interval_ms, TimerCallback cb, void *ctx, bool repeat);
+void pny_timer_free(PnyTimer *t);
+void pny_timer_start(PnyTimer *t);
+void pny_timer_stop(PnyTimer *t);
+bool pny_timer_running(const PnyTimer *t);
+int64_t pny_timer_now_ms(void);
+int64_t pny_timer_elapsed_ms(void);
+
+/* ==================== Logger ==================== */
+
+typedef enum {
+    LOG_TRACE = 0,
+    LOG_DEBUG,
+    LOG_INFO,
+    LOG_WARN,
+    LOG_ERROR,
+    LOG_FATAL
+} LogLevel;
+
+typedef struct PnyLogger PnyLogger;
+
+PnyLogger *pny_logger_new(const char *name);
+void pny_logger_free(PnyLogger *l);
+void pny_logger_set_level(PnyLogger *l, LogLevel level);
+LogLevel pny_logger_get_level(const PnyLogger *l);
+int pny_logger_log(PnyLogger *l, LogLevel level, const char *fmt, ...);
+int pny_logger_trace(PnyLogger *l, const char *fmt, ...);
+int pny_logger_debug(PnyLogger *l, const char *fmt, ...);
+int pny_logger_info(PnyLogger *l, const char *fmt, ...);
+int pny_logger_warn(PnyLogger *l, const char *fmt, ...);
+int pny_logger_error(PnyLogger *l, const char *fmt, ...);
+int pny_logger_fatal(PnyLogger *l, const char *fmt, ...);
+
+/* ==================== Math ==================== */
+
+double pny_math_sqrt(double x);
+double pny_math_pow(double base, double exp);
+double pny_math_sin(double x);
+double pny_math_cos(double x);
+double pny_math_tan(double x);
+double pny_math_asin(double x);
+double pny_math_acos(double x);
+double pny_math_atan(double x);
+double pny_math_atan2(double y, double x);
+double pny_math_log(double x);
+double pny_math_log2(double x);
+double pny_math_exp(double x);
+double pny_math_ceil(double x);
+double pny_math_floor(double x);
+double pny_math_abs(double x);
+int64_t pny_math_abs_int(int64_t x);
+double pny_math_random(void);       /* [0, 1) */
+int64_t pny_math_random_int(int64_t max);
+int64_t pny_math_min(int64_t a, int64_t b);
+int64_t pny_math_max(int64_t a, int64_t b);
+double pny_math_fmod(double x, double y);
+int64_t pny_math_factorial(int64_t n);
+
+#define PNY_MATH_PI  3.14159265358979323846
+#define PNY_MATH_E   2.71828182845904523536
+
 #ifdef __cplusplus
 }
 #endif

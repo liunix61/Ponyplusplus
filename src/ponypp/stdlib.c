@@ -1,4 +1,6 @@
 #include "ponypp/stdlib.h"
+#include <math.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -991,4 +993,586 @@ void pny_assert_null(void *p, AssertCtx ctx) {
 
 void pny_assert_not_null(void *p, AssertCtx ctx) {
     if (!p) printf("[ASSERT FAIL] %s:%d expected non-NULL\n", ctx.file, ctx.line);
+}
+
+/* ==================== JSON ==================== */
+
+static char *json_strdup(const char *s) {
+    if (!s) return NULL;
+    size_t n = strlen(s);
+    char *d = (char *)malloc(n + 1);
+    if (!d) return NULL;
+    memcpy(d, s, n + 1);
+    return d;
+}
+
+JsonValue *json_new_null(void) {
+    JsonValue *v = (JsonValue *)calloc(1, sizeof(JsonValue));
+    if (v) v->type = JSON_NULL;
+    return v;
+}
+
+JsonValue *json_new_bool(bool b) {
+    JsonValue *v = (JsonValue *)calloc(1, sizeof(JsonValue));
+    if (v) { v->type = JSON_BOOL; v->b = b; }
+    return v;
+}
+
+JsonValue *json_new_int(int64_t i) {
+    JsonValue *v = (JsonValue *)calloc(1, sizeof(JsonValue));
+    if (v) { v->type = JSON_INT; v->i = i; }
+    return v;
+}
+
+JsonValue *json_new_double(double d) {
+    JsonValue *v = (JsonValue *)calloc(1, sizeof(JsonValue));
+    if (v) { v->type = JSON_DOUBLE; v->d = d; }
+    return v;
+}
+
+JsonValue *json_new_string(const char *s) {
+    JsonValue *v = (JsonValue *)calloc(1, sizeof(JsonValue));
+    if (!v) return NULL;
+    v->type = JSON_STRING;
+    v->s = json_strdup(s ? s : "");
+    return v;
+}
+
+JsonValue *json_new_array(void) {
+    JsonValue *v = (JsonValue *)calloc(1, sizeof(JsonValue));
+    if (v) v->type = JSON_ARRAY;
+    return v;
+}
+
+JsonValue *json_new_object(void) {
+    JsonValue *v = (JsonValue *)calloc(1, sizeof(JsonValue));
+    if (v) v->type = JSON_OBJECT;
+    return v;
+}
+
+int json_arr_push(JsonValue *arr, JsonValue *val) {
+    if (!arr || arr->type != JSON_ARRAY || !val) return -1;
+    JsonValue **items = (JsonValue **)realloc(arr->arr.items, sizeof(JsonValue *) * (arr->arr.count + 1));
+    if (!items) return -1;
+    arr->arr.items = items;
+    arr->arr.items[arr->arr.count] = val;
+    arr->arr.count++;
+    return 0;
+}
+
+int json_obj_set(JsonValue *obj, const char *key, JsonValue *val) {
+    if (!obj || obj->type != JSON_OBJECT || !key || !val) return -1;
+    char **keys = (char **)realloc(obj->obj.keys, sizeof(char *) * (obj->obj.count + 1));
+    if (!keys) return -1;
+    JsonValue **vals = (JsonValue **)realloc(obj->obj.vals, sizeof(JsonValue *) * (obj->obj.count + 1));
+    if (!vals) return -1;
+    obj->obj.keys = keys;
+    obj->obj.vals = vals;
+    obj->obj.keys[obj->obj.count] = json_strdup(key);
+    obj->obj.vals[obj->obj.count] = val;
+    obj->obj.count++;
+    return 0;
+}
+
+JsonValue *json_obj_get(const JsonValue *obj, const char *key) {
+    if (!obj || obj->type != JSON_OBJECT || !key) return NULL;
+    for (size_t i = 0; i < obj->obj.count; i++) {
+        if (strcmp(obj->obj.keys[i], key) == 0) return obj->obj.vals[i];
+    }
+    return NULL;
+}
+
+bool json_obj_has(const JsonValue *obj, const char *key) {
+    return json_obj_get(obj, key) != NULL;
+}
+
+void json_free(JsonValue *v) {
+    if (!v) return;
+    switch (v->type) {
+        case JSON_STRING: free(v->s); break;
+        case JSON_ARRAY:
+            for (size_t i = 0; i < v->arr.count; i++) json_free(v->arr.items[i]);
+            free(v->arr.items);
+            break;
+        case JSON_OBJECT:
+            for (size_t i = 0; i < v->obj.count; i++) {
+                free(v->obj.keys[i]);
+                json_free(v->obj.vals[i]);
+            }
+            free(v->obj.keys);
+            free(v->obj.vals);
+            break;
+        default: break;
+    }
+    free(v);
+}
+
+/* ---- JSON Parser ---- */
+
+typedef struct { const char *p; const char *end; const char *start; } JsonParser;
+
+static void json_skip_ws(JsonParser *pp);
+static JsonValue *json_parse_value(JsonParser *pp);
+static JsonValue *json_parse_string(JsonParser *pp);
+static JsonValue *json_parse_number(JsonParser *pp);
+static JsonValue *json_parse_array(JsonParser *pp);
+static JsonValue *json_parse_object(JsonParser *pp);
+
+static void json_skip_ws(JsonParser *pp) {
+    while (pp->p < pp->end && (*pp->p == ' ' || *pp->p == '\t' || *pp->p == '\n' || *pp->p == '\r')) pp->p++;
+}
+
+static JsonValue *json_parse_value(JsonParser *pp) {
+    json_skip_ws(pp);
+    if (pp->p >= pp->end) return NULL;
+    char c = *pp->p;
+    if (c == 'n') {
+        if (pp->end - pp->p >= 4 && strncmp(pp->p, "null", 4) == 0) { pp->p += 4; return json_new_null(); }
+        return NULL;
+    }
+    if (c == 't') {
+        if (pp->end - pp->p >= 4 && strncmp(pp->p, "true", 4) == 0) { pp->p += 4; return json_new_bool(true); }
+        return NULL;
+    }
+    if (c == 'f') {
+        if (pp->end - pp->p >= 5 && strncmp(pp->p, "false", 5) == 0) { pp->p += 5; return json_new_bool(false); }
+        return NULL;
+    }
+    if (c == '"') return json_parse_string(pp);
+    if (c == '[') return json_parse_array(pp);
+    if (c == '{') return json_parse_object(pp);
+    if (c == '-' || (c >= '0' && c <= '9')) return json_parse_number(pp);
+    return NULL;
+}
+
+static JsonValue *json_parse_string(JsonParser *pp) {
+    if (pp->p >= pp->end || *pp->p != '"') return NULL;
+    pp->p++;
+    char buf[4096];
+    size_t n = 0;
+    while (pp->p < pp->end && *pp->p != '"' && n < sizeof(buf) - 1) {
+        char c = *pp->p;
+        if (c == '\\') {
+            pp->p++;
+            if (pp->p >= pp->end) return NULL;
+            switch (*pp->p) {
+                case '"': buf[n++] = '"'; break;
+                case '\\': buf[n++] = '\\'; break;
+                case '/': buf[n++] = '/'; break;
+                case 'b': buf[n++] = '\b'; break;
+                case 'f': buf[n++] = '\f'; break;
+                case 'n': buf[n++] = '\n'; break;
+                case 'r': buf[n++] = '\r'; break;
+                case 't': buf[n++] = '\t'; break;
+                case 'u':
+                    if (pp->end - pp->p >= 4) {
+                        char hex[5] = {pp->p[0], pp->p[1], pp->p[2], pp->p[3], 0};
+                        pp->p += 3;
+                        buf[n++] = (char)strtol(hex, NULL, 16);
+                    } else return NULL;
+                    break;
+                default: return NULL;
+            }
+        } else {
+            buf[n++] = c;
+        }
+        pp->p++;
+    }
+    if (pp->p >= pp->end || *pp->p != '"') return NULL;
+    pp->p++;
+    buf[n] = '\0';
+    return json_new_string(buf);
+}
+
+static JsonValue *json_parse_number(JsonParser *pp) {
+    const char *start = pp->p;
+    bool is_float = false;
+    if (*pp->p == '-') pp->p++;
+    while (pp->p < pp->end && *pp->p >= '0' && *pp->p <= '9') pp->p++;
+    if (pp->p < pp->end && *pp->p == '.') { is_float = true; pp->p++; while (pp->p < pp->end && *pp->p >= '0' && *pp->p <= '9') pp->p++; }
+    if (pp->p < pp->end && (*pp->p == 'e' || *pp->p == 'E')) { is_float = true; pp->p++; if (*pp->p == '+' || *pp->p == '-') pp->p++; while (pp->p < pp->end && *pp->p >= '0' && *pp->p <= '9') pp->p++; }
+    size_t n = (size_t)(pp->p - start);
+    char buf[128];
+    if (n >= sizeof(buf)) return NULL;
+    memcpy(buf, start, n);
+    buf[n] = '\0';
+    if (is_float) return json_new_double(strtod(buf, NULL));
+    return json_new_int(strtoll(buf, NULL, 10));
+}
+
+static JsonValue *json_parse_array(JsonParser *pp) {
+    if (pp->p >= pp->end || *pp->p != '[') return NULL;
+    pp->p++;
+    JsonValue *arr = json_new_array();
+    if (!arr) return NULL;
+    json_skip_ws(pp);
+    if (pp->p < pp->end && *pp->p == ']') { pp->p++; return arr; }
+    while (pp->p < pp->end) {
+        JsonValue *v = json_parse_value(pp);
+        if (!v) { json_free(arr); return NULL; }
+        if (json_arr_push(arr, v) != 0) { json_free(v); json_free(arr); return NULL; }
+        json_skip_ws(pp);
+        if (pp->p < pp->end && *pp->p == ',') { pp->p++; json_skip_ws(pp); continue; }
+        if (pp->p < pp->end && *pp->p == ']') { pp->p++; return arr; }
+        json_free(arr); return NULL;
+    }
+    json_free(arr); return NULL;
+}
+
+static JsonValue *json_parse_object(JsonParser *pp) {
+    if (pp->p >= pp->end || *pp->p != '{') return NULL;
+    pp->p++;
+    JsonValue *obj = json_new_object();
+    if (!obj) return NULL;
+    json_skip_ws(pp);
+    if (pp->p < pp->end && *pp->p == '}') { pp->p++; return obj; }
+    while (pp->p < pp->end) {
+        json_skip_ws(pp);
+        JsonValue *kv = json_parse_string(pp);
+        if (!kv || kv->type != JSON_STRING) { json_free(kv); json_free(obj); return NULL; }
+        const char *key = kv->s;
+        json_skip_ws(pp);
+        if (pp->p >= pp->end || *pp->p != ':') { json_free(kv); json_free(obj); return NULL; }
+        pp->p++;
+        JsonValue *val = json_parse_value(pp);
+        if (!val) { json_free(kv); json_free(obj); return NULL; }
+        if (json_obj_set(obj, key, val) != 0) { json_free(kv); json_free(val); json_free(obj); return NULL; }
+        json_free(kv);
+        json_skip_ws(pp);
+        if (pp->p < pp->end && *pp->p == ',') { pp->p++; continue; }
+        if (pp->p < pp->end && *pp->p == '}') { pp->p++; return obj; }
+        json_free(obj); return NULL;
+    }
+    json_free(obj); return NULL;
+}
+
+JsonValue *json_parse(const char *input, size_t len) {
+    if (!input || len == 0) return NULL;
+    JsonParser pp = { input, input + len, input };
+    return json_parse_value(&pp);
+}
+
+/* ---- JSON Stringify ---- */
+
+typedef struct { char *buf; size_t len; size_t cap; } JsonBuf;
+
+static int json_buf_write(JsonBuf *b, const char *s, size_t n) {
+    if (b->len + n + 1 > b->cap) {
+        size_t new_cap = (b->cap * 2) + n + 1;
+        if (new_cap < 1024) new_cap = 1024;
+        char *new_buf = (char *)realloc(b->buf, new_cap);
+        if (!new_buf) return -1;
+        b->buf = new_buf;
+        b->cap = new_cap;
+    }
+    memcpy(b->buf + b->len, s, n);
+    b->len += n;
+    b->buf[b->len] = '\0';
+    return 0;
+}
+
+static int json_write_string(JsonBuf *b, const char *s) {
+    json_buf_write(b, "\"", 1);
+    for (const char *p = s; *p; p++) {
+        switch (*p) {
+            case '"': json_buf_write(b, "\\\"", 2); break;
+            case '\\': json_buf_write(b, "\\\\", 2); break;
+            case '\b': json_buf_write(b, "\\b", 2); break;
+            case '\f': json_buf_write(b, "\\f", 2); break;
+            case '\n': json_buf_write(b, "\\n", 2); break;
+            case '\r': json_buf_write(b, "\\r", 2); break;
+            case '\t': json_buf_write(b, "\\t", 2); break;
+            default:
+                if ((unsigned char)*p < 0x20) {
+                    char esc[8];
+                    snprintf(esc, sizeof(esc), "\\u%04x", (unsigned char)*p);
+                    json_buf_write(b, esc, 6);
+                } else {
+                    json_buf_write(b, p, 1);
+                }
+                break;
+        }
+    }
+    json_buf_write(b, "\"", 1);
+    return 0;
+}
+
+static int json_write_value(JsonBuf *b, const JsonValue *v) {
+    if (!v) { json_buf_write(b, "null", 4); return 0; }
+    char buf[128];
+    switch (v->type) {
+        case JSON_NULL: json_buf_write(b, "null", 4); break;
+        case JSON_BOOL: json_buf_write(b, v->b ? "true" : "false", v->b ? 4 : 5); break;
+        case JSON_INT: snprintf(buf, sizeof(buf), "%lld", (long long)v->i); json_buf_write(b, buf, strlen(buf)); break;
+        case JSON_DOUBLE: snprintf(buf, sizeof(buf), "%g", v->d); json_buf_write(b, buf, strlen(buf)); break;
+        case JSON_STRING: json_write_string(b, v->s ? v->s : ""); break;
+        case JSON_ARRAY:
+            json_buf_write(b, "[", 1);
+            for (size_t i = 0; i < v->arr.count; i++) {
+                if (i > 0) json_buf_write(b, ",", 1);
+                json_write_value(b, v->arr.items[i]);
+            }
+            json_buf_write(b, "]", 1);
+            break;
+        case JSON_OBJECT:
+            json_buf_write(b, "{", 1);
+            for (size_t i = 0; i < v->obj.count; i++) {
+                if (i > 0) json_buf_write(b, ",", 1);
+                json_write_string(b, v->obj.keys[i]);
+                json_buf_write(b, ":", 1);
+                json_write_value(b, v->obj.vals[i]);
+            }
+            json_buf_write(b, "}", 1);
+            break;
+    }
+    return 0;
+}
+
+char *json_stringify(const JsonValue *v) {
+    JsonBuf b = { NULL, 0, 0 };
+    if (json_write_value(&b, v) != 0) { free(b.buf); return NULL; }
+    return b.buf;
+}
+
+/* ==================== Timer ==================== */
+
+#ifdef __linux__
+#include <time.h>
+#include <sys/time.h>
+#endif
+
+typedef struct PnyTimer {
+    int64_t interval_ms;
+    TimerCallback cb;
+    void *ctx;
+    bool repeat;
+    bool running;
+} PnyTimer;
+
+PnyTimer *pny_timer_new(int64_t interval_ms, TimerCallback cb, void *ctx, bool repeat) {
+    PnyTimer *t = (PnyTimer *)calloc(1, sizeof(PnyTimer));
+    if (!t) return NULL;
+    t->interval_ms = interval_ms;
+    t->cb = cb;
+    t->ctx = ctx;
+    t->repeat = repeat;
+    t->running = false;
+    return t;
+}
+
+void pny_timer_free(PnyTimer *t) {
+    if (!t) return;
+    free(t);
+}
+
+void pny_timer_start(PnyTimer *t) {
+    if (!t) return;
+    t->running = true;
+}
+
+void pny_timer_stop(PnyTimer *t) {
+    if (!t) return;
+    t->running = false;
+}
+
+bool pny_timer_running(const PnyTimer *t) {
+    return t && t->running;
+}
+
+int64_t pny_timer_now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static int64_t timer_start_time = 0;
+static bool timer_start_time_init = false;
+
+int64_t pny_timer_elapsed_ms(void) {
+    if (!timer_start_time_init) {
+        timer_start_time = pny_timer_now_ms();
+        timer_start_time_init = true;
+    }
+    return pny_timer_now_ms() - timer_start_time;
+}
+
+/* ==================== Logger ==================== */
+
+typedef struct PnyLogger {
+    char *name;
+    LogLevel level;
+} PnyLogger;
+
+static const char *log_level_str(LogLevel level) {
+    switch (level) {
+        case LOG_TRACE: return "TRACE";
+        case LOG_DEBUG: return "DEBUG";
+        case LOG_INFO: return "INFO";
+        case LOG_WARN: return "WARN";
+        case LOG_ERROR: return "ERROR";
+        case LOG_FATAL: return "FATAL";
+        default: return "?????";
+    }
+}
+
+PnyLogger *pny_logger_new(const char *name) {
+    PnyLogger *l = (PnyLogger *)calloc(1, sizeof(PnyLogger));
+    if (!l) return NULL;
+    l->name = json_strdup(name ? name : "root");
+    l->level = LOG_INFO;
+    return l;
+}
+
+void pny_logger_free(PnyLogger *l) {
+    if (!l) return;
+    free(l->name);
+    free(l);
+}
+
+void pny_logger_set_level(PnyLogger *l, LogLevel level) {
+    if (l) l->level = level;
+}
+
+LogLevel pny_logger_get_level(const PnyLogger *l) {
+    return l ? l->level : LOG_INFO;
+}
+
+int pny_logger_log(PnyLogger *l, LogLevel level, const char *fmt, ...) {
+    if (!l || level < l->level) return -1;
+    char buf[4096];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return -1;
+    printf("[%s] [%s] %s: %s\n", log_level_str(level), l->name ? l->name : "root", "", buf);
+    return n;
+}
+
+int pny_logger_trace(PnyLogger *l, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    char buf[4096];
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return -1;
+    if (l && LOG_TRACE >= l->level) {
+        printf("[TRACE] [%s] %s\n", l->name ? l->name : "root", buf);
+        return n;
+    }
+    return -1;
+}
+
+int pny_logger_debug(PnyLogger *l, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    char buf[4096];
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return -1;
+    if (l && LOG_DEBUG >= l->level) {
+        printf("[DEBUG] [%s] %s\n", l->name ? l->name : "root", buf);
+        return n;
+    }
+    return -1;
+}
+
+int pny_logger_info(PnyLogger *l, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    char buf[4096];
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return -1;
+    if (l && LOG_INFO >= l->level) {
+        printf("[INFO]  [%s] %s\n", l->name ? l->name : "root", buf);
+        return n;
+    }
+    return -1;
+}
+
+int pny_logger_warn(PnyLogger *l, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    char buf[4096];
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return -1;
+    if (l && LOG_WARN >= l->level) {
+        printf("[WARN]  [%s] %s\n", l->name ? l->name : "root", buf);
+        return n;
+    }
+    return -1;
+}
+
+int pny_logger_error(PnyLogger *l, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    char buf[4096];
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return -1;
+    if (l && LOG_ERROR >= l->level) {
+        fprintf(stderr, "[ERROR] [%s] %s\n", l->name ? l->name : "root", buf);
+        return n;
+    }
+    return -1;
+}
+
+int pny_logger_fatal(PnyLogger *l, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    char buf[4096];
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return -1;
+    if (l && LOG_FATAL >= l->level) {
+        fprintf(stderr, "[FATAL] [%s] %s\n", l->name ? l->name : "root", buf);
+        return n;
+    }
+    return -1;
+}
+
+/* ==================== Math ==================== */
+
+double pny_math_sqrt(double x) { return sqrt(x); }
+double pny_math_pow(double base, double exp) { return pow(base, exp); }
+double pny_math_sin(double x) { return sin(x); }
+double pny_math_cos(double x) { return cos(x); }
+double pny_math_tan(double x) { return tan(x); }
+double pny_math_asin(double x) { return asin(x); }
+double pny_math_acos(double x) { return acos(x); }
+double pny_math_atan(double x) { return atan(x); }
+double pny_math_atan2(double y, double x) { return atan2(y, x); }
+double pny_math_log(double x) { return log(x); }
+double pny_math_log2(double x) { return log2(x); }
+double pny_math_exp(double x) { return exp(x); }
+double pny_math_ceil(double x) { return ceil(x); }
+double pny_math_floor(double x) { return floor(x); }
+double pny_math_abs(double x) { return fabs(x); }
+int64_t pny_math_abs_int(int64_t x) { return x < 0 ? -x : x; }
+double pny_math_fmod(double x, double y) { return fmod(x, y); }
+int64_t pny_math_min(int64_t a, int64_t b) { return a < b ? a : b; }
+int64_t pny_math_max(int64_t a, int64_t b) { return a > b ? a : b; }
+int64_t pny_math_factorial(int64_t n) {
+    if (n <= 1) return 1;
+    if (n > 20) return -1; /* overflow guard */
+    int64_t result = 1;
+    for (int64_t i = 2; i <= n; i++) result *= i;
+    return result;
+}
+
+static uint64_t pny_rand_state = 0x12345678ULL;
+
+double pny_math_random(void) {
+    /* xoshiro256** simplified */
+    pny_rand_state ^= pny_rand_state >> 12;
+    pny_rand_state ^= pny_rand_state << 25;
+    pny_rand_state ^= pny_rand_state >> 27;
+    return (double)(pny_rand_state & 0x3FFFFFFFFFFFFFFFULL) / (double)0x4000000000000000ULL;
+}
+
+int64_t pny_math_random_int(int64_t max) {
+    if (max <= 0) return 0;
+    return (int64_t)(pny_math_random() * (double)max);
 }
