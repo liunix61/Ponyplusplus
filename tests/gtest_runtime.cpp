@@ -214,3 +214,128 @@ TEST(RuntimeExtra, SendStopped) {
     ASSERT_EQ(rc, -2);
     pny_runtime_free(r);
 }
+
+/* ======================== Reply Channel ======================== */
+
+/* behavior: 收到消息时回复 result */
+void actor_behavior_reply(PnyActor *self, PnyMessage *msg) {
+    (void)self;
+    if (msg->reply) {
+        /* 用 arg 内容作为回复 */
+        if (msg->arg && msg->arg_size > 0) {
+            pny_actor_reply(msg, msg->arg, msg->arg_size);
+        } else {
+            pny_actor_reply(msg, NULL, 0);
+        }
+    }
+}
+
+TEST(RuntimeReply, ActorCallSync) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "Worker", 0);
+    a->behavior = actor_behavior_reply;
+    pny_scheduler_start(r);
+    const char *req = "ping";
+    void *result = NULL;
+    size_t result_size = 0;
+    int rc = pny_actor_call(&a->self, &a->self, "query", (void*)req, strlen(req) + 1, &result, &result_size);
+    ASSERT_EQ(rc, 0);
+    ASSERT_TRUE(result != nullptr);
+    ASSERT_EQ(result_size, strlen(req) + 1);
+    ASSERT_STREQ((const char*)result, "ping");
+    free(result);
+    pny_runtime_free(r);
+}
+
+TEST(RuntimeReply, ActorCallNoResult) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "Worker", 0);
+    a->behavior = actor_behavior_reply;
+    pny_scheduler_start(r);
+    void *result = NULL;
+    size_t result_size = 0;
+    int rc = pny_actor_call(&a->self, &a->self, "noop", NULL, 0, &result, &result_size);
+    ASSERT_EQ(rc, 0);
+    ASSERT_TRUE(result == nullptr);
+    ASSERT_EQ(result_size, 0);
+    pny_runtime_free(r);
+}
+
+TEST(RuntimeReply, ActorCallTargetStopped) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "Worker", 0);
+    a->actor_state = ACTOR_STATE_STOPPED;
+    void *result = NULL;
+    size_t result_size = 0;
+    int rc = pny_actor_call(&a->self, &a->self, "m", NULL, 0, &result, &result_size);
+    ASSERT_EQ(rc, -2);
+    pny_runtime_free(r);
+}
+
+TEST(RuntimeReply, ActorCallNullTarget) {
+    PnyRuntime *r = pny_runtime_new();
+    (void)r;
+    void *result = NULL;
+    size_t result_size = 0;
+    int rc = pny_actor_call(NULL, NULL, "m", NULL, 0, &result, &result_size);
+    ASSERT_EQ(rc, -1);
+    pny_runtime_free(r);
+}
+
+/* ======================== Supervision Tree Children ======================== */
+
+TEST(RuntimeSupervision, ChildrenTracking) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *parent = pny_actor_new(r, "Supervisor", 0);
+    PnyActor *c1 = pny_actor_new(r, "Worker1", 0);
+    PnyActor *c2 = pny_actor_new(r, "Worker2", 0);
+    pny_supervise_register(parent, &c1->self, SUPERVISE_ONE_FOR_ONE, 3);
+    pny_supervise_register(parent, &c2->self, SUPERVISE_ONE_FOR_ONE, 3);
+    ASSERT_EQ(parent->child_count, 2);
+    ASSERT_TRUE(parent->children != nullptr);
+    ASSERT_TRUE(parent->children[0] == c1);
+    ASSERT_TRUE(parent->children[1] == c2);
+    pny_runtime_free(r);
+}
+
+TEST(RuntimeSupervision, OneForAllRestartsAll) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *parent = pny_actor_new(r, "Supervisor", 0);
+    PnyActor *c1 = pny_actor_new(r, "Worker1", 0);
+    PnyActor *c2 = pny_actor_new(r, "Worker2", 0);
+    pny_supervise_register(parent, &c1->self, SUPERVISE_ONE_FOR_ALL, 3);
+    pny_supervise_register(parent, &c2->self, SUPERVISE_ONE_FOR_ALL, 3);
+    pny_scheduler_start(r);
+    /* c1 崩溃，ONE_FOR_ALL 应重启所有子 Actor */
+    pny_supervisor_handle_crash(r, &c1->self);
+    ASSERT_EQ(c1->actor_state, ACTOR_STATE_RESTARTING);
+    /* c2 也应为 RESTARTING（如果 children 被正确填充）*/
+    ASSERT_EQ(c2->actor_state, ACTOR_STATE_RESTARTING);
+    ASSERT_EQ(c1->supervise->restart_count, 1);
+    pny_runtime_free(r);
+}
+
+TEST(RuntimeSupervision, SingleChild) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *parent = pny_actor_new(r, "Sup", 0);
+    PnyActor *c1 = pny_actor_new(r, "W1", 0);
+    pny_supervise_register(parent, &c1->self, SUPERVISE_ONE_FOR_ONE, 1);
+    ASSERT_EQ(parent->child_count, 1);
+    pny_supervisor_handle_crash(r, &c1->self);
+    ASSERT_EQ(c1->actor_state, ACTOR_STATE_RESTARTING);
+    /* 第二次崩溃应停止 */
+    pny_supervisor_handle_crash(r, &c1->self);
+    ASSERT_EQ(c1->actor_state, ACTOR_STATE_STOPPED);
+    pny_runtime_free(r);
+}
+
+TEST(RuntimeSupervision, NoSupervisionNoCrash) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "Orphan", 0);
+    pny_scheduler_start(r);
+    ASSERT_EQ(a->actor_state, ACTOR_STATE_RUNNING);
+    pny_supervisor_handle_crash(r, &a->self);
+    /* 无监督元数据，不应改变状态 */
+    ASSERT_EQ(a->actor_state, ACTOR_STATE_RUNNING);
+    pny_runtime_free(r);
+}

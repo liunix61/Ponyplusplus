@@ -135,6 +135,8 @@ void pny_msg_free(PnyMessage *m) {
     if (!m) return;
     s_free(m->method);
     s_free(m->arg);
+    /* reply 由 pny_actor_call 管理，这里不清理 */
+    m->reply = NULL;
     s_free(m);
 }
 
@@ -162,13 +164,62 @@ int pny_actor_send(ActorRef *from, ActorRef *to, const char *method, void *arg, 
 }
 
 int pny_actor_call(ActorRef *from, ActorRef *to, const char *method, void *arg, size_t arg_size, void **result, size_t *result_size) {
-    int rc = pny_actor_send(from, to, method, arg, arg_size);
-    if (rc < 0) return rc;
-    /* 同步等待：调度器 tick 直到有结果 */
-    /* TODO: 实现 reply channel */
-    if (result) *result = NULL;
-    if (result_size) *result_size = 0;
-    return 0;
+    if (!to || !to->actor) return -1;
+    PnyActor *a = to->actor;
+    if (a->actor_state != ACTOR_STATE_RUNNING &&
+        a->actor_state != ACTOR_STATE_INIT) return -2;
+    if (a->message_count >= a->max_messages) return -3;
+    PnyMessage *m = pny_msg_new(method, arg, arg_size);
+    if (!m) return -4;
+    m->sender.id = from ? from->id : -1;
+    m->sender.name = from ? s_strdup(from->name) : NULL;
+    m->sender.actor = from ? from->actor : NULL;
+    /* 创建回复通道 */
+    PnyReply *reply = (PnyReply*)s_malloc(sizeof(PnyReply));
+    if (!reply) { pny_msg_free(m); return -5; }
+    memset(reply, 0, sizeof(PnyReply));
+    reply->done = 0;
+    reply->error = 0;
+    m->reply = reply;
+    /* 入队 */
+    if (a->messages) {
+        PnyMessage *tail = a->messages;
+        while (tail->next) tail = tail->next;
+        tail->next = m;
+    } else {
+        a->messages = m;
+    }
+    a->message_count++;
+    if (pny_runtime_global) pny_runtime_global->stats.messages_sent++;
+    /* 同步等待：调度器 tick 直到有结果（最多 1000 次防止死循环） */
+    PnyRuntime *rt = pny_runtime_global;
+    int max_ticks = 1000;
+    while (!reply->done && max_ticks-- > 0 && rt) {
+        pny_scheduler_tick(rt);
+    }
+    if (result) *result = reply->result;    /* 所有权转移给调用者 */
+    if (result_size) *result_size = reply->result_size;
+    int err = reply->error;
+    reply->result = NULL;
+    s_free(reply);
+    return err;
+}
+
+/* 同步调用回复：behavior 中调用此函数返回结果 */
+void pny_actor_reply(PnyMessage *msg, void *result, size_t result_size) {
+    if (!msg || !msg->reply) return;
+    if (result && result_size > 0) {
+        void *copy = s_malloc(result_size);
+        if (!copy) {
+            msg->reply->error = -1;
+            msg->reply->done = 1;
+            return;
+        }
+        memcpy(copy, result, result_size);
+        msg->reply->result = copy;
+        msg->reply->result_size = result_size;
+    }
+    msg->reply->done = 1;
 }
 
 /* ======================== 调度器 ======================== */
@@ -231,6 +282,16 @@ void pny_supervise_register(PnyActor *parent, ActorRef *child, SuperviseStrategy
     c->supervise->strategy = strategy;
     c->supervise->max_restarts = max_restarts > 0 ? max_restarts : 3;
     c->supervise->restart_count = 0;
+    /* 添加 child 到 parent 的 children 数组 */
+    PnyActor **new_children = (PnyActor**)s_malloc(sizeof(PnyActor*) * (parent->child_count + 1));
+    if (!new_children) return;
+    if (parent->child_count > 0 && parent->children) {
+        memcpy(new_children, parent->children, sizeof(PnyActor*) * parent->child_count);
+    }
+    new_children[parent->child_count] = c;
+    s_free(parent->children);
+    parent->children = new_children;
+    parent->child_count++;
 }
 
 void pny_supervisor_handle_crash(PnyRuntime *r, ActorRef *crashed) {

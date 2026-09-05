@@ -43,6 +43,16 @@ typedef struct {
     int restart_count;
 } SuperviseMeta;
 
+/* 回复通道（同步请求-响应） */
+#define PNY_REPLY_MAX_SIZE 4096
+
+typedef struct PnyReply {
+    void *result;
+    size_t result_size;
+    int done;       /* 0=waiting, 1=done */
+    int error;      /* 0=ok, <0=error */
+} PnyReply;
+
 /* 消息队列项 */
 typedef struct PnyMessage {
     char *method;
@@ -50,6 +60,7 @@ typedef struct PnyMessage {
     size_t arg_size;
     struct PnyMessage *next;
     ActorRef sender;
+    PnyReply *reply;    /* 非 NULL 时为同步调用，behavior 需调用 pny_actor_reply */
 } PnyMessage;
 
 /* Actor 结构 */
@@ -118,6 +129,7 @@ PnyMessage *pny_msg_new(const char *method, void *arg, size_t arg_size);
 void pny_msg_free(PnyMessage *m);
 int pny_actor_send(ActorRef *from, ActorRef *to, const char *method, void *arg, size_t arg_size);
 int pny_actor_call(ActorRef *from, ActorRef *to, const char *method, void *arg, size_t arg_size, void **result, size_t *result_size);
+void pny_actor_reply(PnyMessage *msg, void *result, size_t result_size);
 
 /* 调度 */
 void pny_scheduler_tick(PnyRuntime *r);
