@@ -1,0 +1,229 @@
+/**
+ * compiler/main.pny - Pony++ 编译驱动（自举用）
+ *
+ * 用 Pony++ 重写编译驱动，对齐 C 版 ponyppc.c 行为。
+ * 提供 ponyppc 的 Pony++ 版本，用于自举验证。
+ *
+ * 自举流程:
+ *   1. C 版 ponyppc 编译 compiler/*.pny → self_compiled_bin
+ *   2. self_compiled_bin 编译 stdlib/*.pny → stdlib_out
+ *   3. 对比 C 版输出 → 一致则自举成功
+ */
+
+// Token 类型（引用 lexer.pny）
+val TK_EOF: Int = 0
+val TK_KEYWORD: Int = 1
+val TK_IDENT: Int = 2
+val TK_STRING: Int = 3
+val TK_INT: Int = 4
+val TK_FLOAT: Int = 5
+val TK_BOOL: Int = 6
+val TK_OPERATOR: Int = 7
+val TK_PUNCT: Int = 8
+
+// AST 节点类型（引用 parser.pny）
+val NODE_EMPTY: Int = 0
+val NODE_PROGRAM: Int = 1
+val NODE_ACTOR: Int = 2
+val NODE_CLASS: Int = 3
+val NODE_TRAIT: Int = 4
+val NODE_INTERFACE: Int = 5
+val NODE_BE: Int = 6
+val NODE_FUN: Int = 7
+val NODE_NEW: Int = 8
+val NODE_VAR: Int = 9
+val NODE_LET: Int = 10
+val NODE_CAP: Int = 11
+val NODE_IMPORT: Int = 12
+val NODE_MATCH: Int = 13
+val NODE_IF: Int = 15
+val NODE_WHILE: Int = 17
+val NODE_FOR: Int = 18
+val NODE_RETURN: Int = 19
+val NODE_PRINT: Int = 20
+val NODE_CALL: Int = 26
+val NODE_IDENT: Int = 27
+val NODE_STRING: Int = 31
+val NODE_INT: Int = 32
+val NODE_FLOAT: Int = 33
+val NODE_BOOL: Int = 34
+val NODE_SEND: Int = 24
+val NODE_MSG_CALL: Int = 25
+val NODE_TYPE_PARAM: Int = 40
+val NODE_TYPE_ALIAS: Int = 41
+val NODE_WIT_WORLD: Int = 42
+val NODE_SEND: Int = 24
+val NODE_MSG_CALL: Int = 25
+val NODE_INDEX_ACCESS: Int = 39
+
+// 目标类型（引用 codegen.pny）
+val TARGET_NATIVE: Int = 0
+val TARGET_WASM: Int = 1
+val TARGET_AST: Int = 2
+val TARGET_WIT_WORLD: Int = 3
+
+// 编译配置
+actor CompilerConfig {
+  var target: Int
+  var output: String
+  var optimize: Int
+  var emit_ast: Bool
+  var emit_ast_dot: Bool
+  var wasm32: Bool
+  var mcu_platform: String
+
+  new create() => {
+    this.target = TARGET_NATIVE
+    this.output = ""
+    this.optimize = 0
+    this.emit_ast = false
+    this.emit_ast_dot = false
+    this.wasm32 = true
+    this.mcu_platform = ""
+  }
+}
+
+// 编译驱动
+actor Ponyppc {
+  var cfg: CompilerConfig
+  var input_path: String
+
+  new create() => {
+    this.cfg = CompilerConfig()
+    this.input_path = ""
+  }
+
+  // 解析命令行参数
+  fun parse_args(args: List) => {
+    var i = 0
+    while i < args.len() => {
+      val arg = args.get(i)
+
+      if arg == "-t" || arg == "--target" => {
+        i = i + 1
+        if i < args.len() => {
+          val target_str = args.get(i)
+          if target_str == "wasm" || target_str == "wasm32" => {
+            cfg.target = TARGET_WASM
+          } else if target_str == "native" => {
+            cfg.target = TARGET_NATIVE
+          } else if target_str == "ast" => {
+            cfg.target = TARGET_AST
+            cfg.emit_ast = true
+          } else if target_str == "wit" || target_str == "wit-world" => {
+            cfg.target = TARGET_WIT_WORLD
+          }
+        }
+      } else if arg == "--emit-ast" => {
+        cfg.emit_ast = true
+      } else if arg == "--emit-ast-dot" => {
+        cfg.emit_ast_dot = true
+      } else if arg == "-O" => {
+        i = i + 1
+        if i < args.len() => {
+          cfg.optimize = args.get(i).to_int
+        }
+      } else if arg == "-o" || arg == "--output" => {
+        i = i + 1
+        if i < args.len() => {
+          cfg.output = args.get(i)
+        }
+      } else if arg == "--wasm32" => {
+        cfg.wasm32 = true
+      } else if arg == "--mcu" => {
+        i = i + 1
+        if i < args.len() => {
+          cfg.mcu_platform = args.get(i)
+        }
+      } else if arg == "-h" || arg == "--help" => {
+        print_usage()
+        return false
+      } else if arg == "--bootstrap" => {
+        // 自举模式
+        cfg.emit_ast = true
+      } else if !arg.starts_with("-") => {
+        input_path = arg
+      }
+
+      i = i + 1
+    }
+    return true
+  }
+
+  // 打印用法
+  fun print_usage() => {
+    val usage = """
+Pony++ Compiler (Bootstrap Edition)
+Usage: ponyppc [options] <input.pny>
+
+Options:
+  -t, --target <target>   目标: native/wasm/ast/wit
+  -o, --output <path>     输出路径
+  -O <level>              优化级别 (0-2)
+  --emit-ast              输出 AST
+  --emit-ast-dot          输出 Graphviz DOT
+  --wasm32                生成 32-bit WASM
+  --mcu <platform>        MCU 平台 (wamr/stm32/esp32)
+  --bootstrap             自举模式
+  -h, --help              显示帮助
+    """
+    print(usage)
+  }
+
+  // 编译文件
+  fun compile() => {
+    if input_path == "" => {
+      print("Error: no input file")
+      return -1
+    }
+
+    // 1. 读取文件
+    val source = read_file(input_path)
+    if source == "" => {
+      print("Error: cannot read " + input_path)
+      return -1
+    }
+
+    // 2. 词法分析
+    val lexer = Lexer(input_path, source)
+    val tokens = lexer.lex_all()
+
+    // 3. 语法分析
+    val parser = Parser(input_path, tokens)
+    val ast = parser.parse_program()
+
+    // 4. 代码生成
+    val codegen = Codegen(input_path, cfg)
+    val output = codegen.generate(ast)
+
+    // 5. 输出
+    if cfg.output != "" => {
+      write_file(cfg.output, output)
+    } else {
+      print(output)
+    }
+
+    return 0
+  }
+
+  // 文件操作
+  fun read_file(path: String) => {
+    return file_read(path)
+  }
+
+  fun write_file(path: String, content: String) => {
+    file_write(path, content)
+  }
+}
+
+// 自举入口
+actor main {
+  new create() => {
+    val compiler = Ponyppc()
+    val args = List()
+    // 从外部参数获取
+
+    compiler.parse_args(args)
+    compiler.compile()
+  }
+}

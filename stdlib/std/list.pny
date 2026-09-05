@@ -1,0 +1,94 @@
+/**
+ * std.list - Pony++ 列表数据结构标准库
+ *
+ * API:
+ *   List()              - 创建空列表
+ *   List(1, 2, 3)      - 创建列表
+ *   l.append(x)         - 追加元素
+ *   l.prepend(x)        - 前置元素
+ *   l.remove(x)         - 移除元素
+ *   l.contains(x)       - 包含检查
+ *   l.len()             - 列表长度
+ *   l.empty()           - 是否为空
+ *   l.get(index)        - 按索引获取
+ *   l.sort()            - 排序
+ *   l.reverse()         - 反转
+ *   l.map(f)            - 映射转换
+ *   l.filter(f)         - 过滤
+ *   l.fold(init, f)     - 折叠归约
+ */
+actor List {
+  var items: List
+
+  new create() => {
+    this.items = []
+  }
+
+  new create(items: List) => {
+    this.items = items
+  }
+
+  fun len() => {
+    return items.len()
+  }
+
+  fun empty() => {
+    return items.empty()
+  }
+
+  be append(item: Any) => {
+    items.append(item)
+  }
+
+  be prepend(item: Any) => {
+    items.prepend(item)
+  }
+
+  be remove(item: Any) => {
+    items.remove(item)
+  }
+
+  fun contains(item: Any) => {
+    return items.contains(item)
+  }
+
+  fun get(index: Int) => {
+    return items[index]
+  }
+
+  be sort() => {
+    items.sort()
+  }
+
+  be reverse() => {
+    items.reverse()
+  }
+
+  fun map(f: Lambda) => {
+    return items.map(f)
+  }
+
+  fun filter(f: Lambda) => {
+    return items.filter(f)
+  }
+
+  fun fold(init: Any, f: Lambda) => {
+    return items.fold(init, f)
+  }
+
+  fun join(sep: String) => {
+    return items.join(sep)
+  }
+
+  fun first() => {
+    return items.first()
+  }
+
+  fun last() => {
+    return items.last()
+  }
+
+  fun slice(start: Int, end: Int) => {
+    return items.slice(start, end)
+  }
+}

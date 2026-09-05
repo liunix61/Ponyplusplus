@@ -835,7 +835,7 @@ TEST(P3FFI, RegisterFuncNotFound) {
     int rc = ffi_register_func("nonexistent_func_xyz", "C", FFI_TYPE_VOID, NULL, NULL, 0);
     EXPECT_EQ(rc, -2);
     FFIFunc *f = ffi_find_func("nonexistent_func_xyz");
-    EXPECT_NULL(f);
+    EXPECT_EQ(f, nullptr);
     ffi_runtime_free();
 }
 
@@ -853,7 +853,7 @@ TEST(P3FFI, Dump) {
     char buf[1024];
     int len = ffi_dump(buf, sizeof(buf));
     EXPECT_GT(len, 0);
-    EXPECT_NE(strstr(buf, "Functions:"), (void *)0);
+    EXPECT_NE(strstr(buf, "Functions:"), nullptr);
     ffi_runtime_free();
 }
 
@@ -939,4 +939,196 @@ TEST(P3Pkg, VersionSatisfies) {
     EXPECT_TRUE(pkg_version_satisfies("1.5.0", "~1.0.0"));
     EXPECT_FALSE(pkg_version_satisfies("0.9.0", "^1.0.0"));
     EXPECT_FALSE(pkg_version_satisfies(NULL, "1.0.0"));
+}
+
+/* ======================== Phase P4: Bootstrap 自举 ======================== */
+
+TEST(P4Bootstrap, CompilerFilesExist) {
+    const char *files[] = {"compiler/lexer.pny", "compiler/parser.pny",
+                           "compiler/codegen.pny", "compiler/main.pny"};
+    for (int i = 0; i < 4; i++) {
+        FILE *f = fopen(files[i], "r");
+        EXPECT_NE(f, nullptr) << files[i];
+        if (f) fclose(f);
+    }
+}
+
+TEST(P4Bootstrap, StdlibFilesExist) {
+    const char *files[] = {"stdlib/std/string.pny", "stdlib/std/list.pny",
+                           "stdlib/std/io.pny", "stdlib/std/actor.pny",
+                           "stdlib/std/json.pny", "stdlib/std/math.pny"};
+    for (int i = 0; i < 6; i++) {
+        FILE *f = fopen(files[i], "r");
+        EXPECT_NE(f, nullptr) << files[i];
+        if (f) fclose(f);
+    }
+}
+
+TEST(P4Bootstrap, CompilerSourceNonEmpty) {
+    const char *files[] = {"compiler/lexer.pny", "compiler/parser.pny",
+                           "compiler/codegen.pny", "compiler/main.pny"};
+    for (int i = 0; i < 4; i++) {
+        FILE *f = fopen(files[i], "r");
+        if (!f) continue;
+        fseek(f, 0, SEEK_END);
+        long size = ftell(f);
+        fclose(f);
+        EXPECT_GT(size, 100L) << files[i];
+    }
+}
+
+TEST(P4Bootstrap, LexerKeywords) {
+    FILE *f = fopen("compiler/lexer.pny", "r");
+    ASSERT_NE(f, nullptr);
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *buf = (char *)malloc(size + 1);
+    ASSERT_NE(buf, NULL);
+    fread(buf, 1, size, f);
+    buf[size] = 0;
+    fclose(f);
+    EXPECT_NE(strstr(buf, "actor"), NULL);
+    EXPECT_NE(strstr(buf, "class"), NULL);
+    EXPECT_NE(strstr(buf, "be"), NULL);
+    EXPECT_NE(strstr(buf, "fun"), NULL);
+    EXPECT_NE(strstr(buf, "new"), NULL);
+    EXPECT_NE(strstr(buf, "match"), NULL);
+    free(buf);
+}
+
+TEST(P4Bootstrap, ParserASTTypes) {
+    FILE *f = fopen("compiler/parser.pny", "r");
+    ASSERT_NE(f, nullptr);
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *buf = (char *)malloc(size + 1);
+    ASSERT_NE(buf, NULL);
+    fread(buf, 1, size, f);
+    buf[size] = 0;
+    fclose(f);
+    EXPECT_NE(strstr(buf, "NODE_ACTOR"), NULL);
+    EXPECT_NE(strstr(buf, "NODE_PROGRAM"), NULL);
+    EXPECT_NE(strstr(buf, "NODE_BE"), NULL);
+    EXPECT_NE(strstr(buf, "NODE_CALL"), NULL);
+    free(buf);
+}
+
+TEST(P4Bootstrap, CodegenTargets) {
+    FILE *f = fopen("compiler/codegen.pny", "r");
+    ASSERT_NE(f, nullptr);
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *buf = (char *)malloc(size + 1);
+    ASSERT_NE(buf, NULL);
+    fread(buf, 1, size, f);
+    buf[size] = 0;
+    fclose(f);
+    EXPECT_NE(strstr(buf, "TARGET_NATIVE"), NULL);
+    EXPECT_NE(strstr(buf, "TARGET_WASM"), NULL);
+    EXPECT_NE(strstr(buf, "TARGET_AST"), NULL);
+    free(buf);
+}
+
+TEST(P4Bootstrap, PonyppcBootstrapFlag) {
+    FILE *f = fopen("src/ponyppc.c", "r");
+    ASSERT_NE(f, nullptr);
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *buf = (char *)malloc(size + 1);
+    ASSERT_NE(buf, NULL);
+    fread(buf, 1, size, f);
+    buf[size] = 0;
+    fclose(f);
+    EXPECT_NE(strstr(buf, "bootstrap"), NULL);
+    EXPECT_NE(strstr(buf, "--bootstrap"), NULL);
+    free(buf);
+}
+
+TEST(P4Bootstrap, ToolBootstrapImpl) {
+    FILE *f = fopen("src/ponypp/tool.c", "r");
+    ASSERT_NE(f, nullptr);
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *buf = (char *)malloc(size + 1);
+    ASSERT_NE(buf, NULL);
+    fread(buf, 1, size, f);
+    buf[size] = 0;
+    fclose(f);
+    EXPECT_NE(strstr(buf, "tool_bootstrap"), NULL);
+    EXPECT_NE(strstr(buf, "TOOL_BOOTSTRAP"), NULL);
+    free(buf);
+}
+
+TEST(P4Bootstrap, ToolEnumHasBootstrap) {
+    FILE *f = fopen("include/ponypp/tool.h", "r");
+    ASSERT_NE(f, nullptr);
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *buf = (char *)malloc(size + 1);
+    ASSERT_NE(buf, NULL);
+    fread(buf, 1, size, f);
+    buf[size] = 0;
+    fclose(f);
+    EXPECT_NE(strstr(buf, "TOOL_BOOTSTRAP"), NULL);
+    free(buf);
+}
+
+TEST(P4Bootstrap, StringStdlibAPI) {
+    FILE *f = fopen("stdlib/std/string.pny", "r");
+    ASSERT_NE(f, nullptr);
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *buf = (char *)malloc(size + 1);
+    ASSERT_NE(buf, NULL);
+    fread(buf, 1, size, f);
+    buf[size] = 0;
+    fclose(f);
+    EXPECT_NE(strstr(buf, "len"), NULL);
+    EXPECT_NE(strstr(buf, "concat"), NULL);
+    EXPECT_NE(strstr(buf, "contains"), NULL);
+    EXPECT_NE(strstr(buf, "split"), NULL);
+    free(buf);
+}
+
+TEST(P4Bootstrap, ListStdlibAPI) {
+    FILE *f = fopen("stdlib/std/list.pny", "r");
+    ASSERT_NE(f, nullptr);
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *buf = (char *)malloc(size + 1);
+    ASSERT_NE(buf, NULL);
+    fread(buf, 1, size, f);
+    buf[size] = 0;
+    fclose(f);
+    EXPECT_NE(strstr(buf, "append"), NULL);
+    EXPECT_NE(strstr(buf, "remove"), NULL);
+    EXPECT_NE(strstr(buf, "map"), NULL);
+    EXPECT_NE(strstr(buf, "filter"), NULL);
+    free(buf);
+}
+
+TEST(P4Bootstrap, IOSTDlibAPI) {
+    FILE *f = fopen("stdlib/std/io.pny", "r");
+    ASSERT_NE(f, nullptr);
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *buf = (char *)malloc(size + 1);
+    ASSERT_NE(buf, NULL);
+    fread(buf, 1, size, f);
+    buf[size] = 0;
+    fclose(f);
+    EXPECT_NE(strstr(buf, "print"), NULL);
+    EXPECT_NE(strstr(buf, "println"), NULL);
+    EXPECT_NE(strstr(buf, "file_open"), NULL);
+    EXPECT_NE(strstr(buf, "file_read"), NULL);
+    free(buf);
 }

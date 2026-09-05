@@ -1,63 +1,63 @@
 /**
- * std.io - 文件 I/O、控制台 I/O、路径工具
+ * std.io - Pony++ 输入输出标准库
  *
  * API:
- *   actor File
- *   be open(path: String, mode: String = "r") => Bool
- *   be close()
- *   be read_all() => String
- *   be read_line() => String
- *   be write(data: String) => Bool
- *   be printf(fmt: String, ...)
- *   be exists(path: String) => Bool
- *   be delete(path: String) => Bool
- *   be size(path: String) => I64
- *   be list_dir(dir: String) => List[String]
- *   be stdout_print(s: String)
- *   be stdout_println(s: String)
- *   be stdin_read_line() => String
+ *   print(x)            - 打印到标准输出
+ *   println(x)          - 打印换行
+ *   read()              - 读取一行输入
+ *   file_open(path, mode) - 打开文件
+ *   file_close(f)       - 关闭文件
+ *   file_read(f)        - 读取文件内容
+ *   file_write(f, data) - 写入文件
+ *   stdout(str)         - 写入标准输出
+ *   stderr(str)         - 写入标准错误
  */
-actor File {
-  var path: String
-  var mode: String
-  new create(path: String, mode: String = "r") => {
-    this.path = path
-    this.mode = mode
+actor IO {
+  new create() => {
+    // 初始化 IO
   }
-  be open() => {}
-  be close() => {}
-  be read_all() => String => {
-    return ""
-  }
-  be read_line() => String => {
-    return ""
-  }
-  be write(data: String) => {}
-  be printf(fmt: String) => {}
-}
 
-actor Stdio {
-  be print(s: String) => {}
-  be println(s: String) => {}
-  be read_line() => String => {
-    return ""
+  fun print(s: String) => {
+    print(s)
   }
-}
 
-actor Path {
-  static be join(base: String, part: String) => String => {
-    return base + "/" + part
+  fun println(s: String) => {
+    println(s)
   }
-  static be exists(path: String) => Bool => {
-    return true
+
+  fun read() => {
+    return read_line()
   }
-  static be delete(path: String) => Bool => {
-    return true
+
+  fun file_open(path: String, mode: String = "r") => {
+    return open_file(path, mode)
   }
-  static be size(path: String) => I64 => {
-    return 0
+
+  fun file_close(f: Any) => {
+    close_file(f)
   }
-  static be list_dir(dir: String) => List[String] => {
-    return List()
+
+  fun file_read(f: Any) => {
+    return read_file(f)
+  }
+
+  fun file_write(f: Any, data: String) => {
+    write_file(f, data)
+  }
+
+  fun stdout(s: String) => {
+    stdout(s)
+  }
+
+  fun stderr(s: String) => {
+    stderr(s)
+  }
+
+  fun now() => {
+    return current_time()
+  }
+
+  fun sleep(ms: Int) => {
+    sleep_ms(ms)
   }
 }

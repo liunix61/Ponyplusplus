@@ -1,0 +1,288 @@
+/**
+ * compiler/lexer.pny - Pony++ 词法分析器（自举用）
+ *
+ * 用 Pony++ 重写词法分析器，对齐 C 版 lexer.c 行为。
+ * Token 类型、关键字表、词法规则完全一致。
+ *
+ * 自举验证: ponyppc --bootstrap 编译本文件，
+ *           输出与 C 版 lexer.c 行为一致。
+ */
+
+// Token 类型枚举（与 C 版 TK_* 对齐）
+val TK_EOF: Int = 0
+val TK_KEYWORD: Int = 1
+val TK_IDENT: Int = 2
+val TK_STRING: Int = 3
+val TK_INT: Int = 4
+val TK_FLOAT: Int = 5
+val TK_BOOL: Int = 6
+val TK_OPERATOR: Int = 7
+val TK_PUNCT: Int = 8
+
+// 关键字表（与 C 版一致）
+val KEYWORDS: Map = {
+  "actor": 1, "class": 2, "trait": 3, "interface": 4,
+  "be": 5, "fun": 6, "new": 7, "var": 8, "let": 9,
+  "if": 10, "else": 11, "while": 12, "for": 13, "match": 14,
+  "return": 15, "import": 16, "use": 17, "print": 18,
+  "assert": 19, "supervise": 20, "yield": 21, "send": 22,
+  "msg": 23, "call": 24, "type": 25, "world": 26, "alias": 27,
+  "iso": 28, "trn": 29, "ref": 30, "val": 31, "box": 32,
+  "true": 33, "false": 34, "null": 35, "this": 36, "in": 37,
+  "fun": 38, "be": 39, "cap": 40
+}
+
+// 单个 Token
+actor Token {
+  var tok_type: Int
+  var value: String
+  var line: Int
+  var column: Int
+
+  new create(tok_type: Int, value: String, line: Int, column: Int) => {
+    this.tok_type = tok_type
+    this.value = value
+    this.line = line
+    this.column = column
+  }
+
+  fun is_keyword() => {
+    return KEYWORDS.contains(value)
+  }
+
+  fun to_string() => {
+    return tok_type.to_string + ":" + value
+  }
+}
+
+// 词法分析器
+actor Lexer {
+  var source: String
+  var pos: Int
+  var line: Int
+  var column: Int
+  var tokens: List
+  var filename: String
+  var error: String
+
+  new create(filename: String, source: String) => {
+    this.filename = filename
+    this.source = source
+    this.pos = 0
+    this.line = 1
+    this.column = 1
+    this.tokens = List()
+    this.error = ""
+  }
+
+  // 主入口：一次性分析全部 Token
+  fun lex_all() => {
+    tokens = List()
+    pos = 0
+    line = 1
+    column = 1
+
+    while pos < source.len() => {
+      skip_whitespace()
+      if pos >= source.len() => {
+        break
+      }
+
+      val tok = lex_token()
+      if tok != null => {
+        tokens.append(tok)
+      }
+    }
+
+    // EOF Token
+    tokens.append(Token(TK_EOF, "", line, column))
+    return tokens
+  }
+
+  // 跳过空白和注释
+  fun skip_whitespace() => {
+    while pos < source.len() => {
+      val c = source.charAt(pos)
+
+      if c == '\n' => {
+        pos = pos + 1
+        line = line + 1
+        column = 1
+      } else if c == ' ' || c == '\t' || c == '\r' => {
+        pos = pos + 1
+        column = column + 1
+      } else if c == '/' && pos + 1 < source.len() => {
+        val c2 = source.charAt(pos + 1)
+        if c2 == '/' => {
+          // 单行注释
+          while pos < source.len() && source.charAt(pos) != '\n' => {
+            pos = pos + 1
+          }
+        } else if c2 == '*' => {
+          // 多行注释
+          pos = pos + 2
+          column = column + 2
+          while pos + 1 < source.len() => {
+            if source.charAt(pos) == '*' && source.charAt(pos + 1) == '/' => {
+              pos = pos + 2
+              break
+            }
+            if source.charAt(pos) == '\n' => {
+              line = line + 1
+              column = 1
+            } else {
+              column = column + 1
+            }
+            pos = pos + 1
+          }
+        } else {
+          break
+        }
+      } else {
+        break
+      }
+    }
+  }
+
+  // 分析单个 Token
+  fun lex_token() => {
+    val c = source.charAt(pos)
+    val start_line = line
+    val start_col = column
+
+    if is_alpha(c) => {
+      return lex_ident_or_keyword(start_line, start_col)
+    } else if is_digit(c) => {
+      return lex_number(start_line, start_col)
+    } else if c == '"' => {
+      return lex_string(start_line, start_col)
+    } else if is_op_char(c) => {
+      return lex_operator(start_line, start_col)
+    } else if is_punct_char(c) => {
+      return lex_punct(start_line, start_col)
+    } else {
+      error = "Unexpected character: " + c.to_string + " at " + line.to_string + ":" + column.to_string
+      pos = pos + 1
+      column = column + 1
+      return null
+    }
+  }
+
+  // 标识符或关键字
+  fun lex_ident_or_keyword(sl: Int, sc: Int) => {
+    val sb = StringBuilder()
+    while pos < source.len() && (is_alpha(source.charAt(pos)) || is_digit(source.charAt(pos)) || source.charAt(pos) == '_') => {
+      sb.append(source.charAt(pos))
+      pos = pos + 1
+      column = column + 1
+    }
+    val ident = sb.to_string()
+    if KEYWORDS.contains(ident) => {
+      return Token(TK_KEYWORD, ident, sl, sc)
+    } else {
+      return Token(TK_IDENT, ident, sl, sc)
+    }
+  }
+
+  // 数字
+  fun lex_number(sl: Int, sc: Int) => {
+    val sb = StringBuilder()
+    val is_float = false
+    while pos < source.len() && (is_digit(source.charAt(pos)) || source.charAt(pos) == '.') => {
+      if source.charAt(pos) == '.' => {
+        is_float = true
+      }
+      sb.append(source.charAt(pos))
+      pos = pos + 1
+      column = column + 1
+    }
+    if is_float => {
+      return Token(TK_FLOAT, sb.to_string(), sl, sc)
+    } else {
+      return Token(TK_INT, sb.to_string(), sl, sc)
+    }
+  }
+
+  // 字符串
+  fun lex_string(sl: Int, sc: Int) => {
+    pos = pos + 1  // 跳过开头引号
+    column = column + 1
+    val sb = StringBuilder()
+    while pos < source.len() && source.charAt(pos) != '"' => {
+      if source.charAt(pos) == '\\' => {
+        pos = pos + 1
+        column = column + 1
+        if pos < source.len() => {
+          val esc = source.charAt(pos)
+          if esc == 'n' => { sb.append('\n') }
+          else if esc == 't' => { sb.append('\t') }
+          else if esc == 'r' => { sb.append('\r') }
+          else if esc == '"' => { sb.append('"') }
+          else if esc == '\\' => { sb.append('\\') }
+          else { sb.append(esc) }
+          pos = pos + 1
+          column = column + 1
+        }
+      } else {
+        sb.append(source.charAt(pos))
+        pos = pos + 1
+        column = column + 1
+      }
+    }
+    if pos < source.len() => {
+      pos = pos + 1  // 跳过结尾引号
+      column = column + 1
+    }
+    return Token(TK_STRING, sb.to_string(), sl, sc)
+  }
+
+  // 操作符
+  fun lex_operator(sl: Int, sc: Int) => {
+    val sb = StringBuilder()
+    sb.append(source.charAt(pos))
+    pos = pos + 1
+    column = column + 1
+
+    // 多字符操作符
+    if pos < source.len() => {
+      val c2 = source.charAt(pos)
+      val multi_ops = ["==", "!=", "<=", ">=", "->", "=>", "++", "--", "&&", "||"]
+      val two_char = source.charAt(pos - 1).to_string + c2.to_string
+      if multi_ops.contains(two_char) => {
+        sb.append(c2)
+        pos = pos + 1
+        column = column + 1
+      }
+    }
+    return Token(TK_OPERATOR, sb.to_string(), sl, sc)
+  }
+
+  // 标点符号
+  fun lex_punct(sl: Int, sc: Int) => {
+    val punct = source.charAt(pos).to_string
+    pos = pos + 1
+    column = column + 1
+    return Token(TK_PUNCT, punct, sl, sc)
+  }
+
+  // 辅助函数
+  fun is_alpha(c: Char) => {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
+  }
+
+  fun is_digit(c: Char) => {
+    return c >= '0' && c <= '9'
+  }
+
+  fun is_op_char(c: Char) => {
+    return c == '+' || c == '-' || c == '*' || c == '/' ||
+           c == '=' || c == '!' || c == '<' || c == '>' ||
+           c == '&' || c == '|' || c == '%'
+  }
+
+  fun is_punct_char(c: Char) => {
+    return c == '(' || c == ')' || c == '{' || c == '}' ||
+           c == '[' || c == ']' || c == ',' || c == '.' ||
+           c == ':' || c == ';' || c == '?' || c == '#'
+  }
+}

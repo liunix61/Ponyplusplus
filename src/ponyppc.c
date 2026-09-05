@@ -306,6 +306,7 @@ int main(int argc, char *argv[]) {
         {"wit-only", no_argument, 0, 'W'},
         {"target",   required_argument, 0, 'T'},
         {"mcu",      required_argument, 0, 'M'},
+        {"bootstrap",no_argument, 0, 'B'},
         {"ast",      no_argument, 0, 'A'},
         {"ast-dot",  no_argument, 0, 'D'},
         {"pretty",   no_argument, 0, 'P'},
@@ -315,7 +316,7 @@ int main(int argc, char *argv[]) {
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "o:gO:hWADPVT:M:", longopts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "o:gO:hWADPVT:M:B", longopts, NULL)) != -1) {
         switch (opt) {
             case 'o':
                 cfg.output = optarg;
@@ -335,6 +336,12 @@ int main(int argc, char *argv[]) {
                 break;
             case 'M':
                 cfg.mcu_platform = optarg;
+                break;
+            case 'B':
+                /* 自举模式: 编译 Pony++ 编译器源码 */
+                cfg.emit_ast = true;
+                fprintf(stdout, "Pony++ Bootstrap Mode\n");
+                fprintf(stdout, "  编译 Pony++ 编译器源码...\n");
                 break;
             case 'A':
                 cfg.emit_ast = true;
@@ -365,10 +372,14 @@ int main(int argc, char *argv[]) {
     char *input_path = argv[optind];
 
     /* Phase 3 toolchain: if first arg after opts is a subcommand, dispatch */
+    if (argc > optind && strcmp(argv[optind], "bootstrap") == 0) {
+        return tool_bootstrap();
+    }
     if (argc > optind && (strcmp(argv[optind], "build") == 0 || strcmp(argv[optind], "run") == 0 ||
         strcmp(argv[optind], "test") == 0 || strcmp(argv[optind], "fmt") == 0 ||
         strcmp(argv[optind], "pkg") == 0 || strcmp(argv[optind], "help") == 0 ||
-        strcmp(argv[optind], "docs") == 0 || strcmp(argv[optind], "repl") == 0)) {
+        strcmp(argv[optind], "docs") == 0 || strcmp(argv[optind], "repl") == 0 ||
+        strcmp(argv[optind], "bootstrap") == 0)) {
         ToolConfig tc;
         if (tool_parse_args(argc - optind, argv + optind, &tc) == 0) {
             return tool_execute(&tc);

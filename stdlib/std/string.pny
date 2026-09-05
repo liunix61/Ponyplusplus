@@ -1,0 +1,85 @@
+/**
+ * std.string - Pony++ 字符串操作标准库
+ *
+ * API:
+ *   String("")          - 创建空字符串
+ *   String("hello")     - 创建字符串
+ *   s.len()             - 字符串长度
+ *   s.concat(s2)        - 拼接
+ *   s.contains(s2)      - 包含子串
+ *   s.upper()           - 转大写
+ *   s.lower()           - 转小写
+ *   s.trim()            - 去首尾空白
+ *   s.split(sep)        - 按分隔符拆分
+ *   s.starts_with(s2)   - 以...开头
+ *   s.ends_with(s2)     - 以...结尾
+ *   s.substring(s, e)   - 子串
+ */
+actor String {
+  var value: String
+
+  new create(value: String = "") => {
+    this.value = value
+  }
+
+  fun len() => {
+    return value.length
+  }
+
+  fun concat(other: String) => {
+    return value + other.value
+  }
+
+  fun contains(sub: String) => {
+    val idx = value.indexOf(sub.value)
+    return idx >= 0
+  }
+
+  fun upper() => {
+    return value.uppercase
+  }
+
+  fun lower() => {
+    return value.lowercase
+  }
+
+  fun trim() => {
+    return value.trim
+  }
+
+  fun starts_with(prefix: String) => {
+    return value.starts_with(prefix.value)
+  }
+
+  fun ends_with(suffix: String) => {
+    return value.ends_with(suffix.value)
+  }
+
+  fun substring(start: Int, end: Int) => {
+    return value.substring(start, end)
+  }
+
+  fun split(sep: String) => {
+    return value.split(sep.value)
+  }
+
+  fun to_int() => {
+    return value.to_int
+  }
+
+  fun to_float() => {
+    return value.to_float
+  }
+
+  fun repeat(n: Int) => {
+    return value.repeat(n)
+  }
+
+  fun pad_left(width: Int, pad: String = " ") => {
+    return value.pad_left(width, pad.value)
+  }
+
+  fun pad_right(width: Int, pad: String = " ") => {
+    return value.pad_right(width, pad.value)
+  }
+}

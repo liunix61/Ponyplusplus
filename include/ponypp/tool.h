@@ -20,7 +20,8 @@ typedef enum {
     TOOL_FMT,       /* ponyppc fmt file.pny */
     TOOL_DOCS,      /* ponyppc docs */
     TOOL_HELP,
-    TOOL_REPL       /* ponyppc repl - 交互式 REPL */
+    TOOL_REPL,      /* ponyppc repl - 交互式 REPL */
+    TOOL_BOOTSTRAP  /* ponyppc bootstrap - 自举编译 */
 } ToolCommand;
 
 typedef struct {

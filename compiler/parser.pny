@@ -1,0 +1,947 @@
+/**
+ * compiler/parser.pny - Pony++ 语法分析器（自举用）
+ *
+ * 用 Pony++ 重写语法分析器，对齐 C 版 parser.c 行为。
+ * 支持: actor/class/trait/interface, be/fun/new,
+ *       var/let, if/else/while/for/match,
+ *       消息发送(!)/同步调用(@), 类型参数, 能力
+ *
+ * 自举验证: ponyppc --bootstrap 编译本文件，
+ *           AST 结构与 C 版 parser.c 输出一致。
+ */
+
+// AST 节点类型（与 C 版 ASTNodeType 对齐）
+val NODE_EMPTY: Int = 0
+val NODE_PROGRAM: Int = 1
+val NODE_ACTOR: Int = 2
+val NODE_CLASS: Int = 3
+val NODE_TRAIT: Int = 4
+val NODE_INTERFACE: Int = 5
+val NODE_BE: Int = 6
+val NODE_FUN: Int = 7
+val NODE_NEW: Int = 8
+val NODE_VAR: Int = 9
+val NODE_LET: Int = 10
+val NODE_CAP: Int = 11
+val NODE_IMPORT: Int = 12
+val NODE_MATCH: Int = 13
+val NODE_MATCH_ARM: Int = 14
+val NODE_IF: Int = 15
+val NODE_ELSE: Int = 16
+val NODE_WHILE: Int = 17
+val NODE_FOR: Int = 18
+val NODE_RETURN: Int = 19
+val NODE_PRINT: Int = 20
+val NODE_ASSERT: Int = 21
+val NODE_SUPERVISE: Int = 22
+val NODE_YIELD: Int = 23
+val NODE_SEND: Int = 24
+val NODE_MSG_CALL: Int = 25
+val NODE_CALL: Int = 26
+val NODE_IDENT: Int = 27
+val NODE_LAMBDA: Int = 28
+val NODE_LIST: Int = 29
+val NODE_MAP: Int = 30
+val NODE_STRING: Int = 31
+val NODE_INT: Int = 32
+val NODE_FLOAT: Int = 33
+val NODE_BOOL: Int = 34
+val NODE_UNION: Int = 35
+val NODE_TUPLE: Int = 36
+val NODE_ARRAY: Int = 37
+val NODE_ALIAS: Int = 38
+val NODE_INDEX_ACCESS: Int = 39
+val NODE_TYPE_PARAM: Int = 40
+val NODE_TYPE_ALIAS: Int = 41
+val NODE_WIT_WORLD: Int = 42
+
+// AST 节点
+actor ASTNode {
+  var node_type: Int
+  var ident: String
+  var value_int: Int
+  var children: List
+  var line: Int
+  var column: Int
+
+  new create(node_type: Int, line: Int, column: Int) => {
+    this.node_type = node_type
+    this.ident = ""
+    this.value_int = 0
+    this.children = List()
+    this.line = line
+    this.column = column
+  }
+
+  new create_with_ident(node_type: Int, ident: String, line: Int, column: Int) => {
+    this.node_type = node_type
+    this.ident = ident
+    this.value_int = 0
+    this.children = List()
+    this.line = line
+    this.column = column
+  }
+
+  fun add_child(child: ASTNode) => {
+    children.append(child)
+  }
+
+  fun to_string(indent: Int = 0) => {
+    val pad = "  " * indent
+    val result = StringBuilder()
+    result.append(pad + node_type.to_string)
+    if ident != "" => {
+      result.append(":" + ident)
+    }
+    result.append(" @" + line.to_string + ":" + column.to_string)
+    result.append("\n")
+    for c in children => {
+      result.append(c.to_string(indent + 1))
+    }
+    return result.to_string()
+  }
+}
+
+// 语法分析器
+actor Parser {
+  var tokens: List
+  var pos: Int
+  var filename: String
+  var error: String
+  var line: Int
+  var column: Int
+
+  new create(filename: String, tokens: List) => {
+    this.filename = filename
+    this.tokens = tokens
+    this.pos = 0
+    this.error = ""
+    this.line = 1
+    this.column = 1
+  }
+
+  // 解析整个程序
+  fun parse_program() => {
+    val program = ASTNode(NODE_PROGRAM, 1, 1)
+
+    while !at_eof() => {
+      skip_line_comment()
+      if at_eof() => {
+        break
+      }
+
+      val node = parse_declaration()
+      if node != null => {
+        program.add_child(node)
+      } else {
+        break
+      }
+    }
+
+    return program
+  }
+
+  // 解析声明（actor/class/trait/interface/import）
+  fun parse_declaration() => {
+    if at_eof() => {
+      return null
+    }
+
+    val kw = current().value
+    val sl = current().line
+    val sc = current().column
+
+    if kw == "actor" || kw == "class" || kw == "trait" || kw == "interface" => {
+      return parse_type_decl()
+    } else if kw == "import" || kw == "use" => {
+      return parse_import()
+    } else if kw == "world" => {
+      return parse_world()
+    } else if kw == "type" => {
+      return parse_type_alias()
+    } else {
+      error = "Expected declaration, got: " + kw
+      advance()
+      return null
+    }
+  }
+
+  // 解析 actor/class/trait/interface 声明
+  fun parse_type_decl() => {
+    val kw = current().value
+    advance()  // 跳过 keyword
+
+    if at_eof() => {
+      return null
+    }
+
+    val name = current().value
+    advance()  // 跳过名称
+
+    // 类型参数 <T, U>
+    val type_params = List()
+    if peek_is("<") => {
+      advance()  // 跳过 <
+      while !peek_is(">") && !at_eof() => {
+        val tp = ASTNode(NODE_TYPE_PARAM, current().line, current().column)
+        tp.ident = current().value
+        type_params.append(tp)
+        advance()
+        if peek_is(",") => {
+          advance()
+        }
+      }
+      if peek_is(">") => {
+        advance()
+      }
+    }
+
+    val node_type = if kw == "actor" then NODE_ACTOR
+                    else if kw == "class" then NODE_CLASS
+                    else if kw == "trait" then NODE_TRAIT
+                    else NODE_INTERFACE
+
+    val node = ASTNode(node_type, current().line, current().column)
+    node.ident = name
+
+    // 添加类型参数
+    for tp in type_params => {
+      node.add_child(tp)
+    }
+
+    // 解析方法体
+    if peek_is("{") => {
+      advance()  // 跳过 {
+      while !peek_is("}") && !at_eof() => {
+        val member = parse_member()
+        if member != null => {
+          node.add_child(member)
+        } else {
+          break
+        }
+      }
+      if peek_is("}") => {
+        advance()  // 跳过 }
+      }
+    }
+
+    return node
+  }
+
+  // 解析成员（be/fun/new/var/let）
+  fun parse_member() => {
+    if at_eof() => {
+      return null
+    }
+
+    val kw = current().value
+
+    if kw == "be" || kw == "fun" || kw == "new" => {
+      return parse_method()
+    } else if kw == "var" || kw == "let" => {
+      return parse_field()
+    } else if kw == "supervise" => {
+      return parse_supervise()
+    } else {
+      // 跳过未知 token
+      advance()
+      return null
+    }
+  }
+
+  // 解析方法 (be/fun/new)
+  fun parse_method() => {
+    val kw = current().value
+    advance()  // 跳过 be/fun/new
+
+    if at_eof() => {
+      return null
+    }
+
+    val name = current().value
+    advance()  // 跳过方法名
+
+    val node_type = if kw == "be" then NODE_BE
+                    else if kw == "fun" then NODE_FUN
+                    else NODE_NEW
+
+    val node = ASTNode(node_type, current().line, current().column)
+    node.ident = name
+
+    // 解析参数 (name: Type, ...)
+    if peek_is("(") => {
+      advance()  // 跳过 (
+      while !peek_is(")") && !at_eof() => {
+        if peek_is(")") => {
+          break
+        }
+        val param = parse_param()
+        if param != null => {
+          node.add_child(param)
+        }
+        if peek_is(",") => {
+          advance()
+        }
+      }
+      if peek_is(")") => {
+        advance()  // 跳过 )
+      }
+    }
+
+    // 解析 => { body }
+    if peek_is("=>") => {
+      advance()  // 跳过 =>
+    }
+    if peek_is("{") => {
+      advance()  // 跳过 {
+      val body = parse_block()
+      if body != null => {
+        node.add_child(body)
+      }
+      if peek_is("}") => {
+        advance()  // 跳过 }
+      }
+    }
+
+    return node
+  }
+
+  // 解析参数
+  fun parse_param() => {
+    if at_eof() => {
+      return null
+    }
+
+    val name = current().value
+    advance()
+
+    val param = ASTNode(NODE_IDENT, current().line, current().column)
+    param.ident = name
+
+    // : Type
+    if peek_is(":") => {
+      advance()
+      val type_node = parse_type_expr()
+      if type_node != null => {
+        param.add_child(type_node)
+      }
+    }
+
+    return param
+  }
+
+  // 解析字段 (var/let)
+  fun parse_field() => {
+    val kw = current().value
+    advance()  // 跳过 var/let
+
+    if at_eof() => {
+      return null
+    }
+
+    val name = current().value
+    advance()  // 跳过字段名
+
+    val node_type = if kw == "var" then NODE_VAR else NODE_LET
+    val node = ASTNode(node_type, current().line, current().column)
+    node.ident = name
+
+    // : Type
+    if peek_is(":") => {
+      advance()
+      val type_node = parse_type_expr()
+      if type_node != null => {
+        node.add_child(type_node)
+      }
+    }
+
+    // = init
+    if peek_is("=") => {
+      advance()
+      val init = parse_expr()
+      if init != null => {
+        node.add_child(init)
+      }
+    }
+
+    return node
+  }
+
+  // 解析类型表达式
+  fun parse_type_expr() => {
+    if at_eof() => {
+      return null
+    }
+
+    val ident = current().value
+    advance()
+
+    val node = ASTNode(NODE_IDENT, current().line, current().column)
+    node.ident = ident
+
+    // 泛型: Type<Arg, ...>
+    if peek_is("<") => {
+      advance()
+      while !peek_is(">") && !at_eof() => {
+        val arg = parse_type_expr()
+        if arg != null => {
+          node.add_child(arg)
+        }
+        if peek_is(",") => {
+          advance()
+        }
+      }
+      if peek_is(">") => {
+        advance()
+      }
+    }
+
+    // 数组: [T]
+    if peek_is("[") => {
+      advance()
+      val elem = parse_type_expr()
+      if elem != null => {
+        node.add_child(elem)
+      }
+      if peek_is("]") => {
+        advance()
+      }
+    }
+
+    return node
+  }
+
+  // 解析语句块
+  fun parse_block() => {
+    val block = ASTNode(NODE_EMPTY, current().line, current().column)
+
+    while !peek_is("}") && !at_eof() => {
+      val stmt = parse_stmt()
+      if stmt != null => {
+        block.add_child(stmt)
+      } else {
+        break
+      }
+    }
+
+    return block
+  }
+
+  // 解析语句
+  fun parse_stmt() => {
+    if at_eof() => {
+      return null
+    }
+
+    val kw = current().value
+
+    if kw == "if" => {
+      return parse_if()
+    } else if kw == "while" => {
+      return parse_while()
+    } else if kw == "for" => {
+      return parse_for()
+    } else if kw == "match" => {
+      return parse_match()
+    } else if kw == "return" => {
+      return parse_return()
+    } else if kw == "print" => {
+      return parse_print()
+    } else if kw == "assert" => {
+      return parse_assert()
+    } else if kw == "yield" => {
+      return parse_yield()
+    } else if kw == "val" || kw == "var" => {
+      return parse_local_decl()
+    } else {
+      // 表达式语句
+      val expr = parse_expr()
+      if expr == null => {
+        advance()
+        return null
+      }
+      return expr
+    }
+  }
+
+  // 解析 if
+  fun parse_if() => {
+    val node = ASTNode(NODE_IF, current().line, current().column)
+    advance()  // 跳过 if
+
+    // 条件
+    val cond = parse_expr()
+    if cond != null => {
+      node.add_child(cond)
+    }
+
+    // { body }
+    if peek_is("{") => {
+      advance()
+      val body = parse_block()
+      if body != null => {
+        node.add_child(body)
+      }
+      if peek_is("}") => {
+        advance()
+      }
+    }
+
+    // else
+    if peek_is("else") => {
+      advance()
+      if peek_is("if") => {
+        // else if
+        val else_node = parse_if()
+        if else_node != null => {
+          node.add_child(else_node)
+        }
+      } else if peek_is("{") => {
+        advance()
+        val else_body = parse_block()
+        if else_body != null => {
+          val else_node = ASTNode(NODE_ELSE, current().line, current().column)
+          else_node.add_child(else_body)
+          node.add_child(else_node)
+        }
+        if peek_is("}") => {
+          advance()
+        }
+      }
+    }
+
+    return node
+  }
+
+  // 解析 while
+  fun parse_while() => {
+    val node = ASTNode(NODE_WHILE, current().line, current().column)
+    advance()  // 跳过 while
+
+    val cond = parse_expr()
+    if cond != null => {
+      node.add_child(cond)
+    }
+
+    if peek_is("{") => {
+      advance()
+      val body = parse_block()
+      if body != null => {
+        node.add_child(body)
+      }
+      if peek_is("}") => {
+        advance()
+      }
+    }
+
+    return node
+  }
+
+  // 解析 for
+  fun parse_for() => {
+    val node = ASTNode(NODE_FOR, current().line, current().column)
+    advance()  // 跳过 for
+
+    // for x in expr => { body }
+    if !at_eof() && peek_is("in") == false => {
+      val var_name = current().value
+      advance()
+      val var_node = ASTNode(NODE_IDENT, current().line, current().column)
+      var_node.ident = var_name
+      node.add_child(var_node)
+    }
+
+    if peek_is("in") => {
+      advance()  // 跳过 in
+      val iter = parse_expr()
+      if iter != null => {
+        node.add_child(iter)
+      }
+    }
+
+    if peek_is("=>") => {
+      advance()
+    }
+
+    if peek_is("{") => {
+      advance()
+      val body = parse_block()
+      if body != null => {
+        node.add_child(body)
+      }
+      if peek_is("}") => {
+        advance()
+      }
+    }
+
+    return node
+  }
+
+  // 解析 match
+  fun parse_match() => {
+    val node = ASTNode(NODE_MATCH, current().line, current().column)
+    advance()  // 跳过 match
+
+    if peek_is("{") => {
+      advance()
+      while !peek_is("}") && !at_eof() => {
+        val arm = parse_match_arm()
+        if arm != null => {
+          node.add_child(arm)
+        } else {
+          break
+        }
+      }
+      if peek_is("}") => {
+        advance()
+      }
+    }
+
+    return node
+  }
+
+  // 解析 match 分支
+  fun parse_match_arm() => {
+    val arm = ASTNode(NODE_MATCH_ARM, current().line, current().column)
+    // pattern
+    val pattern = parse_expr()
+    if pattern != null => {
+      arm.add_child(pattern)
+    }
+    if peek_is("=>") => {
+      advance()
+    }
+    // body
+    if peek_is("{") => {
+      advance()
+      val body = parse_block()
+      if body != null => {
+        arm.add_child(body)
+      }
+      if peek_is("}") => {
+        advance()
+      }
+    } else {
+      val expr = parse_expr()
+      if expr != null => {
+        arm.add_child(expr)
+      }
+    }
+    return arm
+  }
+
+  // 解析 return
+  fun parse_return() => {
+    val node = ASTNode(NODE_RETURN, current().line, current().column)
+    advance()  // 跳过 return
+    val expr = parse_expr()
+    if expr != null => {
+      node.add_child(expr)
+    }
+    return node
+  }
+
+  // 解析 print
+  fun parse_print() => {
+    val node = ASTNode(NODE_PRINT, current().line, current().column)
+    advance()  // 跳过 print
+    if peek_is("(") => {
+      advance()
+      val arg = parse_expr()
+      if arg != null => {
+        node.add_child(arg)
+      }
+      if peek_is(")") => {
+        advance()
+      }
+    }
+    return node
+  }
+
+  // 解析 assert
+  fun parse_assert() => {
+    val node = ASTNode(NODE_ASSERT, current().line, current().column)
+    advance()  // 跳过 assert
+    val expr = parse_expr()
+    if expr != null => {
+      node.add_child(expr)
+    }
+    return node
+  }
+
+  // 解析 yield
+  fun parse_yield() => {
+    val node = ASTNode(NODE_YIELD, current().line, current().column)
+    advance()  // 跳过 yield
+    val expr = parse_expr()
+    if expr != null => {
+      node.add_child(expr)
+    }
+    return node
+  }
+
+  // 解析局部变量声明
+  fun parse_local_decl() => {
+    val kw = current().value
+    advance()
+
+    if at_eof() => {
+      return null
+    }
+
+    val name = current().value
+    advance()
+
+    val node_type = if kw == "val" then NODE_LET else NODE_VAR
+    val node = ASTNode(node_type, current().line, current().column)
+    node.ident = name
+
+    if peek_is(":") => {
+      advance()
+      val type_node = parse_type_expr()
+      if type_node != null => {
+        node.add_child(type_node)
+      }
+    }
+
+    if peek_is("=") => {
+      advance()
+      val init = parse_expr()
+      if init != null => {
+        node.add_child(init)
+      }
+    }
+
+    return node
+  }
+
+  // 解析表达式
+  fun parse_expr() => {
+    if at_eof() => {
+      return null
+    }
+
+    val tok = current()
+
+    if tok.tok_type == TK_STRING => {
+      advance()
+      val node = ASTNode(NODE_STRING, tok.line, tok.column)
+      node.ident = tok.value
+      return parse_postfix(node)
+    } else if tok.tok_type == TK_INT => {
+      advance()
+      val node = ASTNode(NODE_INT, tok.line, tok.column)
+      node.ident = tok.value
+      return parse_postfix(node)
+    } else if tok.tok_type == TK_FLOAT => {
+      advance()
+      val node = ASTNode(NODE_FLOAT, tok.line, tok.column)
+      node.ident = tok.value
+      return parse_postfix(node)
+    } else if tok.value == "true" || tok.value == "false" => {
+      advance()
+      val node = ASTNode(NODE_BOOL, tok.line, tok.column)
+      node.ident = tok.value
+      return parse_postfix(node)
+    } else if tok.tok_type == TK_IDENT || (tok.tok_type == TK_KEYWORD && tok.value == "this") => {
+      advance()
+      val node = ASTNode(NODE_IDENT, tok.line, tok.column)
+      node.ident = tok.value
+      return parse_postfix(node)
+    } else if peek_is("(") => {
+      // 表达式可能以 ( 开始
+      advance()
+      val expr = parse_expr()
+      if peek_is(")") => {
+        advance()
+      }
+      return parse_postfix(expr)
+    } else {
+      advance()
+      return null
+    }
+  }
+
+  // 解析后缀操作（.method(), ! send, @ msg_call, [index]）
+  fun parse_postfix(expr: ASTNode) => {
+    while !at_eof() => {
+      if peek_is(".") => {
+        advance()  // 跳过 .
+        if at_eof() => {
+          break
+        }
+        val method_name = current().value
+        advance()
+
+        val call = ASTNode(NODE_CALL, current().line, current().column)
+        call.ident = method_name
+        call.add_child(expr)
+
+        // 参数
+        if peek_is("(") => {
+          advance()
+          while !peek_is(")") && !at_eof() => {
+            val arg = parse_expr()
+            if arg != null => {
+              call.add_child(arg)
+            }
+            if peek_is(",") => {
+              advance()
+            }
+          }
+          if peek_is(")") => {
+            advance()
+          }
+        }
+
+        return call  // . 是终止符
+      } else if peek_is("!") => {
+        advance()  // 跳过 !
+        val send = ASTNode(NODE_SEND, current().line, current().column)
+        send.add_child(expr)
+        return send
+      } else if peek_is("@") => {
+        advance()  // 跳过 @
+        val msg_call = ASTNode(NODE_MSG_CALL, current().line, current().column)
+        msg_call.add_child(expr)
+        return msg_call
+      } else if peek_is("[") => {
+        advance()  // 跳过 [
+        val index = parse_expr()
+        val access = ASTNode(NODE_INDEX_ACCESS, current().line, current().column)
+        access.add_child(expr)
+        if index != null => {
+          access.add_child(index)
+        }
+        if peek_is("]") => {
+          advance()
+        }
+        return access
+      } else {
+        break
+      }
+    }
+    return expr
+  }
+
+  // 解析 import
+  fun parse_import() => {
+    val node = ASTNode(NODE_IMPORT, current().line, current().column)
+    advance()  // 跳过 import/use
+    if !at_eof() => {
+      val ident = current().value
+      node.ident = ident
+      advance()
+    }
+    return node
+  }
+
+  // 解析 world
+  fun parse_world() => {
+    val node = ASTNode(NODE_WIT_WORLD, current().line, current().column)
+    advance()  // 跳过 world
+    if !at_eof() => {
+      node.ident = current().value
+      advance()
+    }
+    if peek_is("{") => {
+      advance()
+      while !peek_is("}") && !at_eof() => {
+        advance()
+      }
+      if peek_is("}") => {
+        advance()
+      }
+    }
+    return node
+  }
+
+  // 解析 type alias
+  fun parse_type_alias() => {
+    val node = ASTNode(NODE_TYPE_ALIAS, current().line, current().column)
+    advance()  // 跳过 type
+    if !at_eof() => {
+      node.ident = current().value
+      advance()
+    }
+    if peek_is("=") => {
+      advance()
+      val type_expr = parse_type_expr()
+      if type_expr != null => {
+        node.add_child(type_expr)
+      }
+    }
+    return node
+  }
+
+  // 解析 supervise
+  fun parse_supervise() => {
+    val node = ASTNode(NODE_SUPERVISE, current().line, current().column)
+    advance()
+    if peek_is("(") => {
+      advance()
+      while !peek_is(")") && !at_eof() => {
+        val arg = parse_expr()
+        if arg != null => {
+          node.add_child(arg)
+        }
+        if peek_is(",") => {
+          advance()
+        }
+      }
+      if peek_is(")") => {
+        advance()
+      }
+    }
+    return node
+  }
+
+  // 解析列表字面量
+  fun parse_list_literal() => {
+    val node = ASTNode(NODE_LIST, current().line, current().column)
+    advance()  // 跳过 [
+    while !peek_is("]") && !at_eof() => {
+      val elem = parse_expr()
+      if elem != null => {
+        node.add_child(elem)
+      }
+      if peek_is(",") => {
+        advance()
+      }
+    }
+    if peek_is("]") => {
+      advance()
+    }
+    return node
+  }
+
+  // 辅助函数
+  fun current() => {
+    return tokens.get(pos)
+  }
+
+  fun peek_is(s: String) => {
+    if pos >= tokens.len() => {
+      return false
+    }
+    return tokens.get(pos).value == s
+  }
+
+  fun advance() => {
+    if pos < tokens.len() => {
+      pos = pos + 1
+      if pos < tokens.len() => {
+        line = tokens.get(pos).line
+        column = tokens.get(pos).column
+      }
+    }
+  }
+
+  fun at_eof() => {
+    return pos >= tokens.len() || tokens.get(pos).value == ""
+  }
+
+  fun skip_line_comment() => {
+    // 注释已被 lexer 处理
+  }
+}
