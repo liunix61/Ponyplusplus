@@ -171,6 +171,9 @@ while (!match(p, TK_PAREN_R) && p->pos < p->token_count) {
             if (match(p, TK_EQ)) { advance(p); (void)parse_expression(p); }
         }
         if (match(p, TK_COMMA)) advance(p);
+        else if (p->pos < p->token_count && !match(p, TK_PAREN_R)) {
+            advance(p); /* skip unknown token to avoid infinite loop */
+        }
     }
     /* 消费闭合括号 */
     if (match(p, TK_PAREN_R)) advance(p);
@@ -301,16 +304,16 @@ static ASTNode *parse_statement(Parser *p) {
             Token *var_t = cur(p);
             advance(p);
             ASTNode *var_node = ast_node_new(NODE_IDENT, var_t->line, var_t->column);
-            if (var_node && var_t->value) var_node->ident = var_t->value;
+            if (var_node && var_t->value) var_node->ident = s_strdup(var_t->value);
             if (var_node) ast_node_add_child(node, var_node);
         }
         /* in 关键字 */
-        match_keyword(p, "in");
+        if (match_keyword(p, "in")) advance(p);
         /* 解析 range 表达式 (start..end) */
         ASTNode *range_expr = parse_expression(p);
         if (range_expr) ast_node_add_child(node, range_expr);
         /* do 关键字 (可选) */
-        match_keyword(p, "do");
+        if (match_keyword(p, "do")) advance(p);
         /* 循环体 */
         ASTNode *body = parse_block(p);
         if (body) ast_node_add_child(node, body);

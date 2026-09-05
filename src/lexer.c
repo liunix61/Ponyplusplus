@@ -171,6 +171,10 @@ static char *lex_number(Lexer *lex) {
         if (isdigit((unsigned char)c)) {
             advance_char(lex);
         } else if (c == '.' && !is_float) {
+            /* 如果下一个也是 '.'，是 range 运算符 (..) 而非小数点 */
+            if (lex->pos + 1 < lex->length && lex->source[lex->pos + 1] == '.') {
+                break;
+            }
             is_float = true;
             advance_char(lex);
         } else if (c == 'x' || c == 'X') {
@@ -330,6 +334,17 @@ static TokenType advance(Lexer *lex) {
         return TK_COLONCOLON;
     }
 
+    /* 多字符: range operator .. */
+    if (c == '.' && lex->pos + 1 < lex->length && lex->source[lex->pos + 1] == '.') {
+        advance_char(lex); advance_char(lex);
+        lex->current.type = TK_RANGE;
+        lex->current.value = s_strdup("..");
+        lex->current.line = start_line;
+        lex->current.column = start_col;
+        lex->current.length = 2;
+        return TK_RANGE;
+    }
+
     /* 单字符 */
     advance_char(lex);
     lex->current.value = s_malloc(2);
@@ -347,16 +362,6 @@ static TokenType advance(Lexer *lex) {
         case '[': lex->current.type = TK_BRACKET_L; return TK_BRACKET_L;
         case ']': lex->current.type = TK_BRACKET_R; return TK_BRACKET_R;
         case '.':
-            if (peek_next(lex) == '.') {
-                advance_char(lex);
-                advance_char(lex);
-                lex->current.type = TK_RANGE;
-                lex->current.value = s_strdup("..");
-                lex->current.line = start_line;
-                lex->current.column = start_col;
-                lex->current.length = 2;
-                return TK_RANGE;
-            }
             lex->current.type = TK_DOT;
             return TK_DOT;
         case ',': lex->current.type = TK_COMMA; return TK_COMMA;

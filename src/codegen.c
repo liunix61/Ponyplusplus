@@ -429,9 +429,14 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
             ASTNode *body = NULL;
             for (size_t j = 0; j < ch->child_count; j++) {
                 ASTNode *c2 = ch->children[j];
-                if (c2->type == NODE_EMPTY && params == NULL) params = c2;
-                else if (c2->type == NODE_STRING) rtype = "const char *";
-                else body = c2;
+                if (c2->type == NODE_EMPTY && params == NULL &&
+                    c2->data && strcmp((const char *)c2->data, "params") == 0) {
+                    params = c2;
+                } else if (c2->type == NODE_STRING) {
+                    rtype = "const char *";
+                } else if (body == NULL) {
+                    body = c2;
+                }
             }
             cg_emit(cg, "static %s %s_%s(%s_t *self", rtype, name, fn ? fn : "m", name);
             if (params && params->data && strcmp((const char *)params->data, "params") == 0 && params->child_count > 0) {
@@ -526,6 +531,14 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
     cg_emit_raw(cg, "#include <stdlib.h>\n");
     cg_emit_raw(cg, "#include <stdint.h>\n\n");
     cg_emit_runtime(cg);
+
+    /* 处理 import/use 声明 */
+    for (size_t i = 0; ast && i < ast->child_count; i++) {
+        if (ast->children[i] && ast->children[i]->type == NODE_IMPORT) {
+            const char *mod = (const char *)ast->children[i]->data;
+            cg_emit_raw(cg, "// import %s\n", mod ? mod : "?");
+        }
+    }
 
     /* 收集所有 Actor 类型名（用于字段类型推断） */
     const char **actor_type_names = NULL;
