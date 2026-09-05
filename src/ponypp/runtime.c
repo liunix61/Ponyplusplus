@@ -248,11 +248,32 @@ void pny_scheduler_tick(PnyRuntime *r) {
 void pny_scheduler_start(PnyRuntime *r) {
     if (!r) return;
     r->scheduler.running = true;
-    /* 设置所有 Actor 为 RUNNING */
+    /* 先启动 Supervisor（有 children 的 Actor） */
     PnyActor *a = r->scheduler.actors;
     while (a) {
-        a->actor_state = ACTOR_STATE_RUNNING;
-        r->stats.actors_alive++;
+        if (a->children && a->child_count > 0) {
+            a->actor_state = ACTOR_STATE_RUNNING;
+            r->stats.actors_alive++;
+        }
+        a = a->next;
+    }
+    /* 再启动子 Actor（被监督的） */
+    a = r->scheduler.actors;
+    while (a) {
+        if (a->supervise) {
+            a->actor_state = ACTOR_STATE_RUNNING;
+            r->stats.actors_alive++;
+        }
+        a = a->next;
+    }
+    /* 最后启动独立 Actor（无监督） */
+    a = r->scheduler.actors;
+    while (a) {
+        if (!a->supervise && !(a->children && a->child_count > 0) &&
+            a->actor_state != ACTOR_STATE_RUNNING) {
+            a->actor_state = ACTOR_STATE_RUNNING;
+            r->stats.actors_alive++;
+        }
         a = a->next;
     }
 }
