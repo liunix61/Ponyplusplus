@@ -15,6 +15,7 @@ struct Codegen {
     int indent;
     size_t field_count;
     char **fields;
+    char **field_types; /* 字段类型: "String"/"U32"/"U64" 等 */
     int in_constructor; /* 1=self 值类型 self.field, 0=指针 self->field */
 };
 
@@ -31,8 +32,10 @@ void codegen_free(Codegen *cg) {
     if (!cg) return;
     for (size_t i = 0; i < cg->field_count; i++) {
         free(cg->fields[i]);
+        if (cg->field_types) free(cg->field_types[i]);
     }
     free(cg->fields);
+    free(cg->field_types);
     free(cg);
 }
 
@@ -68,6 +71,22 @@ static void cg_set_fields(Codegen *cg, size_t fc, char **fields) {
     free(cg->fields);
     cg->field_count = fc;
     cg->fields = fields;
+}
+
+static void cg_set_fields_with_types(Codegen *cg, size_t fc, char **fields, char **types) {
+    cg_set_fields(cg, fc, fields);
+    if (cg->field_types) {
+        for (size_t i = 0; i < cg->field_count; i++) free(cg->field_types[i]);
+        free(cg->field_types);
+    }
+    cg->field_types = types;
+}
+
+static const char *cg_field_type(Codegen *cg, const char *name) {
+    for (size_t i = 0; i < cg->field_count; i++) {
+        if (strcmp(cg->fields[i], name) == 0 && cg->field_types) return cg->field_types[i];
+    }
+    return NULL;
 }
 
 static void cg_set_ctor(Codegen *cg, int in_ctor) { cg->in_constructor = in_ctor; }
@@ -161,9 +180,18 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                         break;
                     } else if (a0->type == NODE_IDENT) {
                         const char *_id = a0->data ? (const char *)a0->data : "?";
-                        cg_emit_raw(cg, "printf(\"%%d\\n\", (int)(");
-                        cg_emit_field_access(cg, _id);
-                        cg_emit_raw(cg, "))");
+                        const char *_ftype = cg_field_type(cg, _id);
+                        if (_ftype && strcmp(_ftype, "String") == 0) {
+                            cg_emit_raw(cg, "printf(\"%%s\\n\", (");
+                            cg_emit_field_access(cg, _id);
+                            cg_emit_raw(cg, ") ? (const char *)(");
+                            cg_emit_field_access(cg, _id);
+                            cg_emit_raw(cg, ") : \"\")");
+                        } else {
+                            cg_emit_raw(cg, "printf(\"%%d\\n\", (int)(");
+                            cg_emit_field_access(cg, _id);
+                            cg_emit_raw(cg, "))");
+                        }
                         break;
                     } else if (a0->type == NODE_CALL) {
                         /* print(s.len()) — 嵌套方法调用 */
@@ -434,6 +462,7 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
     if (!name) return;
 
     char **field_names = NULL;
+    char **field_type_names = NULL;
     size_t fc = 0;
     for (size_t i = 0; i < actor->child_count; i++) {
         ASTNode *ch = actor->children[i];
@@ -445,10 +474,27 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
                 return;
             }
             field_names = tmp;
-            field_names[fc++] = s_strdup((const char *)ch->data);
+            field_names[fc] = s_strdup((const char *)ch->data);
+
+            /* 记录字段类型 */
+            char **tmp_types = (char **)realloc(field_type_names, (fc + 1) * sizeof(char *));
+            if (!tmp_types) {
+                for (size_t j = 0; j < fc; j++) { free(field_names[j]); free(field_type_names[j]); }
+                free(field_names);
+                free(field_type_names);
+                return;
+            }
+            field_type_names = tmp_types;
+            /* 从类型节点获取类型名 */
+            const char *ft = NULL;
+            if (ch->child_count > 0 && ch->children[0] && ch->children[0]->data) {
+                ft = (const char *)ch->children[0]->data;
+            }
+            field_type_names[fc] = s_strdup(ft ? ft : "int");
+            fc++;
         }
     }
-    cg_set_fields(cg, fc, field_names);
+    cg_set_fields_with_types(cg, fc, field_names, field_type_names);
 
     /* Actor 结构体 */
     cg_emit(cg, "typedef struct {\n");
