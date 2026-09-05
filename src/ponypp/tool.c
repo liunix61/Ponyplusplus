@@ -106,7 +106,7 @@ int tool_build(const char *input, const char *output, const char *target,
     } else if (strcmp(target, "wit") == 0) {
         char wit_path[512];
         snprintf(wit_path, sizeof(wit_path), "%s.wit", out);
-        wit_write_program(ast, wit_path);
+        wit_write_program(ast, wit_path, TARGET_WASI_P2);
         printf("[build] ✓ 生成 %s\n", wit_path);
     } else {
         char wasm_path[512];

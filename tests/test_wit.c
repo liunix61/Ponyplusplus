@@ -35,7 +35,7 @@ static int test_wit_generates(void) {
     ASTNode *ast = parse_to_ast(src);
     CHECK(ast != NULL, "解析成功");
     if (ast) {
-        CHECK(wit_write_program(ast, "/tmp/ponypp_test.wit") == 0,
+        CHECK(wit_write_program(ast, "/tmp/ponypp_test.wit", TARGET_WASI_P2) == 0,
               "WIT 文件生成成功");
         FILE *f = fopen("/tmp/ponypp_test.wit", "r");
         CHECK(f != NULL, "文件可打开");
@@ -58,7 +58,7 @@ static int test_wit_empty(void) {
     ASTNode *ast = parse_to_ast("");
     CHECK(ast != NULL, "空程序解析成功");
     if (ast) {
-        CHECK(wit_write_program(ast, "/tmp/ponypp_empty.wit") == 0,
+        CHECK(wit_write_program(ast, "/tmp/ponypp_empty.wit", TARGET_WASI_P2) == 0,
               "空程序也生成 WIT");
         ast_node_free(ast);
         remove("/tmp/ponypp_empty.wit");

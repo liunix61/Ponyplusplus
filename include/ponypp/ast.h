@@ -49,6 +49,9 @@ typedef enum {
     NODE_ARRAY,         /* 数组类型 */
     NODE_ALIAS,         /* 类型别名 */
     NODE_INDEX_ACCESS,  /* 索引访问 arr[index] */
+    NODE_TYPE_PARAM,    /* 泛型类型参数 T/U */
+    NODE_TYPE_ALIAS,    /* 类型别名 type Foo = Bar */
+    NODE_WIT_WORLD,     /* WIT world 声明 */
 } ASTNodeType;
 
 /* AST 节点 */

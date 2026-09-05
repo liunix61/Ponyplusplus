@@ -630,6 +630,26 @@ static ASTNode *parse_actor(Parser *p) {
     ASTNode *node = ast_actor_new(name_tok->value, name_tok->line, name_tok->column);
     if (!node) return NULL;
 
+    /* 可选泛型参数: actor Queue[T] { */
+    if (match(p, TK_BRACKET_L)) {
+        advance(p);
+        ASTNode *tparams = ast_node_new(NODE_EMPTY, name_tok->line, name_tok->column);
+        if (tparams) tparams->data = s_strdup("typeparams");
+        while (!match(p, TK_BRACKET_R) && p->pos < p->token_count) {
+            if (match(p, TK_IDENT)) {
+                Token *tp_tok = advance(p);
+                ASTNode *tp = ast_node_new(NODE_TYPE_PARAM, tp_tok->line, tp_tok->column);
+                if (tp) tp->data = s_strdup(tp_tok->value);
+                if (tparams) ast_node_add_child(tparams, tp);
+            } else {
+                break;
+            }
+            if (match(p, TK_COMMA)) advance(p);
+        }
+        if (match(p, TK_BRACKET_R)) advance(p);
+        if (tparams) ast_node_add_child(node, tparams);
+    }
+
     /* 可选参数列表: actor Name(cap param: Type) { */
     ASTNode *params = parse_params(p);
     if (params) { if (params->child_count > 0) ast_node_add_child(node, params); else ast_node_free(params); }

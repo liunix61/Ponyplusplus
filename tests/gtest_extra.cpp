@@ -238,7 +238,7 @@ TEST(WasmExtra, WriteMulti) {
 /* ---- WIT ---- */
 TEST(WitExtra, WriteActor) {
     ASTNode *ast = parse_to_ast("actor main { new create() => {} }\n");
-    int r = wit_write_program(ast, "/tmp/ponypp_wit_x.wit");
+    int r = wit_write_program(ast, "/tmp/ponypp_wit_x.wit", TARGET_WASI_P2);
     ASSERT_EQ(r, 0);
     remove("/tmp/ponypp_wit_x.wit");
     ast_node_free(ast);

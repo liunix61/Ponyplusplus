@@ -40,13 +40,18 @@ static const char *wit_c_type_of(ASTNode *t) {
     return "i32";
 }
 
-int wit_write_program(ASTNode *ast, const char *output) {
+int wit_write_program(ASTNode *ast, const char *output, TargetKind target) {
     if (!ast || !output) return 1;
     FILE *f = fopen(output, "w");
     if (!f) return 1;
 
+    const char *pkg_prefix = "ponypp";
+    if (target == TARGET_MCU_WASM) pkg_prefix = "ponypp:mcu";
+    else if (target == TARGET_BROWSER) pkg_prefix = "ponypp:browser";
+    else if (target == TARGET_WASI_P3) pkg_prefix = "ponypp:wasi-p3";
+
     if (ast->child_count == 0) {
-        fprintf(f, "package ponypp:default;\n");
+        fprintf(f, "package %s:default;\n", pkg_prefix);
         fclose(f);
         return 0;
     }
@@ -57,8 +62,27 @@ int wit_write_program(ASTNode *ast, const char *output) {
         const char *name = (const char *)actor->data;
         if (!name) name = "default";
 
-        fprintf(f, "package ponypp:%s;\n", name);
-        fprintf(f, "interface %s {\n", name);
+        /* 检查泛型类型参数 */
+        char tparams_str[512] = "";
+        for (size_t j = 0; j < actor->child_count; j++) {
+            ASTNode *c = actor->children[j];
+            if (c && c->data && strcmp((const char *)c->data, "typeparams") == 0) {
+                char buf[512] = "";
+                for (size_t k = 0; k < c->child_count; k++) {
+                    ASTNode *tp = c->children[k];
+                    if (!tp || !tp->data) continue;
+                    if (buf[0]) strncat(buf, ", ", sizeof(buf) - strlen(buf) - 1);
+                    strncat(buf, (const char *)tp->data, sizeof(buf) - strlen(buf) - 1);
+                }
+                if (buf[0]) {
+                    snprintf(tparams_str, sizeof(tparams_str), "<%s>", buf);
+                }
+                break;
+            }
+        }
+
+        fprintf(f, "package %s:%s;\n", pkg_prefix, name);
+        fprintf(f, "interface %s%s {\n", name, tparams_str);
 
         /* Constructor record */
         for (size_t j = 0; j < actor->child_count; j++) {
@@ -115,11 +139,7 @@ int wit_write_program(ASTNode *ast, const char *output) {
             const char *mname = (const char *)m->data;
             if (!mname) continue;
             wit_indent(f, 1);
-            if (m->type == NODE_BE) {
-                fprintf(f, "fn %s(", mname);
-            } else {
-                fprintf(f, "fn %s(", mname);
-            }
+            fprintf(f, "fn %s(", mname);
             /* params */
             ASTNode *params = NULL;
             for (size_t k = 0; k < m->child_count; k++) {
@@ -148,13 +168,52 @@ int wit_write_program(ASTNode *ast, const char *output) {
             fprintf(f, "\n");
         }
 
-        fprintf(f, "}\n");
+        fprintf(f, "}\n\n");
 
-        /* world */
-        fprintf(f, "world %s {\n", name);
-        wit_indent(f, 1);
-        fprintf(f, "use self:%s;\n", name);
-        fprintf(f, "}\n");
+        /* world — target 感知 */
+        if (target == TARGET_MCU_WASM) {
+            /* MCU world: 硬件外设 imports */
+            const char *mcu_platform = "generic";
+            /* 简化: 默认 generic 外设 */
+            fprintf(f, "world %s {\n", name);
+            wit_indent(f, 1);
+            fprintf(f, "use self:%s;\n", name);
+            wit_indent(f, 1);
+            fprintf(f, "import gpio: ponypp:mcu/gpio;\n");
+            wit_indent(f, 1);
+            fprintf(f, "import uart: ponypp:mcu/uart;\n");
+            wit_indent(f, 1);
+            fprintf(f, "import timer: ponypp:mcu/timer;\n");
+            fprintf(f, "}\n");
+        } else if (target == TARGET_BROWSER) {
+            /* Browser world: JS 胶水 + 定时器 */
+            fprintf(f, "world %s {\n", name);
+            wit_indent(f, 1);
+            fprintf(f, "use self:%s;\n", name);
+            wit_indent(f, 1);
+            fprintf(f, "import js: ponypp:js/glue;\n");
+            wit_indent(f, 1);
+            fprintf(f, "import timer: ponypp:timer;\n");
+            fprintf(f, "}\n");
+        } else if (target == TARGET_WASI_P3) {
+            /* WASI P3 world: 文件系统 + 时钟 + 终端 */
+            fprintf(f, "world %s {\n", name);
+            wit_indent(f, 1);
+            fprintf(f, "use self:%s;\n", name);
+            wit_indent(f, 1);
+            fprintf(f, "import console: wasi:cli/terminal;\n");
+            wit_indent(f, 1);
+            fprintf(f, "import clock: wasi:clocks;\n");
+            wit_indent(f, 1);
+            fprintf(f, "import preopens: wasi:filesystem/preopens;\n");
+            fprintf(f, "}\n");
+        } else {
+            /* 默认 WASI P2 world */
+            fprintf(f, "world %s {\n", name);
+            wit_indent(f, 1);
+            fprintf(f, "use self:%s;\n", name);
+            fprintf(f, "}\n");
+        }
     }
 
     fclose(f);

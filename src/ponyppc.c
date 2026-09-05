@@ -214,7 +214,7 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
     printf("  [5/6] 代码生成...\n");
     if (cfg->wit_only) {
         char *wit_output = resolve_output(input_path, cfg->output, ".wit");
-        if (wit_write_program(ast, wit_output) != 0) {
+        if (wit_write_program(ast, wit_output, cfg->target) != 0) {
             fprintf(stderr, "错误: 无法写入 WIT 文件\n");
             s_free(wit_output);
             parser_free(parser);
