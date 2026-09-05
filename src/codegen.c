@@ -326,9 +326,15 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
             }
             break;
         }
-        case NODE_IDENT:
-            cg_emit_field_access(cg, (const char *)n->data);
+        case NODE_IDENT: {
+            const char *name = (const char *)n->data;
+            if (name && strcmp(name, "this") == 0) {
+                cg_emit_raw(cg, "self");
+            } else {
+                cg_emit_field_access(cg, name);
+            }
             break;
+        }
         /* 引用能力: 类型修饰, 代码生成只输出子类型 */
         case NODE_CAP:
             if (n->child_count > 0) cg_expr(cg, n->children[0]);
@@ -675,7 +681,10 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
             if (body) {
                 for (size_t j = 0; j < body->child_count; j++) cg_stmt(cg, body->children[j]);
             }
-            if (strcmp(rtype, "void") != 0) cg_emit(cg, "return NULL;\n");
+            if (strcmp(rtype, "void") != 0) {
+                if (strcmp(rtype, "const char *") == 0) cg_emit(cg, "return NULL;\n");
+                else cg_emit(cg, "return 0;\n");
+            }
             cg_pop(cg);
             cg_emit(cg, "}\n\n");
         }
