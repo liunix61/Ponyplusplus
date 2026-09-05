@@ -48,6 +48,7 @@ typedef enum {
     NODE_TUPLE,         /* 元组类型 */
     NODE_ARRAY,         /* 数组类型 */
     NODE_ALIAS,         /* 类型别名 */
+    NODE_INDEX_ACCESS,  /* 索引访问 arr[index] */
 } ASTNodeType;
 
 /* AST 节点 */

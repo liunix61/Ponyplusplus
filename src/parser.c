@@ -480,6 +480,19 @@ static ASTNode *parse_expression(Parser *p) {
             return sync;
         }
 
+        /* 检查 [ (索引访问) 后缀操作 */
+        if (match(p, TK_BRACKET_L)) {
+            advance(p);
+            ASTNode *idx = ast_node_new(NODE_INDEX_ACCESS, line, col);
+            if (idx) {
+                if (node) ast_node_add_child(idx, node);
+                ASTNode *index_expr = parse_expression(p);
+                if (index_expr) ast_node_add_child(idx, index_expr);
+            }
+            if (match(p, TK_BRACKET_R)) advance(p);
+            return idx;
+        }
+
         return node;
     }
 

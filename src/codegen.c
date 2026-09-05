@@ -244,6 +244,16 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
             }
             break;
         }
+        /* 索引访问: arr[index] */
+        case NODE_INDEX_ACCESS: {
+            if (n->child_count == 2 && n->children[0] && n->children[1]) {
+                cg_expr(cg, n->children[0]);
+                cg_emit_raw(cg, "[");
+                cg_expr(cg, n->children[1]);
+                cg_emit_raw(cg, "]");
+            }
+            break;
+        }
         case NODE_EMPTY:
             if (n->data) {
                 const char *d = (const char *)n->data;

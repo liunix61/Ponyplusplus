@@ -51,6 +51,8 @@ set(PONYPP_SRCS
     src/wasm.c
     src/wit.c
     src/ponypp/runtime.c
+    src/ponypp/gc.c
+    src/ponypp/wamr.c
     src/ponypp/stdlib.c
     src/ponypp/tool.c
 )
@@ -85,7 +87,7 @@ if(BUILD_TESTING)
 
     set(GTEST_EXECUTABLES gtest_lexer gtest_parser gtest_types gtest_typecheck
                           gtest_capabilities gtest_wasm gtest_wit gtest_codegen
-                          gtest_codegen_extra gtest_codegen_cov gtest_extra gtest_coverage gtest_tc_extra gtest_more gtest_e2e gtest_util gtest_util2 gtest_runtime gtest_phase2 gtest_stdlib gtest_tool)
+                          gtest_codegen_extra gtest_codegen_cov gtest_extra gtest_coverage gtest_tc_extra gtest_more gtest_e2e gtest_util gtest_util2 gtest_runtime gtest_phase2 gtest_stdlib gtest_tool gtest_gc gtest_wamr)
 
     foreach(tname IN LISTS GTEST_EXECUTABLES)
         add_executable(${tname} tests/${tname}.cpp)
