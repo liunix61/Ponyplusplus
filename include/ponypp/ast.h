@@ -55,6 +55,8 @@ typedef struct ASTNode ASTNode;
 struct ASTNode {
     ASTNodeType type;
     void *data;           /* 节点特定数据 */
+    char *ident;          /* 标识符名称 */
+    int value_int;        /* 整数值 */
     ASTNode **children;
     size_t child_count;
     size_t child_cap;

@@ -297,7 +297,7 @@ static ASTNode *parse_statement(Parser *p) {
         ASTNode *node = ast_node_new(NODE_FOR, line, col);
         if (!node) return NULL;
         /* 解析迭代变量 */
-        if (cur_type(p) == TK_IDENT || match_keyword(p, "it") || match_keyword(p, "_")) {
+        if (cur(p)->type == TK_IDENT || match_keyword(p, "it") || match_keyword(p, "_")) {
             Token *var_t = cur(p);
             advance(p);
             ASTNode *var_node = ast_node_new(NODE_IDENT, var_t->line, var_t->column);
@@ -334,7 +334,12 @@ static ASTNode *parse_statement(Parser *p) {
                 ASTNode *pat = parse_expression(p);
                 if (pat) ast_node_add_child(arm, pat);
                 if (match_keyword(p, "=>")) advance(p);
-                ASTNode *body = parse_expression(p);
+                ASTNode *body;
+                if (cur(p)->type == TK_BRACE_L) {
+                    body = parse_block(p);
+                } else {
+                    body = parse_expression(p);
+                }
                 if (body) ast_node_add_child(arm, body);
                 ast_node_add_child(node, arm);
             } else {

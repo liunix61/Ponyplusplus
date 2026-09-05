@@ -315,11 +315,11 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
             cg_emit_raw(cg, "for (unsigned long long ");
             cg_emit(cg, var_name);
             cg_emit_raw(cg, " = ");
-            cg_emit(cg, start);
+            cg_emit(cg, "%d", start);
             cg_emit_raw(cg, "; ");
             cg_emit(cg, var_name);
             cg_emit_raw(cg, " < ");
-            cg_emit(cg, end);
+            cg_emit(cg, "%d", end);
             cg_emit_raw(cg, "; ");
             cg_emit(cg, var_name);
             cg_emit_raw(cg, "++) {\n");
