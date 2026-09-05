@@ -702,7 +702,7 @@ int wamr_compile_program(ASTNode *ast, const WamrConfig *cfg, const char *output
     if (!ast || !cfg || !output) return -1;
 
     /* 1. 生成基础 WASM */
-    int rc = wasm_write_program(ast, output);
+    int rc = wasm_write_program(ast, output, TARGET_MCU_WASM);
     if (rc != 0) return rc;
 
     /* 2. 读取 WASM */

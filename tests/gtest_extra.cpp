@@ -219,7 +219,7 @@ TEST(TypeExtra, Context) {
 /* ---- Wasm ---- */
 TEST(WasmExtra, WriteActor) {
     ASTNode *ast = parse_to_ast("actor main { new create() => {} }\n");
-    int r = wasm_write_program(ast, "/tmp/ponypp_wasm_x.wasm");
+    int r = wasm_write_program(ast, "/tmp/ponypp_wasm_x.wasm", TARGET_WASI_P2);
     ASSERT_EQ(r, 0);
     remove("/tmp/ponypp_wasm_x.wasm");
     ast_node_free(ast);
@@ -229,7 +229,7 @@ TEST(WasmExtra, WriteMulti) {
     ASTNode *ast = parse_to_ast(
         "actor A { new create() => {} }\n"
         "actor B { new create() => {} }\n");
-    int r = wasm_write_program(ast, "/tmp/ponypp_wasm_x2.wasm");
+    int r = wasm_write_program(ast, "/tmp/ponypp_wasm_x2.wasm", TARGET_WASI_P2);
     ASSERT_EQ(r, 0);
     remove("/tmp/ponypp_wasm_x2.wasm");
     ast_node_free(ast);

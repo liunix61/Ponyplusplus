@@ -115,6 +115,7 @@ typedef enum {
 /* 编译目标后端 */
 typedef enum {
     TARGET_WASI_P2,
+    TARGET_WASI_P3,       /* WASI Preview 3 (async) */
     TARGET_COMPONENT,
     TARGET_BROWSER,
     TARGET_MCU_WASM,
@@ -133,6 +134,7 @@ typedef struct CompilerConfig {
     bool emit_debug;
     int mode;
     TargetKind target;
+    const char *mcu_platform;    /* --mcu stm32f4|stm32h7|esp32|esp32s3|generic */
     const char *source_dir; /* 源码根目录，native backend 用 */
 } CompilerConfig;
 

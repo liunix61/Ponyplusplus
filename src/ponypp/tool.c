@@ -111,7 +111,7 @@ int tool_build(const char *input, const char *output, const char *target,
     } else {
         char wasm_path[512];
         snprintf(wasm_path, sizeof(wasm_path), "%s.wasm", out);
-        wasm_write_program(ast, wasm_path);
+        wasm_write_program(ast, wasm_path, TARGET_WASI_P2);
         printf("[build] ✓ 生成 %s\n", wasm_path);
     }
 

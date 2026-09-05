@@ -36,7 +36,8 @@ static void print_usage(const char *prog) {
     printf("  -g           生成调试信息\n");
     printf("  -O <level>   优化级别 (0-4, 默认 2)\n");
     printf("  --wit-only   仅生成 WIT 接口定义文件\n");
-    printf("  --target     目标后端 (wasi-p2|component|browser|mcu-wasm|native, 默认 wasi-p2)\n");
+    printf("  --target     目标后端 (wasi-p2|wasi-p3|component|browser|mcu-wasm|native, 默认 wasi-p2)\n");
+    printf("  --mcu        MCU 平台 (stm32f4|stm32h7|esp32|esp32s3|generic, 默认 generic)\n");
     printf("  --ast        输出 AST\n");
     printf("  --ast-dot    输出 DOT 格式的 AST 图\n");
     printf("  --pretty     美化输出 (pretty print)\n");
@@ -91,6 +92,7 @@ static char *resolve_output(const char *input, const char *opt_output, const cha
 static TargetKind parse_target(const char *s) {
     if (!s) return TARGET_WASI_P2;
     if (strcmp(s, "wasi-p2") == 0) return TARGET_WASI_P2;
+    if (strcmp(s, "wasi-p3") == 0) return TARGET_WASI_P3;
     if (strcmp(s, "component") == 0) return TARGET_COMPONENT;
     if (strcmp(s, "browser") == 0) return TARGET_BROWSER;
     if (strcmp(s, "mcu-wasm") == 0) return TARGET_MCU_WASM;
@@ -101,6 +103,7 @@ static TargetKind parse_target(const char *s) {
 static const char *target_name(TargetKind t) {
     switch (t) {
         case TARGET_WASI_P2: return "wasi-p2";
+        case TARGET_WASI_P3: return "wasi-p3";
         case TARGET_COMPONENT: return "component";
         case TARGET_BROWSER: return "browser";
         case TARGET_MCU_WASM: return "mcu-wasm";
@@ -262,7 +265,7 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
     } else {
         /* Wasm backend */
         char *wasm_output = resolve_output(input_path, cfg->output, ".wasm");
-        if (wasm_write_program(ast, wasm_output) != 0) {
+        if (wasm_write_program(ast, wasm_output, cfg->target) != 0) {
             fprintf(stderr, "错误: 无法写入 Wasm 文件\n");
             s_free(wasm_output);
             parser_free(parser);
@@ -302,6 +305,7 @@ int main(int argc, char *argv[]) {
     struct option longopts[] = {
         {"wit-only", no_argument, 0, 'W'},
         {"target",   required_argument, 0, 'T'},
+        {"mcu",      required_argument, 0, 'M'},
         {"ast",      no_argument, 0, 'A'},
         {"ast-dot",  no_argument, 0, 'D'},
         {"pretty",   no_argument, 0, 'P'},
@@ -311,7 +315,7 @@ int main(int argc, char *argv[]) {
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "o:gO:hWADPVT:", longopts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "o:gO:hWADPVT:M:", longopts, NULL)) != -1) {
         switch (opt) {
             case 'o':
                 cfg.output = optarg;
@@ -328,6 +332,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'T':
                 cfg.target = parse_target(optarg);
+                break;
+            case 'M':
+                cfg.mcu_platform = optarg;
                 break;
             case 'A':
                 cfg.emit_ast = true;

@@ -322,7 +322,7 @@ static void emit_stmt(WasmGen *wg, ASTNode *n) {
 }
 
 /* --- 生成 WASM 模块 --- */
-int wasm_write_program(ASTNode *ast, const char *output) {
+int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
     if (!output) return 1;
 
     ByteVec bv = {0};
@@ -354,19 +354,42 @@ int wasm_write_program(ASTNode *ast, const char *output) {
         bv_free(&body);
     }
 
-    /* --- import section (WASI Snapshot Preview 1) --- */
+    /* --- import section --- */
     bv_write_u8(&bv, 0x02);
     {
         ByteVec body = {0};
-        bv_write_u8(&body, 0x02); /* 2 imports */
-        bv_write_str(&body, "wasi_snapshot_preview1");
-        bv_write_str(&body, "fd_write");
-        bv_write_u8(&body, 0x00); /* func */
-        bv_write_u8(&body, 0x01); /* type idx 1 */
-        bv_write_str(&body, "wasi_snapshot_preview1");
-        bv_write_str(&body, "proc_exit");
-        bv_write_u8(&body, 0x00);
-        bv_write_u8(&body, 0x02);
+        const char *module_name = "wasi_snapshot_preview1";
+        if (target == TARGET_WASI_P3) {
+            module_name = "wasi_unstable";
+            /* WASI P3: fd_write + proc_exit + async_spawn + async_await */
+            bv_write_u8(&body, 0x04); /* 4 imports */
+            bv_write_str(&body, module_name);
+            bv_write_str(&body, "fd_write");
+            bv_write_u8(&body, 0x00);
+            bv_write_u8(&body, 0x01);
+            bv_write_str(&body, module_name);
+            bv_write_str(&body, "proc_exit");
+            bv_write_u8(&body, 0x00);
+            bv_write_u8(&body, 0x02);
+            bv_write_str(&body, module_name);
+            bv_write_str(&body, "async_spawn");
+            bv_write_u8(&body, 0x00);
+            bv_write_u8(&body, 0x00);
+            bv_write_str(&body, module_name);
+            bv_write_str(&body, "async_await");
+            bv_write_u8(&body, 0x00);
+            bv_write_u8(&body, 0x00);
+        } else {
+            bv_write_u8(&body, 0x02); /* 2 imports */
+            bv_write_str(&body, module_name);
+            bv_write_str(&body, "fd_write");
+            bv_write_u8(&body, 0x00);
+            bv_write_u8(&body, 0x01);
+            bv_write_str(&body, module_name);
+            bv_write_str(&body, "proc_exit");
+            bv_write_u8(&body, 0x00);
+            bv_write_u8(&body, 0x02);
+        }
         bv_write_vec(&bv, &body);
         bv_free(&body);
     }
@@ -501,6 +524,7 @@ int wasm_write_program(ASTNode *ast, const char *output) {
 const char *wasm_target_name(TargetKind target) {
     switch (target) {
         case TARGET_WASI_P2:   return "wasi-p2";
+        case TARGET_WASI_P3:   return "wasi-p3";
         case TARGET_COMPONENT: return "component";
         case TARGET_BROWSER:   return "browser";
         case TARGET_MCU_WASM:  return "mcu-wasm";

@@ -7,7 +7,7 @@ extern "C" {
 #include "ponypp.h"
 #include "ponypp/ast.h"
 
-int wasm_write_program(ASTNode *ast, const char *output);
+int wasm_write_program(ASTNode *ast, const char *output, TargetKind target);
 const char *wasm_target_name(TargetKind target);
 
 #ifdef __cplusplus

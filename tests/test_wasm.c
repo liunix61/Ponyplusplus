@@ -35,7 +35,7 @@ static int test_wasm_generates_file(void) {
     ASTNode *ast = parse_to_ast(src);
     CHECK(ast != NULL, "解析成功");
     if (ast) {
-        CHECK(wasm_write_program(ast, "/tmp/ponypp_test.wasm") == 0,
+        CHECK(wasm_write_program(ast, "/tmp/ponypp_test.wasm", TARGET_WASI_P2) == 0,
               "Wasm 文件生成成功");
         FILE *f = fopen("/tmp/ponypp_test.wasm", "rb");
         CHECK(f != NULL, "文件可打开");

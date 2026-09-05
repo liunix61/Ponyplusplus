@@ -8,7 +8,7 @@ TEST(Wasm, GeneratesFile) {
     const char* src = "actor main { be hello() => {} }";
     ASTNode* ast = parse_to_ast(src);
     ASSERT_NE(ast, nullptr);
-    EXPECT_EQ(wasm_write_program(ast, "/tmp/ponypp_test.wasm"), 0);
+    EXPECT_EQ(wasm_write_program(ast, "/tmp/ponypp_test.wasm", TARGET_WASI_P2), 0);
     FILE* f = fopen("/tmp/ponypp_test.wasm", "rb");
     ASSERT_NE(f, nullptr);
     unsigned char magic[8] = {0};
@@ -29,5 +29,5 @@ TEST(Wasm, TargetName) {
 }
 
 TEST(Wasm, NullOutput) {
-    EXPECT_NE(wasm_write_program(nullptr, nullptr), 0);
+    EXPECT_NE(wasm_write_program(nullptr, nullptr, TARGET_WASI_P2), 0);
 }

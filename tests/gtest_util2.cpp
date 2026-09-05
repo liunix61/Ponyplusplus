@@ -253,7 +253,7 @@ TEST(Coverage, TypecheckFields) {
 TEST(Coverage, WasmWithActor) {
     ASTNode *ast = build_ast("actor main { new create() => { print(42) } }");
     if (!ast) return;
-    int ret = wasm_write_program(ast, "/tmp/ponypp_cg_wasm.wasm");
+    int ret = wasm_write_program(ast, "/tmp/ponypp_cg_wasm.wasm", TARGET_WASI_P2);
     EXPECT_EQ(ret, 0);
     remove("/tmp/ponypp_cg_wasm.wasm");
     ast_node_free(ast);
@@ -262,7 +262,7 @@ TEST(Coverage, WasmWithActor) {
 TEST(Coverage, WasmWithString) {
     ASTNode *ast = build_ast("actor main { new create() => { print(\"hello\") } }");
     if (!ast) return;
-    int ret = wasm_write_program(ast, "/tmp/ponypp_cg_wasm2.wasm");
+    int ret = wasm_write_program(ast, "/tmp/ponypp_cg_wasm2.wasm", TARGET_WASI_P2);
     EXPECT_EQ(ret, 0);
     remove("/tmp/ponypp_cg_wasm2.wasm");
     ast_node_free(ast);
@@ -271,7 +271,7 @@ TEST(Coverage, WasmWithString) {
 TEST(Coverage, WasmMultipleActors) {
     ASTNode *ast = build_ast("actor Worker { new create() => {} } actor main { var w: Worker; new create() => { w = Worker() } }");
     if (!ast) return;
-    int ret = wasm_write_program(ast, "/tmp/ponypp_cg_wasm3.wasm");
+    int ret = wasm_write_program(ast, "/tmp/ponypp_cg_wasm3.wasm", TARGET_WASI_P2);
     EXPECT_EQ(ret, 0);
     remove("/tmp/ponypp_cg_wasm3.wasm");
     ast_node_free(ast);
@@ -280,7 +280,7 @@ TEST(Coverage, WasmMultipleActors) {
 TEST(Coverage, WasmNullOutput) {
     ASTNode *ast = build_ast("actor main { new create() => {} }");
     if (!ast) return;
-    int ret = wasm_write_program(ast, nullptr);
+    int ret = wasm_write_program(ast, nullptr, TARGET_WASI_P2);
     EXPECT_NE(ret, 0);
     ast_node_free(ast);
 }
