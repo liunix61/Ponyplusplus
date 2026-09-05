@@ -487,3 +487,338 @@ TEST(P1Serialization, CapabilityMarks) {
     pny_msg_free(msg);
     pny_msg_free(out);
 }
+
+/* ======================== Phase P2: Gas 计数 ======================== */
+
+TEST(P2Gas, UnlimitedGas) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "GasUnlimited", 0);
+    uint64_t remaining = pny_gas_consume(a, 1000);
+    EXPECT_EQ(remaining, UINT64_MAX);
+    pny_runtime_free(r);
+}
+
+TEST(P2Gas, LimitedGas) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "GasLimited", 0);
+    pny_gas_set_limit(a, 100);
+    uint64_t remaining = pny_gas_consume(a, 50);
+    EXPECT_EQ(remaining, 50);
+    remaining = pny_gas_consume(a, 50);
+    EXPECT_EQ(remaining, 0); /* 耗尽 */
+    pny_runtime_free(r);
+}
+
+TEST(P2Gas, GasOverLimit) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "GasOver", 0);
+    pny_gas_set_limit(a, 100);
+    uint64_t remaining = pny_gas_consume(a, 150);
+    EXPECT_EQ(remaining, 0); /* 超过限制 */
+    pny_runtime_free(r);
+}
+
+TEST(P2Gas, SetLimit) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "GasSet", 0);
+    pny_gas_set_limit(a, 200);
+    EXPECT_EQ(a->gas_limit, 200);
+    EXPECT_EQ(a->gas_budget, 200);
+    pny_runtime_free(r);
+}
+
+TEST(P2Gas, GasAccumulate) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "GasAccum", 0);
+    pny_gas_set_limit(a, 1000);
+    pny_gas_consume(a, 100);
+    pny_gas_consume(a, 200);
+    pny_gas_consume(a, 300);
+    EXPECT_EQ(a->gas_used, 600);
+    uint64_t remaining = pny_gas_consume(a, 400);
+    EXPECT_EQ(remaining, 0); /* 600+400=1000 >= 1000 */
+    pny_runtime_free(r);
+}
+
+/* ======================== Phase P2: 热代码升级 ======================== */
+
+static int hot_upgrade_flag = 0;
+void old_behavior(PnyActor *self, PnyMessage *msg) {
+    (void)self; (void)msg;
+    hot_upgrade_flag = 1;
+}
+void new_behavior(PnyActor *self, PnyMessage *msg) {
+    (void)self; (void)msg;
+    hot_upgrade_flag = 2;
+}
+
+TEST(P2HotUpgrade, SetNewBehavior) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "HotUpgrade", 0);
+    a->behavior = old_behavior;
+    EXPECT_EQ(a->version, 1);
+    EXPECT_EQ(pny_hot_upgrade_version(a), 1);
+
+    pny_hot_upgrade(a, new_behavior);
+    EXPECT_NE(a->new_behavior, nullptr);
+    pny_runtime_free(r);
+}
+
+TEST(P2HotUpgrade, VersionCheck) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "HotVer", 0);
+    EXPECT_EQ(pny_hot_upgrade_version(a), 1);
+    pny_runtime_free(r);
+}
+
+TEST(P2HotUpgrade, NullActor) {
+    pny_hot_upgrade(NULL, new_behavior);
+    EXPECT_EQ(pny_hot_upgrade_version(NULL), -1);
+}
+
+/* ======================== Phase P2: 诊断接口 ======================== */
+
+TEST(P2Diagnostics, StatsEmpty) {
+    PnyRuntime *r = pny_runtime_new();
+    ActorStats stats;
+    pny_diagnostics_stats(r, &stats);
+    EXPECT_EQ(stats.actors_total, 0);
+    EXPECT_EQ(stats.messages_queued, 0);
+    pny_runtime_free(r);
+}
+
+TEST(P2Diagnostics, StatsWithActors) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a1 = pny_actor_new(r, "DxActor1", 0);
+    PnyActor *a2 = pny_actor_new(r, "DxActor2", 0);
+    pny_scheduler_start(r);
+
+    ActorRef sender = {0, NULL, NULL};
+    pny_actor_send(&sender, &a1->self, "m1", NULL, 0);
+    pny_actor_send(&sender, &a2->self, "m2", NULL, 0);
+    pny_scheduler_tick(r);
+
+    ActorStats stats;
+    pny_diagnostics_stats(r, &stats);
+    EXPECT_EQ(stats.actors_total, 2);
+    EXPECT_EQ(stats.actors_running, 2);
+    EXPECT_EQ(stats.messages_delivered, 2);
+    EXPECT_GT(stats.scheduler_ticks, 0);
+    pny_runtime_free(r);
+}
+
+TEST(P2Diagnostics, DumpText) {
+    PnyRuntime *r = pny_runtime_new();
+    pny_actor_new(r, "DumpActor", 0);
+    pny_scheduler_start(r);
+    pny_scheduler_tick(r);
+
+    char buf[1024];
+    const char *result = pny_diagnostics_dump(r, buf, sizeof(buf));
+    ASSERT_NE(result, nullptr);
+    EXPECT_NE(strstr(buf, "Pony++ Diagnostics"), nullptr);
+    EXPECT_NE(strstr(buf, "Actors:"), nullptr);
+    EXPECT_NE(strstr(buf, "Messages:"), nullptr);
+    pny_runtime_free(r);
+}
+
+TEST(P2Diagnostics, DumpNull) {
+    PnyRuntime *r = pny_runtime_new();
+    EXPECT_EQ(pny_diagnostics_dump(NULL, NULL, 0), nullptr);
+    pny_runtime_free(r);
+}
+
+TEST(P2Gas, GasLimitZero) {
+    PnyRuntime *r = pny_runtime_new();
+    PnyActor *a = pny_actor_new(r, "GasZero", 0);
+    pny_gas_set_limit(a, 0);
+    uint64_t remaining = pny_gas_consume(a, 1);
+    EXPECT_EQ(remaining, 0); /* 立即让出 */
+    pny_runtime_free(r);
+}
+
+/* ======================== Phase P2: M:N 工作窃取 ======================== */
+
+TEST(P2MN, InitDestroy) {
+    PnyRuntime *r = pny_runtime_new();
+    pny_mn_init(r, 2);
+    EXPECT_TRUE(pny_mn_global != nullptr);
+    pny_mn_destroy(r);
+    EXPECT_TRUE(pny_mn_global == nullptr);
+    pny_runtime_free(r);
+}
+
+TEST(P2MN, InitWithMinWorkers) {
+    PnyRuntime *r = pny_runtime_new();
+    pny_mn_init(r, 0); /* 应被纠正为 1 */
+    EXPECT_TRUE(pny_mn_global != nullptr);
+    EXPECT_EQ(pny_mn_global->worker_count, 1);
+    pny_mn_destroy(r);
+    pny_runtime_free(r);
+}
+
+TEST(P2MN, EnqueueAndDequeue) {
+    PnyRuntime *r = pny_runtime_new();
+    pny_mn_init(r, 2);
+    PnyActor *a = pny_actor_new(r, "MNActor", 0);
+
+    PnyMessage *msg = pny_msg_new("m1", NULL, 0);
+    int rc = pny_mn_enqueue(a, msg, 0);
+    EXPECT_EQ(rc, 0);
+
+    /* 从本地队列取 */
+    PnyMessage *got = pny_mn_dequeue_local(&pny_mn_global->workers[0]);
+    EXPECT_NE(got, nullptr);
+    if (got) {
+        EXPECT_STREQ(got->method, "m1");
+        pny_msg_free(got);
+    }
+    pny_mn_destroy(r);
+    pny_runtime_free(r);
+}
+
+TEST(P2MN, StealFromOtherWorker) {
+    PnyRuntime *r = pny_runtime_new();
+    pny_mn_init(r, 2);
+    PnyActor *a = pny_actor_new(r, "MNSteal", 0);
+
+    /* 放入 worker 1 的本地队列 */
+    PnyMessage *msg = pny_msg_new("steal", NULL, 0);
+    pny_mn_enqueue(a, msg, 1);
+
+    /* worker 0 尝试窃取 */
+    PnyMessage *stolen = pny_mn_steal(&pny_mn_global->workers[0]);
+    EXPECT_NE(stolen, nullptr);
+    if (stolen) {
+        EXPECT_STREQ(stolen->method, "steal");
+        pny_msg_free(stolen);
+    }
+    pny_mn_destroy(r);
+    pny_runtime_free(r);
+}
+
+TEST(P2MN, StealStats) {
+    PnyRuntime *r = pny_runtime_new();
+    pny_mn_init(r, 2);
+    PnyActor *a = pny_actor_new(r, "MNStats", 0);
+
+    /* 放入 worker 1 */
+    for (int i = 0; i < 5; i++) {
+        PnyMessage *msg = pny_msg_new("steal_stat", NULL, 0);
+        pny_mn_enqueue(a, msg, 1);
+    }
+
+    /* worker 0 窃取 */
+    for (int i = 0; i < 5; i++) {
+        PnyMessage *stolen = pny_mn_steal(&pny_mn_global->workers[0]);
+        if (stolen) pny_msg_free(stolen);
+    }
+
+    size_t steals = pny_mn_steal_stats(r);
+    EXPECT_GT(steals, 0);
+    pny_mn_destroy(r);
+    pny_runtime_free(r);
+}
+
+TEST(P2MN, RunTick) {
+    PnyRuntime *r = pny_runtime_new();
+    pny_mn_init(r, 2);
+    pny_actor_new(r, "MNTick", 0);
+    pny_scheduler_start(r);
+
+    PnyMessage *msg = pny_msg_new("tick_msg", NULL, 0);
+    pny_mn_enqueue(r->scheduler.actors, msg, 0);
+
+    pny_mn_run_tick(r);
+    EXPECT_GT(r->scheduler.tick_count, 0);
+    pny_mn_destroy(r);
+    pny_runtime_free(r);
+}
+
+/* ======================== Phase P2: 跨组件监督 ======================== */
+
+TEST(P2CrossSupervise, NewFree) {
+    CrossComponentSupervisor *cs = pny_cross_supervise_new();
+    ASSERT_NE(cs, nullptr);
+    EXPECT_EQ(cs->child_count, 0);
+    pny_cross_supervise_free(cs);
+}
+
+TEST(P2CrossSupervise, RegisterChildren) {
+    CrossComponentSupervisor *cs = pny_cross_supervise_new();
+    ActorRef ref1 = {1, NULL, NULL};
+    ActorRef ref2 = {2, NULL, NULL};
+
+    EXPECT_EQ(pny_cross_supervise_register(cs, &ref1, "child1"), 0);
+    EXPECT_EQ(pny_cross_supervise_register(cs, &ref2, "child2"), 0);
+    EXPECT_EQ(cs->child_count, 2);
+
+    EXPECT_STREQ(pny_cross_supervise_state(cs, 0), "child1");
+    EXPECT_STREQ(pny_cross_supervise_state(cs, 1), "child2");
+
+    pny_cross_supervise_free(cs);
+}
+
+TEST(P2CrossSupervise, CrashOneForOne) {
+    PnyRuntime *r = pny_runtime_new();
+    CrossComponentSupervisor *cs = pny_cross_supervise_new();
+    cs->strategy = SUPERVISE_ONE_FOR_ONE;
+
+    PnyActor *a1 = pny_actor_new(r, "Cross1", 0);
+    PnyActor *a2 = pny_actor_new(r, "Cross2", 0);
+    pny_scheduler_start(r);
+
+    pny_cross_supervise_register(cs, &a1->self, "a1");
+    pny_cross_supervise_register(cs, &a2->self, "a2");
+
+    int rc = pny_cross_supervise_notify_crash(cs, 0);
+    EXPECT_EQ(rc, 0);
+    EXPECT_EQ(cs->restart_count, 1);
+
+    pny_cross_supervise_free(cs);
+    pny_runtime_free(r);
+}
+
+TEST(P2CrossSupervise, MaxRestarts) {
+    PnyRuntime *r = pny_runtime_new();
+    CrossComponentSupervisor *cs = pny_cross_supervise_new();
+    cs->max_restarts = 2;
+
+    PnyActor *a = pny_actor_new(r, "MaxR", 0);
+    pny_cross_supervise_register(cs, &a->self, "child");
+
+    for (int i = 0; i < 2; i++) {
+        EXPECT_EQ(pny_cross_supervise_notify_crash(cs, 0), 0);
+    }
+    /* 第 3 次应失败 */
+    EXPECT_EQ(pny_cross_supervise_notify_crash(cs, 0), -2);
+    pny_cross_supervise_free(cs);
+    pny_runtime_free(r);
+}
+
+TEST(P2CrossSupervise, InvalidChildIdx) {
+    CrossComponentSupervisor *cs = pny_cross_supervise_new();
+    EXPECT_EQ(pny_cross_supervise_notify_crash(cs, 99), -1);
+    EXPECT_STREQ(pny_cross_supervise_state(cs, 99), "unknown");
+    pny_cross_supervise_free(cs);
+}
+
+TEST(P2CrossSupervise, OneForAll) {
+    PnyRuntime *r = pny_runtime_new();
+    CrossComponentSupervisor *cs = pny_cross_supervise_new();
+    cs->strategy = SUPERVISE_ONE_FOR_ALL;
+
+    PnyActor *a1 = pny_actor_new(r, "CrossA", 0);
+    PnyActor *a2 = pny_actor_new(r, "CrossB", 0);
+    pny_scheduler_start(r);
+
+    pny_cross_supervise_register(cs, &a1->self, "a1");
+    pny_cross_supervise_register(cs, &a2->self, "a2");
+
+    pny_cross_supervise_notify_crash(cs, 0);
+    /* ONE_FOR_ALL 应重启所有子 Actor */
+    EXPECT_EQ(a2->actor_state, ACTOR_STATE_RESTARTING);
+
+    pny_cross_supervise_free(cs);
+    pny_runtime_free(r);
+}

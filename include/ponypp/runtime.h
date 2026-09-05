@@ -10,6 +10,7 @@ extern "C" {
 #include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <pthread.h>
 
 /* 跨组件序列化：消息头 */
 typedef struct PnyMsgHeader {
@@ -107,6 +108,11 @@ typedef struct PnyActor {
     size_t delivered_count;
     size_t delivered_cap;
     uint64_t next_msg_id;       /* exactly-once: 下一条消息 ID */
+    uint64_t gas_budget;        /* 气体预算 */
+    uint64_t gas_used;          /* 已消耗气体 */
+    int64_t gas_limit;          /* -1 = 无限, 0 = 立即让出, >0 = 消耗后让出 */
+    int version;                /* 热代码升级: 行为函数版本 */
+    void (*new_behavior)(struct PnyActor *self, PnyMessage *msg); /* 热升级目标行为 */
 } PnyActor;
 
 /* 调度器 */
@@ -181,6 +187,84 @@ void pny_backpressure_set_limit(PnyActor *a, size_t max_messages);
 
 /* exactly-once */
 int pny_msg_delivered(PnyActor *a, uint64_t msg_id);  /* 检查是否已投递 (去重) */
+
+/* Gas 计数（抢占式调度） */
+void pny_gas_set_limit(PnyActor *a, int64_t limit);
+uint64_t pny_gas_consume(PnyActor *a, uint64_t amount);  /* 返回剩余气体, 0=应让出 */
+
+/* 热代码升级 */
+void pny_hot_upgrade(PnyActor *a, void (*new_behavior)(PnyActor *, PnyMessage *));
+int pny_hot_upgrade_version(PnyActor *a);
+
+/* 诊断接口 */
+typedef struct ActorStats {
+    size_t actors_total;
+    size_t actors_running;
+    size_t actors_stopped;
+    size_t messages_queued;
+    size_t messages_delivered;
+    size_t gas_used;
+    uint64_t scheduler_ticks;
+} ActorStats;
+void pny_diagnostics_stats(PnyRuntime *r, ActorStats *out);
+const char *pny_diagnostics_dump(PnyRuntime *r, char *buf, size_t buf_size);
+
+/* M:N 工作窃取调度器 */
+typedef struct WorkDeque {
+    PnyMessage *items[64];
+    int head;
+    int tail;
+    int count;
+    pthread_mutex_t lock;
+} WorkDeque;
+
+typedef struct WorkerThread {
+    int id;
+    WorkDeque *local;
+    PnyRuntime *runtime;
+    bool running;
+    size_t steal_count;
+    size_t local_count;
+} WorkerThread;
+
+typedef struct MNWorker {
+    WorkerThread *workers;
+    int worker_count;
+    WorkDeque *global;         /* 全局就绪队列 */
+    pthread_mutex_t global_lock;
+    pthread_cond_t global_cv;
+    bool running;
+    uint64_t total_steals;
+    uint64_t total_local_deliveries;
+} MNWorker;
+
+void pny_mn_init(PnyRuntime *r, int worker_count);
+void pny_mn_destroy(PnyRuntime *r);
+extern MNWorker *pny_mn_global;
+int pny_mn_enqueue(PnyActor *a, PnyMessage *msg, int preferred_worker);
+PnyMessage *pny_mn_dequeue_local(WorkerThread *wt);
+PnyMessage *pny_mn_steal(WorkerThread *wt);
+void pny_mn_run_tick(PnyRuntime *r);
+size_t pny_mn_steal_stats(PnyRuntime *r);
+
+/* 跨组件监督 */
+typedef struct CrossComponentSupervisor {
+    ActorRef *children;
+    size_t child_count;
+    size_t child_cap;
+    SuperviseStrategy strategy;
+    int max_restarts;
+    int restart_count;
+    char **child_names;
+    void **child_states;      /* 序列化状态用于恢复 */
+    size_t *child_state_sizes;
+} CrossComponentSupervisor;
+
+CrossComponentSupervisor *pny_cross_supervise_new(void);
+void pny_cross_supervise_free(CrossComponentSupervisor *cs);
+int pny_cross_supervise_register(CrossComponentSupervisor *cs, ActorRef *child, const char *name);
+int pny_cross_supervise_notify_crash(CrossComponentSupervisor *cs, size_t child_idx);
+const char *pny_cross_supervise_state(CrossComponentSupervisor *cs, size_t child_idx);
 
 #ifdef __cplusplus
 }

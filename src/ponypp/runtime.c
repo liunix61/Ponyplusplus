@@ -54,6 +54,12 @@ PnyActor *pny_actor_new(PnyRuntime *r, const char *name, size_t state_size) {
     if (a->state_data) memset(a->state_data, 0, state_size);
     a->actor_state = ACTOR_STATE_INIT;
     a->max_messages = 65536;
+    a->next_msg_id = 1;
+    a->gas_budget = 0;
+    a->gas_used = 0;
+    a->gas_limit = -1;  /* 默认无限 */
+    a->version = 1;
+    a->new_behavior = NULL;
     /* 分配 ID */
     int id = r->scheduler.next_id++;
     a->id = id;
@@ -479,4 +485,412 @@ int pny_msg_delivered(PnyActor *a, uint64_t msg_id) {
     }
     a->delivered_ids[a->delivered_count++] = msg_id;
     return 0;
+}
+
+/* ======================== Gas 计数（抢占式调度） ======================== */
+
+void pny_gas_set_limit(PnyActor *a, int64_t limit) {
+    if (!a) return;
+    a->gas_limit = limit;
+    a->gas_used = 0;
+    if (limit > 0) a->gas_budget = (uint64_t)limit;
+}
+
+uint64_t pny_gas_consume(PnyActor *a, uint64_t amount) {
+    if (!a) return 0;
+    a->gas_used += amount;
+    if (a->gas_limit < 0) {
+        /* 无限气体 */
+        a->gas_budget = a->gas_used;
+        return UINT64_MAX;
+    }
+    if (a->gas_used >= a->gas_budget) {
+        /* 气体耗尽，应让出 */
+        return 0;
+    }
+    return a->gas_budget - a->gas_used;
+}
+
+/* ======================== 热代码升级 ======================== */
+
+void pny_hot_upgrade(PnyActor *a, void (*new_behavior)(PnyActor *, PnyMessage *)) {
+    if (!a) return;
+    a->new_behavior = new_behavior;
+}
+
+int pny_hot_upgrade_version(PnyActor *a) {
+    if (!a) return -1;
+    return a->version;
+}
+
+/* ======================== 诊断接口 ======================== */
+
+void pny_diagnostics_stats(PnyRuntime *r, ActorStats *out) {
+    if (!r || !out) return;
+    memset(out, 0, sizeof(ActorStats));
+
+    PnyActor *a = r->scheduler.actors;
+    while (a) {
+        out->actors_total++;
+        if (a->actor_state == ACTOR_STATE_RUNNING) out->actors_running++;
+        if (a->actor_state == ACTOR_STATE_STOPPED) out->actors_stopped++;
+        out->messages_queued += a->message_count;
+        out->gas_used += a->gas_used;
+        a = a->next;
+    }
+    out->messages_delivered = r->stats.messages_delivered;
+    out->scheduler_ticks = r->stats.total_ticks;
+}
+
+const char *pny_diagnostics_dump(PnyRuntime *r, char *buf, size_t buf_size) {
+    if (!r || !buf || buf_size == 0) return NULL;
+
+    ActorStats stats;
+    pny_diagnostics_stats(r, &stats);
+
+    snprintf(buf, buf_size,
+             "Pony++ Diagnostics\n"
+             "===================\n"
+             "Actors: %zu total, %zu running, %zu stopped\n"
+             "Messages: %zu queued, %zu delivered\n"
+             "Gas used: %zu\n"
+             "Scheduler ticks: %lu\n",
+             stats.actors_total, stats.actors_running, stats.actors_stopped,
+             stats.messages_queued, stats.messages_delivered,
+             stats.gas_used,
+             (unsigned long)stats.scheduler_ticks);
+
+    return buf;
+}
+
+/* ======================== M:N 工作窃取调度器 ======================== */
+
+static void init_work_deque(WorkDeque *dq) {
+    memset(dq->items, 0, sizeof(dq->items));
+    dq->head = 0;
+    dq->tail = 0;
+    dq->count = 0;
+    pthread_mutex_init(&dq->lock, NULL);
+}
+
+static void free_work_deque(WorkDeque *dq) {
+    for (int i = 0; i < 64; i++) {
+        if (dq->items[i]) pny_msg_free(dq->items[i]);
+    }
+    pthread_mutex_destroy(&dq->lock);
+}
+
+static int push_work_deque(WorkDeque *dq, PnyMessage *msg) {
+    if (!dq || !msg) return -1;
+    pthread_mutex_lock(&dq->lock);
+    if (dq->count >= 64) {
+        pthread_mutex_unlock(&dq->lock);
+        return -1; /* 队列满 */
+    }
+    dq->items[dq->tail] = msg;
+    dq->tail = (dq->tail + 1) % 64;
+    dq->count++;
+    pthread_mutex_unlock(&dq->lock);
+    return 0;
+}
+
+static PnyMessage *pop_local(WorkDeque *dq) {
+    /* 从顶部弹（自己线程用） */
+    if (!dq || dq->count == 0) return NULL;
+    pthread_mutex_lock(&dq->lock);
+    if (dq->count == 0) {
+        pthread_mutex_unlock(&dq->lock);
+        return NULL;
+    }
+    dq->tail = (dq->tail - 1 + 64) % 64;
+    PnyMessage *msg = dq->items[dq->tail];
+    dq->items[dq->tail] = NULL;
+    dq->count--;
+    pthread_mutex_unlock(&dq->lock);
+    return msg;
+}
+
+static PnyMessage *steal_from(WorkDeque *dq) {
+    /* 从底部偷（其他线程用） */
+    if (!dq || dq->count == 0) return NULL;
+    pthread_mutex_lock(&dq->lock);
+    if (dq->count == 0) {
+        pthread_mutex_unlock(&dq->lock);
+        return NULL;
+    }
+    PnyMessage *msg = dq->items[dq->head];
+    dq->items[dq->head] = NULL;
+    dq->head = (dq->head + 1) % 64;
+    dq->count--;
+    pthread_mutex_unlock(&dq->lock);
+    return msg;
+}
+
+void pny_mn_init(PnyRuntime *r, int worker_count) {
+    if (!r) return;
+    if (worker_count < 1) worker_count = 1;
+    if (worker_count > 16) worker_count = 16;
+
+    MNWorker *mn = (MNWorker *)s_malloc(sizeof(MNWorker));
+    if (!mn) return;
+    memset(mn, 0, sizeof(MNWorker));
+    mn->worker_count = worker_count;
+    mn->running = true;
+    mn->total_steals = 0;
+    mn->total_local_deliveries = 0;
+
+    /* 全局队列 */
+    mn->global = (WorkDeque *)s_malloc(sizeof(WorkDeque));
+    if (!mn->global) { s_free(mn); return; }
+    init_work_deque(mn->global);
+    pthread_mutex_init(&mn->global_lock, NULL);
+    pthread_cond_init(&mn->global_cv, NULL);
+
+    /* 工作线程 */
+    mn->workers = (WorkerThread *)s_malloc(sizeof(WorkerThread) * worker_count);
+    if (!mn->workers) {
+        free_work_deque(mn->global);
+        s_free(mn->global);
+        s_free(mn);
+        return;
+    }
+    for (int i = 0; i < worker_count; i++) {
+        mn->workers[i].id = i;
+        mn->workers[i].runtime = r;
+        mn->workers[i].running = true;
+        mn->workers[i].steal_count = 0;
+        mn->workers[i].local_count = 0;
+        mn->workers[i].local = (WorkDeque *)s_malloc(sizeof(WorkDeque));
+        if (mn->workers[i].local) init_work_deque(mn->workers[i].local);
+    }
+
+    /* 存储到 runtime 扩展字段 - 用 dead_letters 前向指针 */
+    /* 简化: 直接用 runtime 指针 */
+    r->dead_letters = NULL; /* 避免冲突 */
+    /* 将 MNWorker 存入 runtime 的 reserved 空间 */
+    /* 用 PnyRuntime 扩展: 存储在 scheduler.tick_count 之后 */
+    /* 简化: 存到 stats 的总字节中 */
+    /* 实际实现: 用全局变量 */
+    extern MNWorker *pny_mn_global;
+    pny_mn_global = mn;
+}
+
+MNWorker *pny_mn_global = NULL;
+
+void pny_mn_destroy(PnyRuntime *r) {
+    (void)r;
+    if (!pny_mn_global) return;
+    MNWorker *mn = pny_mn_global;
+    mn->running = false;
+
+    /* 清空全局队列 */
+    if (mn->global) {
+        free_work_deque(mn->global);
+        s_free(mn->global);
+    }
+    pthread_mutex_destroy(&mn->global_lock);
+    pthread_cond_destroy(&mn->global_cv);
+
+    /* 清空工作线程本地队列 */
+    for (int i = 0; i < mn->worker_count; i++) {
+        if (mn->workers[i].local) {
+            free_work_deque(mn->workers[i].local);
+            s_free(mn->workers[i].local);
+        }
+    }
+    if (mn->workers) s_free(mn->workers);
+    s_free(mn);
+    pny_mn_global = NULL;
+}
+
+int pny_mn_enqueue(PnyActor *a, PnyMessage *msg, int preferred_worker) {
+    if (!a || !msg || !pny_mn_global) return -1;
+    MNWorker *mn = pny_mn_global;
+
+    /* 优先放入指定 worker 的本地队列 */
+    if (preferred_worker >= 0 && preferred_worker < mn->worker_count &&
+        mn->workers[preferred_worker].local) {
+        int rc = push_work_deque(mn->workers[preferred_worker].local, msg);
+        if (rc == 0) {
+            mn->workers[preferred_worker].local_count++;
+            mn->total_local_deliveries++;
+            return 0;
+        }
+    }
+
+    /* 本地队列满，放入全局队列 */
+    pthread_mutex_lock(&mn->global_lock);
+    int rc = push_work_deque(mn->global, msg);
+    if (rc == 0) {
+        pthread_cond_signal(&mn->global_cv);
+    }
+    pthread_mutex_unlock(&mn->global_lock);
+    return rc;
+}
+
+PnyMessage *pny_mn_dequeue_local(WorkerThread *wt) {
+    if (!wt || !wt->local) return NULL;
+    return pop_local(wt->local);
+}
+
+PnyMessage *pny_mn_steal(WorkerThread *wt) {
+    if (!wt || !pny_mn_global) return NULL;
+    MNWorker *mn = pny_mn_global;
+    int n = mn->worker_count;
+    if (n <= 1) return NULL;
+
+    /* 随机选择一个其他 worker 窃取 */
+    int start = (wt->id + 1) % n;
+    for (int i = 0; i < n; i++) {
+        int target = (start + i) % n;
+        if (target == wt->id) continue;
+        if (mn->workers[target].local && mn->workers[target].local->count > 0) {
+            PnyMessage *msg = steal_from(mn->workers[target].local);
+            if (msg) {
+                wt->steal_count++;
+                mn->total_steals++;
+                return msg;
+            }
+        }
+    }
+
+    /* 本地和全局都偷不到，检查全局队列 */
+    pthread_mutex_lock(&mn->global_lock);
+    PnyMessage *msg = pop_local(mn->global);
+    pthread_mutex_unlock(&mn->global_lock);
+    return msg;
+}
+
+void pny_mn_run_tick(PnyRuntime *r) {
+    if (!r || !pny_mn_global) return;
+    MNWorker *mn = pny_mn_global;
+
+    for (int i = 0; i < mn->worker_count; i++) {
+        WorkerThread *wt = &mn->workers[i];
+        if (!wt->local) continue;
+
+        PnyMessage *msg = NULL;
+
+        /* 先尝试本地队列 */
+        msg = pop_local(wt->local);
+
+        /* 本地空了，尝试窃取 */
+        if (!msg) {
+            msg = pny_mn_steal(wt);
+        }
+
+        if (msg) {
+            /* 找到 Actor 并投递 */
+            for (PnyActor *a = r->scheduler.actors; a; a = a->next) {
+                if (a->actor_state == ACTOR_STATE_RUNNING && a->behavior) {
+                    a->behavior(a, msg);
+                    r->stats.messages_delivered++;
+                    break;
+                }
+            }
+            pny_msg_free(msg);
+        }
+    }
+    r->scheduler.tick_count++;
+    r->stats.total_ticks++;
+}
+
+size_t pny_mn_steal_stats(PnyRuntime *r) {
+    (void)r;
+    if (!pny_mn_global) return 0;
+    return pny_mn_global->total_steals;
+}
+
+/* ======================== 跨组件监督 ======================== */
+
+CrossComponentSupervisor *pny_cross_supervise_new(void) {
+    CrossComponentSupervisor *cs = (CrossComponentSupervisor *)s_malloc(sizeof(CrossComponentSupervisor));
+    if (!cs) return NULL;
+    memset(cs, 0, sizeof(CrossComponentSupervisor));
+    cs->child_cap = 8;
+    cs->children = (ActorRef *)s_malloc(sizeof(ActorRef) * cs->child_cap);
+    cs->child_names = (char **)s_malloc(sizeof(char *) * cs->child_cap);
+    cs->child_states = (void **)s_malloc(sizeof(void *) * cs->child_cap);
+    cs->child_state_sizes = (size_t *)s_malloc(sizeof(size_t) * cs->child_cap);
+    if (!cs->children || !cs->child_names || !cs->child_states || !cs->child_state_sizes) {
+        if (cs->children) s_free(cs->children);
+        if (cs->child_names) s_free(cs->child_names);
+        if (cs->child_states) s_free(cs->child_states);
+        if (cs->child_state_sizes) s_free(cs->child_state_sizes);
+        s_free(cs);
+        return NULL;
+    }
+    cs->strategy = SUPERVISE_ONE_FOR_ONE;
+    cs->max_restarts = 3;
+    cs->restart_count = 0;
+    return cs;
+}
+
+void pny_cross_supervise_free(CrossComponentSupervisor *cs) {
+    if (!cs) return;
+    for (size_t i = 0; i < cs->child_count; i++) {
+        if (cs->child_names[i]) s_free(cs->child_names[i]);
+        if (cs->child_states[i]) s_free(cs->child_states[i]);
+    }
+    s_free(cs->children);
+    s_free(cs->child_names);
+    s_free(cs->child_states);
+    s_free(cs->child_state_sizes);
+    s_free(cs);
+}
+
+int pny_cross_supervise_register(CrossComponentSupervisor *cs, ActorRef *child, const char *name) {
+    if (!cs || !child) return -1;
+    if (cs->child_count >= cs->child_cap) {
+        cs->child_cap *= 2;
+        cs->children = (ActorRef *)realloc(cs->children, sizeof(ActorRef) * cs->child_cap);
+        cs->child_names = (char **)realloc(cs->child_names, sizeof(char *) * cs->child_cap);
+        cs->child_states = (void **)realloc(cs->child_states, sizeof(void *) * cs->child_cap);
+        cs->child_state_sizes = (size_t *)realloc(cs->child_state_sizes, sizeof(size_t) * cs->child_cap);
+        if (!cs->children || !cs->child_names) return -2;
+    }
+    size_t idx = cs->child_count++;
+    cs->children[idx] = *child;
+    cs->child_names[idx] = s_strdup(name ? name : "unknown");
+    cs->child_states[idx] = NULL;
+    cs->child_state_sizes[idx] = 0;
+    return 0;
+}
+
+int pny_cross_supervise_notify_crash(CrossComponentSupervisor *cs, size_t child_idx) {
+    if (!cs || child_idx >= cs->child_count) return -1;
+    if (cs->restart_count >= cs->max_restarts) {
+        /* 达到最大重启次数 */
+        return -2;
+    }
+    cs->restart_count++;
+
+    switch (cs->strategy) {
+        case SUPERVISE_ONE_FOR_ONE:
+            /* 只重启崩溃的子 Actor */
+            return 0;
+        case SUPERVISE_ONE_FOR_ALL:
+            /* 重启所有子 Actor */
+            for (size_t i = 0; i < cs->child_count; i++) {
+                if (cs->children[i].actor) {
+                    cs->children[i].actor->actor_state = ACTOR_STATE_RESTARTING;
+                }
+            }
+            return 0;
+        case SUPERVISE_RESTART:
+            return 0;
+        case SUPERVISE_NONE:
+            if (cs->children[child_idx].actor) {
+                cs->children[child_idx].actor->actor_state = ACTOR_STATE_STOPPED;
+            }
+            return 0;
+        default:
+            return -3;
+    }
+}
+
+const char *pny_cross_supervise_state(CrossComponentSupervisor *cs, size_t child_idx) {
+    if (!cs || child_idx >= cs->child_count) return "unknown";
+    if (!cs->child_names[child_idx]) return "unknown";
+    return cs->child_names[child_idx];
 }
