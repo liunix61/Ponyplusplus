@@ -30,6 +30,7 @@ int tool_parse_args(int argc, char **argv, ToolConfig *tc) {
     else if (strcmp(cmd, "fmt") == 0) tc->cmd = TOOL_FMT;
     else if (strcmp(cmd, "pkg") == 0) tc->cmd = TOOL_PKG;
     else if (strcmp(cmd, "docs") == 0) tc->cmd = TOOL_DOCS;
+    else if (strcmp(cmd, "repl") == 0) tc->cmd = TOOL_REPL;
     else if (strcmp(cmd, "help") == 0 || strcmp(cmd, "-h") == 0 || strcmp(cmd, "--help") == 0) tc->cmd = TOOL_HELP;
     else return -1;
 
@@ -255,12 +256,16 @@ int tool_pkg_add(const char *dep) {
 
 /* ---- execute ---- */
 
+int tool_repl(void) {
+    return repl_run();
+}
+
 int tool_execute(ToolConfig *tc) {
     switch (tc->cmd) {
         case TOOL_HELP:
             printf("ponyppc - Pony++ 工具链 v%s\n", VERSION_STRING);
             printf("用法: ponyppc <子命令> [选项] [参数]\n");
-            printf("子命令: build run test fmt pkg\n");
+            printf("子命令: build run test fmt pkg repl docs\n");
             return 0;
         case TOOL_BUILD:
             return tool_build(tc->input, tc->output, tc->target, tc->platform, tc->olevel, tc->debug);
@@ -275,6 +280,8 @@ int tool_execute(ToolConfig *tc) {
             if (tc->subcmd && strcmp(tc->subcmd, "add") == 0) return tool_pkg_add(tc->input);
             fprintf(stderr, "[pkg] 未知子命令: %s\n", tc->subcmd ? tc->subcmd : "(null)");
             return -1;
+        case TOOL_REPL:
+            return tool_repl();
         case TOOL_DOCS:
             printf("[docs] 查看 docs/ 目录\n");
             return 0;

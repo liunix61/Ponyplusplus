@@ -149,4 +149,7 @@ typedef struct ASTNode ASTNode;
 }
 #endif
 
+/* REPL */
+int repl_run(void);
+
 #endif /* PONYPP_H */

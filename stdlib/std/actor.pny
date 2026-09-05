@@ -1,0 +1,29 @@
+/**
+ * std.actor - Actor 基类、spawn、supervise
+ *
+ * API:
+ *   new create()
+ *   be spawn(name: String) => ActorRef
+ *   be stop()
+ *   be supervise(child: ActorRef, strategy: String)
+ *   be children() => List[ActorRef]
+ */
+actor Actor {
+  var name: String
+  var children: List[ActorRef]
+  new create(name: String = "actor") => {
+    this.name = name
+    this.children = List()
+  }
+  be spawn(child_name: String) => {
+    val ref = Actor(child_name)
+    this.children.append(ref)
+  }
+  be stop() => {}
+  be supervise(child: ActorRef, strategy: String = "one_for_one") => {
+    this.children.append(child)
+  }
+  be children() => {
+    return this.children
+  }
+}

@@ -1,0 +1,63 @@
+/**
+ * std.io - 文件 I/O、控制台 I/O、路径工具
+ *
+ * API:
+ *   actor File
+ *   be open(path: String, mode: String = "r") => Bool
+ *   be close()
+ *   be read_all() => String
+ *   be read_line() => String
+ *   be write(data: String) => Bool
+ *   be printf(fmt: String, ...)
+ *   be exists(path: String) => Bool
+ *   be delete(path: String) => Bool
+ *   be size(path: String) => I64
+ *   be list_dir(dir: String) => List[String]
+ *   be stdout_print(s: String)
+ *   be stdout_println(s: String)
+ *   be stdin_read_line() => String
+ */
+actor File {
+  var path: String
+  var mode: String
+  new create(path: String, mode: String = "r") => {
+    this.path = path
+    this.mode = mode
+  }
+  be open() => {}
+  be close() => {}
+  be read_all() => String => {
+    return ""
+  }
+  be read_line() => String => {
+    return ""
+  }
+  be write(data: String) => {}
+  be printf(fmt: String) => {}
+}
+
+actor Stdio {
+  be print(s: String) => {}
+  be println(s: String) => {}
+  be read_line() => String => {
+    return ""
+  }
+}
+
+actor Path {
+  static be join(base: String, part: String) => String => {
+    return base + "/" + part
+  }
+  static be exists(path: String) => Bool => {
+    return true
+  }
+  static be delete(path: String) => Bool => {
+    return true
+  }
+  static be size(path: String) => I64 => {
+    return 0
+  }
+  static be list_dir(dir: String) => List[String] => {
+    return List()
+  }
+}

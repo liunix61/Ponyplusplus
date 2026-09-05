@@ -1165,9 +1165,9 @@ static JsonValue *json_parse_string(JsonParser *pp) {
                 case 'r': buf[n++] = '\r'; break;
                 case 't': buf[n++] = '\t'; break;
                 case 'u':
-                    if (pp->end - pp->p >= 4) {
-                        char hex[5] = {pp->p[0], pp->p[1], pp->p[2], pp->p[3], 0};
-                        pp->p += 3;
+                    if (pp->end - pp->p >= 5) {
+                        char hex[5] = {pp->p[1], pp->p[2], pp->p[3], pp->p[4], 0};
+                        pp->p += 4;
                         buf[n++] = (char)strtol(hex, NULL, 16);
                     } else return NULL;
                     break;

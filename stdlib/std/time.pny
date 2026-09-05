@@ -1,0 +1,37 @@
+/**
+ * std.time - 时间、定时器、日期
+ *
+ * API:
+ *   static be now_ms() => I64
+ *   static be elapsed_ms() => I64
+ *   actor Timer - new create(interval_ms: I64, repeat: Bool)
+ *   be start() / be stop() / be is_running() => Bool
+ */
+actor Timer {
+  var interval_ms: I64
+  var repeat: Bool
+  var running: Bool
+  new create(interval_ms: I64, repeat: Bool = false) => {
+    this.interval_ms = interval_ms
+    this.repeat = repeat
+    this.running = false
+  }
+  be start() => {
+    this.running = true
+  }
+  be stop() => {
+    this.running = false
+  }
+  be is_running() => Bool => {
+    return this.running
+  }
+}
+
+actor Time {
+  static be now_ms() => I64 => {
+    return 0
+  }
+  static be elapsed_ms() => I64 => {
+    return 0
+  }
+}

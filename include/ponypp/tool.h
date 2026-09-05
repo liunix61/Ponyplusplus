@@ -5,6 +5,8 @@
 #define PNY_TOOL_H
 
 #include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,7 +19,8 @@ typedef enum {
     TOOL_PKG,       /* ponyppc pkg new/init/add/build */
     TOOL_FMT,       /* ponyppc fmt file.pny */
     TOOL_DOCS,      /* ponyppc docs */
-    TOOL_HELP
+    TOOL_HELP,
+    TOOL_REPL       /* ponyppc repl - 交互式 REPL */
 } ToolCommand;
 
 typedef struct {
@@ -60,6 +63,29 @@ int tool_fmt(const char *input);
 /* Package operations */
 int tool_pkg_new(const char *name);
 int tool_pkg_add(const char *dep);
+
+/* REPL: ponyppc repl */
+int tool_repl(void);
+
+/* Network: TCP socket operations */
+typedef struct PnySocket PnySocket;
+PnySocket *pny_tcp_connect(const char *host, int port);
+PnySocket *pny_tcp_listen(int port);
+int pny_tcp_send(PnySocket *s, const void *data, size_t len);
+int pny_tcp_recv(PnySocket *s, void *buf, size_t max_len);
+void pny_tcp_close(PnySocket *s);
+bool pny_tcp_connected(const PnySocket *s);
+
+/* Profiler: performance sampling */
+typedef struct PnyProfiler PnyProfiler;
+typedef struct { int64_t ts; int actor_id; const char *method; int64_t dur_ns; } ProfSample;
+PnyProfiler *pny_profiler_new(void);
+void pny_profiler_free(PnyProfiler *p);
+void pny_profiler_start(PnyProfiler *p);
+void pny_profiler_stop(PnyProfiler *p);
+void pny_profiler_sample(PnyProfiler *p, int actor_id, const char *method, int64_t dur_ns);
+int pny_profiler_export(PnyProfiler *p, const char *path);
+int pny_profiler_sample_count(const PnyProfiler *p);
 
 #ifdef __cplusplus
 }

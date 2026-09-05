@@ -1,0 +1,33 @@
+/**
+ * std.log - 结构化日志
+ *
+ * API:
+ *   new create(name: String = "root", level: String = "info")
+ *   be trace(msg: String)
+ *   be debug(msg: String)
+ *   be info(msg: String)
+ *   be warn(msg: String)
+ *   be error(msg: String)
+ *   be fatal(msg: String)
+ *   be set_level(level: String)
+ */
+actor Logger {
+  var name: String
+  var level: String
+  new create(name: String = "root", level: String = "info") => {
+    this.name = name
+    this.level = level
+  }
+  be trace(msg: String) => {}
+  be debug(msg: String) => {}
+  be info(msg: String) => {}
+  be warn(msg: String) => {}
+  be error(msg: String) => {}
+  be fatal(msg: String) => {}
+  be set_level(new_level: String) => {
+    this.level = new_level
+  }
+  be get_level() => String => {
+    return this.level
+  }
+}

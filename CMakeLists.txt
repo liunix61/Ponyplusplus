@@ -55,6 +55,9 @@ set(PONYPP_SRCS
     src/ponypp/wamr.c
     src/ponypp/stdlib.c
     src/ponypp/tool.c
+    src/ponypp/repl.c
+    src/ponypp/network.c
+    src/ponypp/profiler.c
 )
 
 # ---- Library (no driver, no main) ----
@@ -87,7 +90,7 @@ if(BUILD_TESTING)
 
     set(GTEST_EXECUTABLES gtest_lexer gtest_parser gtest_types gtest_typecheck
                           gtest_capabilities gtest_wasm gtest_wit gtest_codegen
-                          gtest_codegen_extra gtest_codegen_cov gtest_extra gtest_coverage gtest_tc_extra gtest_more gtest_e2e gtest_util gtest_util2 gtest_runtime gtest_phase2 gtest_stdlib gtest_stdlib_phase3 gtest_tool gtest_gc gtest_wamr)
+                          gtest_codegen_extra gtest_codegen_cov gtest_extra gtest_coverage gtest_tc_extra gtest_more gtest_e2e gtest_util gtest_util2 gtest_runtime gtest_phase2 gtest_stdlib gtest_stdlib_phase3 gtest_stdlib_phase3_ext gtest_tool gtest_gc gtest_wamr)
 
     foreach(tname IN LISTS GTEST_EXECUTABLES)
         add_executable(${tname} tests/${tname}.cpp)

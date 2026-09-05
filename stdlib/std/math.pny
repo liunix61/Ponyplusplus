@@ -1,0 +1,93 @@
+/**
+ * std.math - 数学运算
+ *
+ * API:
+ *   static be sqrt(x: F64) => F64
+ *   static be pow(base: F64, exp: F64) => F64
+ *   static be sin(x: F64) => F64
+ *   static be cos(x: F64) => F64
+ *   static be tan(x: F64) => F64
+ *   static be asin(x: F64) => F64
+ *   static be acos(x: F64) => F64
+ *   static be atan(x: F64) => F64
+ *   static be atan2(y: F64, x: F64) => F64
+ *   static be log(x: F64) => F64
+ *   static be log2(x: F64) => F64
+ *   static be exp(x: F64) => F64
+ *   static be ceil(x: F64) => F64
+ *   static be floor(x: F64) => F64
+ *   static be abs(x: F64) => F64
+ *   static be min(a: I64, b: I64) => I64
+ *   static be max(a: I64, b: I64) => I64
+ *   static be fmod(x: F64, y: F64) => F64
+ *   static be factorial(n: I64) => I64
+ *   static be random() => F64
+ *   static be random_int(max: I64) => I64
+ *   const PI: F64 = 3.141592653589793
+ *   const E: F64 = 2.718281828459045
+ */
+actor Math {
+  static be sqrt(x: F64) => F64 => {
+    return 0.0
+  }
+  static be pow(base: F64, exp: F64) => F64 => {
+    return 0.0
+  }
+  static be sin(x: F64) => F64 => {
+    return 0.0
+  }
+  static be cos(x: F64) => F64 => {
+    return 0.0
+  }
+  static be tan(x: F64) => F64 => {
+    return 0.0
+  }
+  static be asin(x: F64) => F64 => {
+    return 0.0
+  }
+  static be acos(x: F64) => F64 => {
+    return 0.0
+  }
+  static be atan(x: F64) => F64 => {
+    return 0.0
+  }
+  static be atan2(y: F64, x: F64) => F64 => {
+    return 0.0
+  }
+  static be log(x: F64) => F64 => {
+    return 0.0
+  }
+  static be log2(x: F64) => F64 => {
+    return 0.0
+  }
+  static be exp(x: F64) => F64 => {
+    return 0.0
+  }
+  static be ceil(x: F64) => F64 => {
+    return 0.0
+  }
+  static be floor(x: F64) => F64 => {
+    return 0.0
+  }
+  static be abs(x: F64) => F64 => {
+    return 0.0
+  }
+  static be min(a: I64, b: I64) => I64 => {
+    return a
+  }
+  static be max(a: I64, b: I64) => I64 => {
+    return a
+  }
+  static be fmod(x: F64, y: F64) => F64 => {
+    return 0.0
+  }
+  static be factorial(n: I64) => I64 => {
+    return 1
+  }
+  static be random() => F64 => {
+    return 0.0
+  }
+  static be random_int(max: I64) => I64 => {
+    return 0
+  }
+}

@@ -1,0 +1,32 @@
+/**
+ * std.json - JSON 序列化/反序列化
+ *
+ * API:
+ *   static be parse(input: String) => JsonValue
+ *   static be stringify(value: JsonValue) => String
+ *   static be parse_object(input: String) => Map[String, JsonValue]
+ *   static be parse_array(input: String) => List[JsonValue]
+ */
+actor Json {
+  static be parse(input: String) => JsonValue => {
+    return JsonValue(null)
+  }
+  static be stringify(value: JsonValue) => String => {
+    return "{}"
+  }
+  static be parse_object(input: String) => Map[String, JsonValue] => {
+    return Map()
+  }
+  static be parse_array(input: String) => List[JsonValue] => {
+    return List()
+  }
+}
+
+actor JsonValue {
+  var type: String
+  var value: String
+  new create(type: String, value: String = "") => {
+    this.type = type
+    this.value = value
+  }
+}

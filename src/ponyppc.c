@@ -49,6 +49,7 @@ static void print_usage(const char *prog) {
     printf("  fmt <file>     格式化 .pny 文件\n");
     printf("  pkg new <name> 创建新项目\n");
     printf("  pkg add <dep>  添加依赖\n");
+    printf("  repl           启动交互式 REPL\n");
     printf("\n示例:\n");
     printf("  %s build -O2 -o hello hello.pny\n", prog);
     printf("  %s run hello.pny\n", prog);
@@ -360,7 +361,7 @@ int main(int argc, char *argv[]) {
     if (argc > optind && (strcmp(argv[optind], "build") == 0 || strcmp(argv[optind], "run") == 0 ||
         strcmp(argv[optind], "test") == 0 || strcmp(argv[optind], "fmt") == 0 ||
         strcmp(argv[optind], "pkg") == 0 || strcmp(argv[optind], "help") == 0 ||
-        strcmp(argv[optind], "docs") == 0)) {
+        strcmp(argv[optind], "docs") == 0 || strcmp(argv[optind], "repl") == 0)) {
         ToolConfig tc;
         if (tool_parse_args(argc - optind, argv + optind, &tc) == 0) {
             return tool_execute(&tc);
