@@ -58,6 +58,9 @@ set(PONYPP_SRCS
     src/ponypp/repl.c
     src/ponypp/network.c
     src/ponypp/profiler.c
+    src/ponypp/distributed.c
+    src/ponypp/ffi.c
+    src/ponypp/pkg.c
 )
 
 # ---- Library (no driver, no main) ----
@@ -69,7 +72,7 @@ target_include_directories(ponypp_lib PUBLIC
 
 # ---- Compiler driver ----
 add_executable(ponyppc src/ponyppc.c)
-target_link_libraries(ponyppc PRIVATE ponypp_lib m)
+target_link_libraries(ponyppc PRIVATE ponypp_lib m dl)
 
 # ---- GTest discovery ----
 # Prefer locally built static libs (system GCC libstdc++, no conda mismatch)

@@ -1,5 +1,8 @@
 #include "ponypp/runtime.h"
 #include "ponypp/util.h"
+#include "ponypp/distributed.h"
+#include "ponypp/ffi.h"
+#include "ponypp/pkg.h"
 #include "gtest/gtest.h"
 #include <gtest/gtest.h>
 #include <string.h>
@@ -7,7 +10,6 @@
 #include <assert.h>
 
 void actor_behavior_dummy(PnyActor *self, PnyMessage *msg) {
-    /* no-op behavior */
     (void)self;
     (void)msg;
 }
@@ -151,7 +153,6 @@ TEST(RuntimeExtra, SuperviseMaxRestarts) {
     pny_supervisor_handle_crash(r, &child->self);
     pny_supervisor_handle_crash(r, &child->self);
     ASSERT_EQ(child->supervise->restart_count, 2);
-    /* third crash should stop */
     pny_supervisor_handle_crash(r, &child->self);
     ASSERT_EQ(child->actor_state, ACTOR_STATE_STOPPED);
     ASSERT_EQ(child->supervise->restart_count, 2);
@@ -217,11 +218,9 @@ TEST(RuntimeExtra, SendStopped) {
 
 /* ======================== Reply Channel ======================== */
 
-/* behavior: 收到消息时回复 result */
 void actor_behavior_reply(PnyActor *self, PnyMessage *msg) {
     (void)self;
     if (msg->reply) {
-        /* 用 arg 内容作为回复 */
         if (msg->arg && msg->arg_size > 0) {
             pny_actor_reply(msg, msg->arg, msg->arg_size);
         } else {
@@ -306,10 +305,8 @@ TEST(RuntimeSupervision, OneForAllRestartsAll) {
     pny_supervise_register(parent, &c1->self, SUPERVISE_ONE_FOR_ALL, 3);
     pny_supervise_register(parent, &c2->self, SUPERVISE_ONE_FOR_ALL, 3);
     pny_scheduler_start(r);
-    /* c1 崩溃，ONE_FOR_ALL 应重启所有子 Actor */
     pny_supervisor_handle_crash(r, &c1->self);
     ASSERT_EQ(c1->actor_state, ACTOR_STATE_RESTARTING);
-    /* c2 也应为 RESTARTING（如果 children 被正确填充）*/
     ASSERT_EQ(c2->actor_state, ACTOR_STATE_RESTARTING);
     ASSERT_EQ(c1->supervise->restart_count, 1);
     pny_runtime_free(r);
@@ -323,7 +320,6 @@ TEST(RuntimeSupervision, SingleChild) {
     ASSERT_EQ(parent->child_count, 1);
     pny_supervisor_handle_crash(r, &c1->self);
     ASSERT_EQ(c1->actor_state, ACTOR_STATE_RESTARTING);
-    /* 第二次崩溃应停止 */
     pny_supervisor_handle_crash(r, &c1->self);
     ASSERT_EQ(c1->actor_state, ACTOR_STATE_STOPPED);
     pny_runtime_free(r);
@@ -335,7 +331,6 @@ TEST(RuntimeSupervision, NoSupervisionNoCrash) {
     pny_scheduler_start(r);
     ASSERT_EQ(a->actor_state, ACTOR_STATE_RUNNING);
     pny_supervisor_handle_crash(r, &a->self);
-    /* 无监督元数据，不应改变状态 */
     ASSERT_EQ(a->actor_state, ACTOR_STATE_RUNNING);
     pny_runtime_free(r);
 }
@@ -413,12 +408,10 @@ TEST(P1Backpressure, CheckFullActor) {
     PnyRuntime *r = pny_runtime_new();
     PnyActor *a = pny_actor_new(r, "BP2", 0);
     pny_backpressure_set_limit(a, 2);
-    /* 发送 2 条消息填满 */
     ActorRef sender = {0, NULL, NULL};
     pny_actor_send(&sender, &a->self, "m1", NULL, 0);
     pny_actor_send(&sender, &a->self, "m2", NULL, 0);
     EXPECT_EQ(pny_backpressure_check(a), BACKPRESSURE_FULL);
-    /* 第三条应失败 */
     int rc = pny_actor_send(&sender, &a->self, "m3", NULL, 0);
     EXPECT_EQ(rc, -3);
     pny_runtime_free(r);
@@ -429,7 +422,7 @@ TEST(P1Backpressure, SetLimit) {
     PnyActor *a = pny_actor_new(r, "BP3", 0);
     pny_backpressure_set_limit(a, 100);
     EXPECT_EQ(a->max_messages, 100);
-    pny_backpressure_set_limit(a, 0); /* 默认回退 */
+    pny_backpressure_set_limit(a, 0);
     EXPECT_EQ(a->max_messages, 65536);
     pny_runtime_free(r);
 }
@@ -439,17 +432,17 @@ TEST(P1Backpressure, SetLimit) {
 TEST(P1ExactlyOnce, NewMessage) {
     PnyRuntime *r = pny_runtime_new();
     PnyActor *a = pny_actor_new(r, "EOC1", 0);
-    EXPECT_EQ(pny_msg_delivered(a, 1), 0); /* 新消息 */
+    EXPECT_EQ(pny_msg_delivered(a, 1), 0);
     pny_runtime_free(r);
 }
 
 TEST(P1ExactlyOnce, DuplicateDetection) {
     PnyRuntime *r = pny_runtime_new();
     PnyActor *a = pny_actor_new(r, "EOC2", 0);
-    EXPECT_EQ(pny_msg_delivered(a, 42), 0); /* 首次 */
-    EXPECT_EQ(pny_msg_delivered(a, 42), 1); /* 重复 */
-    EXPECT_EQ(pny_msg_delivered(a, 43), 0); /* 新消息 */
-    EXPECT_EQ(pny_msg_delivered(a, 42), 1); /* 仍重复 */
+    EXPECT_EQ(pny_msg_delivered(a, 42), 0);
+    EXPECT_EQ(pny_msg_delivered(a, 42), 1);
+    EXPECT_EQ(pny_msg_delivered(a, 43), 0);
+    EXPECT_EQ(pny_msg_delivered(a, 42), 1);
     pny_runtime_free(r);
 }
 
@@ -472,18 +465,15 @@ TEST(P1ExactlyOnce, NullActor) {
 TEST(P1Serialization, CapabilityMarks) {
     PnyMessage *msg = pny_msg_new("test", NULL, 0);
     ASSERT_NE(msg, nullptr);
-
     msg->cap_mark = PNY_CAP_ISO;
     uint8_t buf[64];
     size_t out_size = 0;
     int rc = pny_msg_serialize(msg, buf, sizeof(buf), &out_size);
     ASSERT_EQ(rc, 0);
-
     PnyMessage *out = NULL;
     rc = pny_msg_deserialize(buf, out_size, &out);
     ASSERT_EQ(rc, 0);
     EXPECT_EQ(out->cap_mark, PNY_CAP_ISO);
-
     pny_msg_free(msg);
     pny_msg_free(out);
 }
@@ -505,7 +495,7 @@ TEST(P2Gas, LimitedGas) {
     uint64_t remaining = pny_gas_consume(a, 50);
     EXPECT_EQ(remaining, 50);
     remaining = pny_gas_consume(a, 50);
-    EXPECT_EQ(remaining, 0); /* 耗尽 */
+    EXPECT_EQ(remaining, 0);
     pny_runtime_free(r);
 }
 
@@ -514,7 +504,7 @@ TEST(P2Gas, GasOverLimit) {
     PnyActor *a = pny_actor_new(r, "GasOver", 0);
     pny_gas_set_limit(a, 100);
     uint64_t remaining = pny_gas_consume(a, 150);
-    EXPECT_EQ(remaining, 0); /* 超过限制 */
+    EXPECT_EQ(remaining, 0);
     pny_runtime_free(r);
 }
 
@@ -536,7 +526,7 @@ TEST(P2Gas, GasAccumulate) {
     pny_gas_consume(a, 300);
     EXPECT_EQ(a->gas_used, 600);
     uint64_t remaining = pny_gas_consume(a, 400);
-    EXPECT_EQ(remaining, 0); /* 600+400=1000 >= 1000 */
+    EXPECT_EQ(remaining, 0);
     pny_runtime_free(r);
 }
 
@@ -558,7 +548,6 @@ TEST(P2HotUpgrade, SetNewBehavior) {
     a->behavior = old_behavior;
     EXPECT_EQ(a->version, 1);
     EXPECT_EQ(pny_hot_upgrade_version(a), 1);
-
     pny_hot_upgrade(a, new_behavior);
     EXPECT_NE(a->new_behavior, nullptr);
     pny_runtime_free(r);
@@ -592,12 +581,10 @@ TEST(P2Diagnostics, StatsWithActors) {
     PnyActor *a1 = pny_actor_new(r, "DxActor1", 0);
     PnyActor *a2 = pny_actor_new(r, "DxActor2", 0);
     pny_scheduler_start(r);
-
     ActorRef sender = {0, NULL, NULL};
     pny_actor_send(&sender, &a1->self, "m1", NULL, 0);
     pny_actor_send(&sender, &a2->self, "m2", NULL, 0);
     pny_scheduler_tick(r);
-
     ActorStats stats;
     pny_diagnostics_stats(r, &stats);
     EXPECT_EQ(stats.actors_total, 2);
@@ -612,7 +599,6 @@ TEST(P2Diagnostics, DumpText) {
     pny_actor_new(r, "DumpActor", 0);
     pny_scheduler_start(r);
     pny_scheduler_tick(r);
-
     char buf[1024];
     const char *result = pny_diagnostics_dump(r, buf, sizeof(buf));
     ASSERT_NE(result, nullptr);
@@ -633,7 +619,7 @@ TEST(P2Gas, GasLimitZero) {
     PnyActor *a = pny_actor_new(r, "GasZero", 0);
     pny_gas_set_limit(a, 0);
     uint64_t remaining = pny_gas_consume(a, 1);
-    EXPECT_EQ(remaining, 0); /* 立即让出 */
+    EXPECT_EQ(remaining, 0);
     pny_runtime_free(r);
 }
 
@@ -650,7 +636,7 @@ TEST(P2MN, InitDestroy) {
 
 TEST(P2MN, InitWithMinWorkers) {
     PnyRuntime *r = pny_runtime_new();
-    pny_mn_init(r, 0); /* 应被纠正为 1 */
+    pny_mn_init(r, 0);
     EXPECT_TRUE(pny_mn_global != nullptr);
     EXPECT_EQ(pny_mn_global->worker_count, 1);
     pny_mn_destroy(r);
@@ -661,12 +647,9 @@ TEST(P2MN, EnqueueAndDequeue) {
     PnyRuntime *r = pny_runtime_new();
     pny_mn_init(r, 2);
     PnyActor *a = pny_actor_new(r, "MNActor", 0);
-
     PnyMessage *msg = pny_msg_new("m1", NULL, 0);
     int rc = pny_mn_enqueue(a, msg, 0);
     EXPECT_EQ(rc, 0);
-
-    /* 从本地队列取 */
     PnyMessage *got = pny_mn_dequeue_local(&pny_mn_global->workers[0]);
     EXPECT_NE(got, nullptr);
     if (got) {
@@ -681,12 +664,8 @@ TEST(P2MN, StealFromOtherWorker) {
     PnyRuntime *r = pny_runtime_new();
     pny_mn_init(r, 2);
     PnyActor *a = pny_actor_new(r, "MNSteal", 0);
-
-    /* 放入 worker 1 的本地队列 */
     PnyMessage *msg = pny_msg_new("steal", NULL, 0);
     pny_mn_enqueue(a, msg, 1);
-
-    /* worker 0 尝试窃取 */
     PnyMessage *stolen = pny_mn_steal(&pny_mn_global->workers[0]);
     EXPECT_NE(stolen, nullptr);
     if (stolen) {
@@ -701,19 +680,14 @@ TEST(P2MN, StealStats) {
     PnyRuntime *r = pny_runtime_new();
     pny_mn_init(r, 2);
     PnyActor *a = pny_actor_new(r, "MNStats", 0);
-
-    /* 放入 worker 1 */
     for (int i = 0; i < 5; i++) {
         PnyMessage *msg = pny_msg_new("steal_stat", NULL, 0);
         pny_mn_enqueue(a, msg, 1);
     }
-
-    /* worker 0 窃取 */
     for (int i = 0; i < 5; i++) {
         PnyMessage *stolen = pny_mn_steal(&pny_mn_global->workers[0]);
         if (stolen) pny_msg_free(stolen);
     }
-
     size_t steals = pny_mn_steal_stats(r);
     EXPECT_GT(steals, 0);
     pny_mn_destroy(r);
@@ -725,10 +699,8 @@ TEST(P2MN, RunTick) {
     pny_mn_init(r, 2);
     pny_actor_new(r, "MNTick", 0);
     pny_scheduler_start(r);
-
     PnyMessage *msg = pny_msg_new("tick_msg", NULL, 0);
     pny_mn_enqueue(r->scheduler.actors, msg, 0);
-
     pny_mn_run_tick(r);
     EXPECT_GT(r->scheduler.tick_count, 0);
     pny_mn_destroy(r);
@@ -748,14 +720,11 @@ TEST(P2CrossSupervise, RegisterChildren) {
     CrossComponentSupervisor *cs = pny_cross_supervise_new();
     ActorRef ref1 = {1, NULL, NULL};
     ActorRef ref2 = {2, NULL, NULL};
-
     EXPECT_EQ(pny_cross_supervise_register(cs, &ref1, "child1"), 0);
     EXPECT_EQ(pny_cross_supervise_register(cs, &ref2, "child2"), 0);
     EXPECT_EQ(cs->child_count, 2);
-
     EXPECT_STREQ(pny_cross_supervise_state(cs, 0), "child1");
     EXPECT_STREQ(pny_cross_supervise_state(cs, 1), "child2");
-
     pny_cross_supervise_free(cs);
 }
 
@@ -763,18 +732,14 @@ TEST(P2CrossSupervise, CrashOneForOne) {
     PnyRuntime *r = pny_runtime_new();
     CrossComponentSupervisor *cs = pny_cross_supervise_new();
     cs->strategy = SUPERVISE_ONE_FOR_ONE;
-
     PnyActor *a1 = pny_actor_new(r, "Cross1", 0);
     PnyActor *a2 = pny_actor_new(r, "Cross2", 0);
     pny_scheduler_start(r);
-
     pny_cross_supervise_register(cs, &a1->self, "a1");
     pny_cross_supervise_register(cs, &a2->self, "a2");
-
     int rc = pny_cross_supervise_notify_crash(cs, 0);
     EXPECT_EQ(rc, 0);
     EXPECT_EQ(cs->restart_count, 1);
-
     pny_cross_supervise_free(cs);
     pny_runtime_free(r);
 }
@@ -783,14 +748,11 @@ TEST(P2CrossSupervise, MaxRestarts) {
     PnyRuntime *r = pny_runtime_new();
     CrossComponentSupervisor *cs = pny_cross_supervise_new();
     cs->max_restarts = 2;
-
     PnyActor *a = pny_actor_new(r, "MaxR", 0);
     pny_cross_supervise_register(cs, &a->self, "child");
-
     for (int i = 0; i < 2; i++) {
         EXPECT_EQ(pny_cross_supervise_notify_crash(cs, 0), 0);
     }
-    /* 第 3 次应失败 */
     EXPECT_EQ(pny_cross_supervise_notify_crash(cs, 0), -2);
     pny_cross_supervise_free(cs);
     pny_runtime_free(r);
@@ -807,18 +769,174 @@ TEST(P2CrossSupervise, OneForAll) {
     PnyRuntime *r = pny_runtime_new();
     CrossComponentSupervisor *cs = pny_cross_supervise_new();
     cs->strategy = SUPERVISE_ONE_FOR_ALL;
-
     PnyActor *a1 = pny_actor_new(r, "CrossA", 0);
     PnyActor *a2 = pny_actor_new(r, "CrossB", 0);
     pny_scheduler_start(r);
-
     pny_cross_supervise_register(cs, &a1->self, "a1");
     pny_cross_supervise_register(cs, &a2->self, "a2");
-
     pny_cross_supervise_notify_crash(cs, 0);
-    /* ONE_FOR_ALL 应重启所有子 Actor */
     EXPECT_EQ(a2->actor_state, ACTOR_STATE_RESTARTING);
-
     pny_cross_supervise_free(cs);
     pny_runtime_free(r);
+}
+
+/* ======================== Phase P3: 分布式模型 ======================== */
+
+TEST(P3Dist, ConnListenInvalid) {
+    DistConnection *c = dist_conn_listen(0);
+    EXPECT_EQ(c, nullptr);
+}
+
+TEST(P3Dist, RuntimeNewInvalid) {
+    DistributedRuntime *dr = dist_runtime_new(NULL, 8080);
+    EXPECT_EQ(dr, nullptr);
+}
+
+TEST(P3Dist, RegisterRemote) {
+    PnyRuntime *r = pny_runtime_new();
+    DistributedRuntime *dr = dist_runtime_new(r, 8080);
+    EXPECT_NE(dist_runtime_register_remote(dr, "actor1", "127.0.0.1", 9090, 0), -1);
+    EXPECT_NE(dist_runtime_register_remote(dr, "actor2", "10.0.0.1", 9091, 1), -1);
+    dist_runtime_free(dr);
+    pny_runtime_free(r);
+}
+
+TEST(P3Dist, NodeId) {
+    PnyRuntime *r = pny_runtime_new();
+    DistributedRuntime *dr = dist_runtime_new(r, 8080);
+    const char *id = dist_runtime_node_id(dr);
+    EXPECT_NE(id, NULL);
+    EXPECT_GT(strlen(id), 0u);
+    dist_runtime_free(dr);
+    pny_runtime_free(r);
+}
+
+TEST(P3Dist, SendNoRemote) {
+    PnyRuntime *r = pny_runtime_new();
+    DistributedRuntime *dr = dist_runtime_new(r, 8080);
+    int rc = dist_runtime_send(dr, "nonexistent", "method", "arg", 4);
+    EXPECT_EQ(rc, -2);
+    dist_runtime_free(dr);
+    pny_runtime_free(r);
+}
+
+/* ======================== Phase P3: FFI 互操作 ======================== */
+
+TEST(P3FFI, RuntimeInit) {
+    FFIRuntime *rt = ffi_runtime_new();
+    EXPECT_NE(rt, NULL);
+    EXPECT_EQ(ffi_func_count(), 0u);
+    ffi_runtime_free();
+}
+
+TEST(P3FFI, RegisterFuncNotFound) {
+    FFIRuntime *rt = ffi_runtime_new();
+    EXPECT_NE(rt, NULL);
+    int rc = ffi_register_func("nonexistent_func_xyz", "C", FFI_TYPE_VOID, NULL, NULL, 0);
+    EXPECT_EQ(rc, -2);
+    FFIFunc *f = ffi_find_func("nonexistent_func_xyz");
+    EXPECT_NULL(f);
+    ffi_runtime_free();
+}
+
+TEST(P3FFI, TypeNames) {
+    EXPECT_STREQ(ffi_type_name(FFI_TYPE_I32), "i32");
+    EXPECT_STREQ(ffi_type_name(FFI_TYPE_I64), "i64");
+    EXPECT_STREQ(ffi_type_name(FFI_TYPE_F64), "f64");
+    EXPECT_STREQ(ffi_type_name(FFI_TYPE_STRING), "string");
+    EXPECT_STREQ(ffi_type_name(FFI_TYPE_VOID), "void");
+}
+
+TEST(P3FFI, Dump) {
+    FFIRuntime *rt = ffi_runtime_new();
+    EXPECT_NE(rt, NULL);
+    char buf[1024];
+    int len = ffi_dump(buf, sizeof(buf));
+    EXPECT_GT(len, 0);
+    EXPECT_NE(strstr(buf, "Functions:"), (void *)0);
+    ffi_runtime_free();
+}
+
+/* ======================== Phase P3: 包管理 ======================== */
+
+TEST(P3Pkg, ParseToml) {
+    const char *toml =
+        "[package]\n"
+        "name = \"mypkg\"\n"
+        "version = \"0.1.0\"\n"
+        "description = \"Test package\"\n"
+        "author = \"liunix\"\n"
+        "\n"
+        "[dependency.stdlib]\n"
+        "version = \"1.0.0\"\n"
+        "source = \"registry\"\n"
+        "\n"
+        "[dependency.network]\n"
+        "version = \"2.0.0\"\n"
+        "source = \"git\"\n"
+        "path = \"https://github.com/liunix61/network\"\n";
+
+    PkgManifest *pm = pkg_parse_toml_content(toml);
+    EXPECT_NE(pm, NULL);
+    if (pm) {
+        EXPECT_STREQ(pm->name, "mypkg");
+        EXPECT_STREQ(pm->version, "0.1.0");
+        EXPECT_STREQ(pm->author, "liunix");
+        EXPECT_EQ(pm->dep_count, 2u);
+        EXPECT_STREQ(pm->deps[0].name, "stdlib");
+        EXPECT_STREQ(pm->deps[1].name, "network");
+        EXPECT_STREQ(pm->deps[1].source, "git");
+        pkg_manifest_free(pm);
+    }
+}
+
+TEST(P3Pkg, ManifestPrint) {
+    const char *toml =
+        "[package]\n"
+        "name = \"testpkg\"\n"
+        "version = \"1.0.0\"\n"
+        "author = \"tester\"\n";
+    PkgManifest *pm = pkg_parse_toml_content(toml);
+    EXPECT_NE(pm, NULL);
+    if (pm) {
+        char buf[512];
+        int len = pkg_manifest_print(pm, buf, sizeof(buf));
+        EXPECT_GT(len, 0);
+        EXPECT_NE(strstr(buf, "testpkg"), (void *)0);
+        pkg_manifest_free(pm);
+    }
+}
+
+TEST(P3Pkg, ManagerCRUD) {
+    PkgManager *pm = pkg_manager_new("/workspace");
+    EXPECT_NE(pm, NULL);
+    EXPECT_NE(pkg_manager_add(pm, "dep1", "1.0.0", NULL, NULL), -1);
+    EXPECT_NE(pkg_manager_add(pm, "dep2", "2.0.0", NULL, NULL), -1);
+    EXPECT_EQ(pkg_manager_resolve(pm), 2);
+    PkgManifest *found = pkg_manager_find(pm, "dep1");
+    EXPECT_NE(found, NULL);
+    if (found) EXPECT_STREQ(found->name, "dep1");
+    EXPECT_NE(pkg_manager_remove(pm, "dep1"), -2);
+    found = pkg_manager_find(pm, "dep1");
+    EXPECT_EQ(found, nullptr);
+    EXPECT_EQ(pkg_manager_resolve(pm), 1);
+    char buf[512];
+    int len = pkg_manager_dump(pm, buf, sizeof(buf));
+    EXPECT_GT(len, 0);
+    EXPECT_NE(strstr(buf, "dep2"), (void *)0);
+    pkg_manager_free(pm);
+}
+
+TEST(P3Pkg, VersionCompare) {
+    EXPECT_LT(pkg_version_compare("1.0.0", "1.0.1"), 0);
+    EXPECT_GT(pkg_version_compare("2.0.0", "1.9.9"), 0);
+    EXPECT_EQ(pkg_version_compare("1.0.0", "1.0.0"), 0);
+}
+
+TEST(P3Pkg, VersionSatisfies) {
+    EXPECT_TRUE(pkg_version_satisfies("1.0.0", "1.0.0"));
+    EXPECT_TRUE(pkg_version_satisfies("1.2.0", "^1.0.0"));
+    EXPECT_TRUE(pkg_version_satisfies("1.5.0", "~1.0.0"));
+    EXPECT_FALSE(pkg_version_satisfies("0.9.0", "^1.0.0"));
+    EXPECT_FALSE(pkg_version_satisfies(NULL, "1.0.0"));
 }
