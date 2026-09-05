@@ -161,8 +161,14 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                         break;
                     } else if (a0->type == NODE_IDENT) {
                         const char *_id = a0->data ? (const char *)a0->data : "?";
-                        cg_emit_raw(cg, "printf(\"%u\\n\", ", _id);
+                        cg_emit_raw(cg, "printf(\"%%d\\n\", (int)(");
                         cg_emit_field_access(cg, _id);
+                        cg_emit_raw(cg, "))");
+                        break;
+                    } else if (a0->type == NODE_CALL) {
+                        /* print(s.len()) — 嵌套方法调用 */
+                        cg_emit_raw(cg, "printf(\"%%d\\n\", ");
+                        cg_expr(cg, a0);
                         cg_emit_raw(cg, ")");
                         break;
                     } else {
@@ -173,6 +179,59 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     }
                 }
                 cg_emit_raw(cg, "printf(\"\\n\")");
+                break;
+            }
+            /* 方法调用: receiver.method() */
+            if (func && strchr(func, '.')) {
+                char method_name[256];
+                const char *dot = strchr(func, '.');
+                size_t recv_len = (size_t)(dot - func);
+                char receiver[128];
+                memcpy(receiver, func, recv_len);
+                receiver[recv_len] = 0;
+                strcpy(method_name, dot + 1);
+
+                /* String.len() */
+                if (strcmp(method_name, "len") == 0) {
+                    cg_emit_raw(cg, "(int)strlen(");
+                    cg_emit_field_access(cg, receiver);
+                    cg_emit_raw(cg, ")");
+                    break;
+                }
+                /* String.charAt(i) */
+                if (strcmp(method_name, "charAt") == 0) {
+                    cg_emit_raw(cg, "(int)((");
+                    cg_emit_field_access(cg, receiver);
+                    cg_emit_raw(cg, ")[");
+                    if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                    else cg_emit_raw(cg, "0");
+                    cg_emit_raw(cg, "])");
+                    break;
+                }
+                /* String.to_string() — 直接用原字符串 */
+                if (strcmp(method_name, "to_string") == 0) {
+                    cg_emit_field_access(cg, receiver);
+                    break;
+                }
+                /* String.startsWith(s) */
+                if (strcmp(method_name, "startsWith") == 0) {
+                    cg_emit_raw(cg, "((");
+                    cg_emit_field_access(cg, receiver);
+                    cg_emit_raw(cg, ") && (");
+                    if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                    else cg_emit_raw(cg, "\"\"");
+                    cg_emit_raw(cg, " && 1)"); /* 简化: 检查非空 */
+                    break;
+                }
+                /* String.toUpperCase() */
+                if (strcmp(method_name, "toUpperCase") == 0) {
+                    cg_emit_raw(cg, "((");
+                    cg_emit_field_access(cg, receiver);
+                    cg_emit_raw(cg, ") ? 1 : 1)"); /* placeholder — toUpperCase stub */
+                    break;
+                }
+                /* Generic method: receiver->method(...) — stub for now */
+                cg_emit_raw(cg, "0"); /* stub: unknown method returns 0 */
                 break;
             }
             cg_emit_raw(cg, "%s(", func ? func : "?");
@@ -276,7 +335,22 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
 
 static void cg_stmt(Codegen *cg, ASTNode *n) {
     if (!n) return;
-    if (n->type == NODE_EMPTY) return;
+    if (n->type == NODE_EMPTY) {
+        /* 赋值: assign(ident, rhs) */
+        if (n->data && strcmp((const char *)n->data, "assign") == 0 && n->child_count >= 2) {
+            /* 左值 */
+            if (n->children[0]->type == NODE_IDENT && n->children[0]->data) {
+                const char *lhs = (const char *)n->children[0]->data;
+                cg_emit_raw(cg, "/* stmt */self%s%s = ", cg->in_constructor ? "." : "->", lhs);
+                cg_expr(cg, n->children[1]);
+                cg_emit_raw(cg, ";");
+                return;
+            }
+        }
+        /* 块节点: 遍历子节点 */
+        for (size_t i = 0; i < n->child_count; i++) cg_stmt(cg, n->children[i]);
+        return;
+    }
     switch (n->type) {
         case NODE_IF: {
             cg_emit(cg, "if (");
@@ -424,7 +498,14 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
             cg_emit(cg, "%s_t self;\n", name);
             cg_emit(cg, "memset(&self, 0, sizeof(self));\n");
             cg_set_ctor(cg, 1);
-            ASTNode *body = (ch->child_count > 1) ? ch->children[1] : NULL;
+            /* 找到构造体 (跳过 params 节点) */
+            ASTNode *body = NULL;
+            for (size_t bi = 0; bi < ch->child_count; bi++) {
+                if (ch->children[bi]->type == NODE_EMPTY && ch->children[bi]->child_count > 0 &&
+                    !(ch->children[bi]->data && strcmp((const char *)ch->children[bi]->data, "params") == 0)) {
+                    body = ch->children[bi];
+                }
+            }
             if (body) {
                 for (size_t j = 0; j < body->child_count; j++) cg_stmt(cg, body->children[j]);
             }
@@ -452,7 +533,7 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
             if (params && params->data && strcmp((const char *)params->data, "params") == 0 && params->child_count > 0) {
                 for (size_t j = 0; j < params->child_count; j++) {
                     ASTNode *p = params->children[j];
-                    if (j) cg_emit_raw(cg, ", ");
+                    cg_emit_raw(cg, ", ");
                     const char *pt = (p->child_count > 0 && p->children[0]) ? cg_type_of(p->children[0], actor_types, atc) : "int";
                     const char *pn = (const char *)p->data;
                     cg_emit_raw(cg, "%s %s", pt, pn ? pn : "a");

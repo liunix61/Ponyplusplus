@@ -426,6 +426,35 @@ static ASTNode *parse_expression(Parser *p) {
     /* 标识符 */
     if (t->type == TK_IDENT) {
         advance(p);
+
+        /* 方法调用: ident.method(args) */
+        if (match(p, TK_DOT)) {
+            advance(p);
+            if (p->pos < p->token_count && cur(p)->type == TK_IDENT) {
+                char method_name[256];
+                snprintf(method_name, sizeof(method_name), "%s.%s", t->value, cur(p)->value);
+                advance(p);
+                if (match(p, TK_PAREN_L)) {
+                    advance(p);
+                    ASTNode *call = ast_node_new(NODE_CALL, line, col);
+                    if (call) call->data = s_strdup(method_name);
+                    ASTNode *args = ast_node_new(NODE_EMPTY, line, col);
+                    if (args) { args->data = s_strdup("args"); ast_node_add_child(call, args); }
+                    while (!match(p, TK_PAREN_R) && p->pos < p->token_count) {
+                        ASTNode *arg = parse_expression(p);
+                        if (arg) ast_node_add_child(args, arg);
+                        if (match(p, TK_COMMA)) advance(p);
+                    }
+                    if (match(p, TK_PAREN_R)) advance(p);
+                    return call;
+                }
+                /* 非调用，恢复为普通标识符 */
+                ASTNode *node = ast_node_new(NODE_IDENT, line, col);
+                if (node) node->data = s_strdup(t->value);
+                return node;
+            }
+        }
+
         if (match(p, TK_PAREN_L)) {
             advance(p);
             ASTNode *call = ast_node_new(NODE_CALL, line, col);
