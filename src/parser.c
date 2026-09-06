@@ -421,8 +421,18 @@ static ASTNode *parse_statement(Parser *p) {
         return node;
     }
 
-    /* 表达式语句 */
+    /* 赋值语句或表达式语句: x = expr / this.field = expr / List() */
     ASTNode *expr = parse_expression(p);
+    if (match(p, TK_EQ)) {
+        advance(p);
+        ASTNode *rhs = parse_expression(p);
+        ASTNode *assign = ast_node_new(NODE_EMPTY, line, col);
+        if (assign) assign->data = s_strdup("assign");
+        if (expr && assign) ast_node_add_child(assign, expr);
+        if (rhs && assign) ast_node_add_child(assign, rhs);
+        if (match(p, TK_SEMI)) advance(p);
+        return assign;
+    }
     if (match(p, TK_SEMI)) advance(p);
     return expr;
 }
