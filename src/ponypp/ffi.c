@@ -6,6 +6,7 @@
  * - 导出 Pony++ 函数供外部调用
  * - Rust/Go 互操作桥接
  */
+#define _POSIX_C_SOURCE 200809L
 #include "ponypp/tool.h"
 #include "ponypp/runtime.h"
 #include "ponypp/util.h"

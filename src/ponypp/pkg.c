@@ -1,8 +1,11 @@
 /**
  * Pony++ Package Manager - ponypp.toml 解析与依赖管理
  */
+#define _POSIX_C_SOURCE 200809L
 #include "ponypp/pkg.h"
 #include <ctype.h>
+#include <stdlib.h>
+#include <string.h>
 
 static char *str_trim(char *s) {
     while (*s && isspace((unsigned char)*s)) s++;

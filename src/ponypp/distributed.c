@@ -6,6 +6,7 @@
  * - DistributedRuntime: 分布式运行时
  * - Actor 消息通过网络发送/接收
  */
+#define _POSIX_C_SOURCE 200809L
 #include "ponypp/tool.h"
 #include "ponypp/runtime.h"
 #include "ponypp/util.h"
@@ -13,6 +14,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
