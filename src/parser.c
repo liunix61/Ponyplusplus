@@ -129,7 +129,7 @@ static ASTNode *parse_type(Parser *p) {
             node->child_count = 1;
             node->children = (ASTNode **)malloc(sizeof(ASTNode *));
             if (node->children) node->children[0] = args;
-            while (!match(p, TK_BRACKET_R) && p->pos < p->token_count) {
+            while (p->pos < p->token_count && cur(p)->type != TK_BRACKET_R) {
                 ASTNode *arg = parse_type(p);
                 if (arg) ast_node_add_child(args, arg);
                 if (match(p, TK_COMMA)) advance(p);
@@ -166,7 +166,7 @@ if (!match(p, TK_PAREN_L)) {
 }
 advance(p);
 
-while (!match(p, TK_PAREN_R) && p->pos < p->token_count) {
+while (p->pos < p->token_count && cur(p)->type != TK_PAREN_R) {
         parse_capability(p);
         if (match(p, TK_IDENT)) {
             Token *name_tok = cur(p);
@@ -200,13 +200,13 @@ static ASTNode *parse_block(Parser *p) {
     ASTNode *block = ast_node_new(NODE_EMPTY, cur(p)->line, cur(p)->column);
     if (!block) return NULL;
 
-    while (!match(p, TK_BRACE_R) && p->pos < p->token_count) {
+    while (p->pos < p->token_count && cur(p)->type != TK_BRACE_R) {
         if (match(p, TK_SEMI)) { advance(p); continue; }
         ASTNode *stmt = parse_statement(p);
         if (stmt) {
             ast_node_add_child(block, stmt);
         } else {
-            if (!match(p, TK_BRACE_R) && p->pos < p->token_count) {
+            if (cur(p)->type != TK_BRACE_R && p->pos < p->token_count) {
                 advance(p); /* 跳过未知 token */
             }
         }
@@ -384,7 +384,7 @@ static ASTNode *parse_statement(Parser *p) {
         if (match_keyword(p, "=>")) advance(p);
         if (match(p, TK_BRACE_L)) advance(p);
         /* match arms: pattern => body */
-        while (!match(p, TK_BRACE_R) && p->pos < p->token_count) {
+        while (p->pos < p->token_count && cur(p)->type != TK_BRACE_R) {
             ASTNode *arm = ast_node_new(NODE_MATCH_ARM, line, col);
             if (arm) {
                 ASTNode *pat = parse_expression(p);
@@ -413,7 +413,7 @@ static ASTNode *parse_statement(Parser *p) {
         advance(p);
         ASTNode *node = ast_node_new(NODE_RETURN, line, col);
         if (!node) return NULL;
-        if (!match(p, TK_SEMI) && !match(p, TK_BRACE_R)) {
+        if (cur(p)->type != TK_SEMI && cur(p)->type != TK_BRACE_R) {
             ASTNode *expr = parse_expression(p);
             if (expr) ast_node_add_child(node, expr);
         }
@@ -509,7 +509,7 @@ static ASTNode *parse_expression_primary(Parser *p) {
                             if (call) call->data = s_strdup(method_name);
                             ASTNode *args = ast_node_new(NODE_EMPTY, line, col);
                             if (args) { args->data = s_strdup("args"); ast_node_add_child(call, args); }
-                            while (!match(p, TK_PAREN_R) && p->pos < p->token_count) {
+                            while (p->pos < p->token_count && cur(p)->type != TK_PAREN_R) {
                                 ASTNode *arg = parse_expression(p);
                                 if (arg) ast_node_add_child(args, arg);
                                 if (match(p, TK_COMMA)) advance(p);
@@ -537,7 +537,7 @@ static ASTNode *parse_expression_primary(Parser *p) {
                     if (call && mtok->value) call->data = s_strdup(mtok->value);
                     ASTNode *args = ast_node_new(NODE_EMPTY, line, col);
                     if (args) { args->data = s_strdup("args"); ast_node_add_child(call, args); }
-                    while (!match(p, TK_PAREN_R) && p->pos < p->token_count) {
+                    while (p->pos < p->token_count && cur(p)->type != TK_PAREN_R) {
                         ASTNode *arg = parse_expression(p);
                         if (arg) ast_node_add_child(args, arg);
                         if (match(p, TK_COMMA)) advance(p);
@@ -559,7 +559,7 @@ static ASTNode *parse_expression_primary(Parser *p) {
             if (call) call->data = s_strdup(t->value);
             ASTNode *args = ast_node_new(NODE_EMPTY, line, col);
             if (args) { args->data = s_strdup("args"); ast_node_add_child(call, args); }
-            while (!match(p, TK_PAREN_R) && p->pos < p->token_count) {
+            while (p->pos < p->token_count && cur(p)->type != TK_PAREN_R) {
                 ASTNode *arg = parse_expression(p);
                 if (arg) ast_node_add_child(args, arg);
                 if (match(p, TK_COMMA)) advance(p);
@@ -572,7 +572,7 @@ static ASTNode *parse_expression_primary(Parser *p) {
         if (node) node->data = s_strdup(t->value);
         if (match(p, TK_BRACKET_L)) {
             advance(p);
-            while (!match(p, TK_BRACKET_R) && p->pos < p->token_count) {
+            while (p->pos < p->token_count && cur(p)->type != TK_BRACKET_R) {
                 ASTNode *arg = parse_type(p);
                 if (arg && node) ast_node_add_child(node, arg);
                 if (match(p, TK_COMMA)) advance(p);
@@ -599,7 +599,7 @@ static ASTNode *parse_expression_primary(Parser *p) {
                     if (call) call->data = s_strdup(method_name);
                     ASTNode *args = ast_node_new(NODE_EMPTY, line, col);
                     if (args) { args->data = s_strdup("args"); ast_node_add_child(call, args); }
-                    while (!match(p, TK_PAREN_R) && p->pos < p->token_count) {
+                    while (p->pos < p->token_count && cur(p)->type != TK_PAREN_R) {
                         ASTNode *arg = parse_expression(p);
                         if (arg) ast_node_add_child(args, arg);
                         if (match(p, TK_COMMA)) advance(p);
@@ -620,7 +620,7 @@ static ASTNode *parse_expression_primary(Parser *p) {
             if (call) call->data = s_strdup(t->value);
             ASTNode *args = ast_node_new(NODE_EMPTY, line, col);
             if (args) { args->data = s_strdup("args"); ast_node_add_child(call, args); }
-            while (!match(p, TK_PAREN_R) && p->pos < p->token_count) {
+            while (p->pos < p->token_count && cur(p)->type != TK_PAREN_R) {
                 ASTNode *arg = parse_expression(p);
                 if (arg) ast_node_add_child(args, arg);
                 if (match(p, TK_COMMA)) advance(p);
@@ -909,7 +909,7 @@ static ASTNode *parse_actor(Parser *p) {
         advance(p);
         ASTNode *tparams = ast_node_new(NODE_EMPTY, name_tok->line, name_tok->column);
         if (tparams) tparams->data = s_strdup("typeparams");
-        while (!match(p, TK_BRACKET_R) && p->pos < p->token_count) {
+        while (p->pos < p->token_count && cur(p)->type != TK_BRACKET_R) {
             if (match(p, TK_IDENT)) {
                 Token *tp_tok = advance(p);
                 ASTNode *tp = ast_node_new(NODE_TYPE_PARAM, tp_tok->line, tp_tok->column);
@@ -936,7 +936,7 @@ static ASTNode *parse_actor(Parser *p) {
     /* Actor 体 */
     if (match(p, TK_BRACE_L)) {
         advance(p);
-        while (!match(p, TK_BRACE_R) && p->pos < p->token_count) {
+        while (p->pos < p->token_count && cur(p)->type != TK_BRACE_R) {
             if (match_keyword(p, "be")) {
                 ASTNode *method = parse_method(p, true);
                 if (method) ast_node_add_child(node, method);
