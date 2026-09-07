@@ -864,8 +864,24 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
                 if (c2->type == NODE_EMPTY && params == NULL &&
                     c2->data && strcmp((const char *)c2->data, "params") == 0) {
                     params = c2;
+                } else if (c2->type == NODE_EMPTY && !c2->data) {
+                    /* NODE_EMPTY 无 data = 方法体 */
+                    if (body == NULL) body = c2;
                 } else if (c2->type == NODE_STRING) {
                     rtype = "const char *";
+                } else if (c2->type == NODE_IDENT && c2->data && body == NULL) {
+                    /* NODE_IDENT 且不是 body = 返回类型 */
+                    const char *tn = (const char *)c2->data;
+                    if (strcmp(tn, "Bool") == 0) rtype = "int";
+                    else if (strcmp(tn, "String") == 0) rtype = "const char *";
+                    else if (strcmp(tn, "I64") == 0) rtype = "signed long long";
+                    else if (strcmp(tn, "I32") == 0) rtype = "signed int";
+                    else if (strcmp(tn, "U64") == 0) rtype = "unsigned long long";
+                    else if (strcmp(tn, "U32") == 0) rtype = "unsigned int";
+                    else if (strcmp(tn, "F64") == 0) rtype = "double";
+                    else if (strcmp(tn, "F32") == 0) rtype = "float";
+                    else if (strcmp(tn, "ActorRef") == 0) rtype = "void *";
+                    else if (strcmp(tn, "Char") == 0) rtype = "char";
                 } else if (body == NULL) {
                     body = c2;
                 }
