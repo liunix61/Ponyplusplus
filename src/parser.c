@@ -144,8 +144,8 @@ static ASTNode *parse_type(Parser *p) {
 /* 前向声明 */
 static ASTNode *parse_statement(Parser *p);
 static ASTNode *parse_expression(Parser *p);
-static ASTNode *parse_binary_op(Parser *p, TokenType *ops, int op_count,
-    const char **op_names, ASTNode *(*next_level)(Parser *));
+static ASTNode *parse_binary_op(Parser *p, const TokenType *ops, int op_count,
+    const char *const *op_names, ASTNode *(*next_level)(Parser *));
 static ASTNode *parse_or_expr(Parser *p);
 static ASTNode *parse_and_expr(Parser *p);
 static ASTNode *parse_compare_expr(Parser *p);
@@ -730,8 +730,8 @@ static ASTNode *parse_expression_primary(Parser *p) {
 }
 
 /* 通用左结合二元运算符解析 */
-static ASTNode *parse_binary_op(Parser *p, TokenType *ops, int op_count,
-    const char **op_names, ASTNode *(*next_level)(Parser *)) {
+static ASTNode *parse_binary_op(Parser *p, const TokenType *ops, int op_count,
+    const char *const *op_names, ASTNode *(*next_level)(Parser *)) {
     ASTNode *lhs = next_level(p);
     while (lhs && p->pos < p->token_count) {
         int found = -1;
@@ -755,35 +755,35 @@ static ASTNode *parse_binary_op(Parser *p, TokenType *ops, int op_count,
 /* || (最低优先级) */
 static ASTNode *parse_or_expr(Parser *p) {
     static const TokenType ops[] = { TK_PIPEPIPE };
-    static const char *names[] = { "or" };
+    static const char *const names[] = { "or" };
     return parse_binary_op(p, ops, 1, names, parse_and_expr);
 }
 
 /* && */
 static ASTNode *parse_and_expr(Parser *p) {
     static const TokenType ops[] = { TK_AMPAMP };
-    static const char *names[] = { "and" };
+    static const char *const names[] = { "and" };
     return parse_binary_op(p, ops, 1, names, parse_compare_expr);
 }
 
 /* == != < > <= >= */
 static ASTNode *parse_compare_expr(Parser *p) {
     static const TokenType ops[] = { TK_EQEQ, TK_NEQ, TK_LT, TK_GT, TK_LE, TK_GE };
-    static const char *names[] = { "==", "!=", "<", ">", "<=", ">=" };
+    static const char *const names[] = { "==", "!=", "<", ">", "<=", ">=" };
     return parse_binary_op(p, ops, 6, names, parse_add_expr);
 }
 
 /* + - */
 static ASTNode *parse_add_expr(Parser *p) {
     static const TokenType ops[] = { TK_PLUS, TK_DASH };
-    static const char *names[] = { "+", "-" };
+    static const char *const names[] = { "+", "-" };
     return parse_binary_op(p, ops, 2, names, parse_mul_expr);
 }
 
 /* * / */
 static ASTNode *parse_mul_expr(Parser *p) {
     static const TokenType ops[] = { TK_STAR, TK_SLASH };
-    static const char *names[] = { "*", "/" };
+    static const char *const names[] = { "*", "/" };
     return parse_binary_op(p, ops, 2, names, parse_unary_expr);
 }
 

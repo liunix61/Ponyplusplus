@@ -161,11 +161,108 @@ static int leb128_read(const unsigned char *data, size_t len, size_t *pos, int32
     return 0;
 }
 
+/* Import 表条目 */
+#define MAX_IMPORTS 16
+typedef struct {
+    char name[128];
+    int32_t idx;
+} WamrImport;
+
+/* 从 WASM 二进制中解析 import section */
+static int parse_imports(const unsigned char *data, size_t size,
+                         WamrImport *imports, int *count) {
+    size_t pos = 8;
+    *count = 0;
+    while (pos + 2 <= size && *count < MAX_IMPORTS) {
+        unsigned char sid = data[pos++];
+        int32_t ssize;
+        if (leb128_read(data, size, &pos, &ssize) < 0) break;
+        if (sid == 2) {
+            size_t spos = pos;
+            int32_t n_imports;
+            if (leb128_read(data, size, &spos, &n_imports) < 0) break;
+            for (int i = 0; i < n_imports && *count < MAX_IMPORTS; i++) {
+                int32_t mod_len;
+                if (leb128_read(data, size, &spos, &mod_len) < 0) break;
+                spos += mod_len; /* skip module name */
+                int32_t field_len;
+                if (leb128_read(data, size, &spos, &field_len) < 0) break;
+                char field[128] = {0};
+                if (field_len > 0 && spos + field_len <= size && field_len < 128)
+                    memcpy(field, data + spos, field_len);
+                spos += field_len;
+                if (spos + 1 > size) break;
+                unsigned char kind = data[spos++];
+                if (kind == 0) { /* function import */
+                    int32_t type_idx;
+                    if (leb128_read(data, size, &spos, &type_idx) < 0) break;
+                    (void)type_idx;
+                } else if (kind == 1 || kind == 2) { /* table / memory */
+                    /* skip flags */
+                    unsigned char flags = data[spos++];
+                    if (leb128_read(data, size, &spos, (int32_t *)(&flags)) < 0) break;
+                } else { /* global */
+                    unsigned char vtype = data[spos++];
+                    (void)vtype;
+                    unsigned char mutable_ = data[spos++];
+                    (void)mutable_;
+                }
+                strncpy(imports[*count].name, field, 127);
+                imports[*count].idx = (*count);
+                (*count)++;
+            }
+            break;
+        }
+        pos += ssize;
+    }
+    return 0;
+}
+
+/* 从 WASM 二进制中加载 data section 到内存 */
+static void load_data_sections(const unsigned char *data, size_t size,
+                                char *memory, int mem_size) {
+    size_t pos = 8;
+    while (pos + 2 <= size) {
+        unsigned char sid = data[pos++];
+        int32_t ssize;
+        if (leb128_read(data, size, &pos, &ssize) < 0) break;
+        if (sid == 0x0B) {
+            size_t dpos = pos;
+            int32_t num_segments;
+            if (leb128_read(data, size, &dpos, &num_segments) < 0) break;
+            for (int i = 0; i < num_segments && dpos < pos + ssize; i++) {
+                int32_t memidx;
+                if (leb128_read(data, size, &dpos, &memidx) < 0) break;
+                (void)memidx;
+                /* 段 0: 直接初始化 */
+                /* i32.const */
+                unsigned char opcode = data[dpos++];
+                if (opcode != 0x41) break;
+                int32_t offset;
+                if (leb128_read(data, size, &dpos, &offset) < 0) break;
+                /* end */
+                unsigned char end_op = data[dpos++];
+                if (end_op != 0x0B) break;
+                int32_t data_len;
+                if (leb128_read(data, size, &dpos, &data_len) < 0) break;
+                if (offset >= 0 && offset + data_len <= mem_size &&
+                    dpos + data_len <= pos + ssize) {
+                    memcpy(memory + offset, data + dpos, data_len);
+                }
+                dpos += data_len;
+            }
+            break;
+        }
+        pos += ssize;
+    }
+}
+
 /* WASM 函数体执行 */
 static int wasm_exec_func(const unsigned char *body, size_t body_len,
                           char *memory, int mem_size,
                           void **argv, int argc,
-                          void **result, int *result_count) {
+                          void **result, int *result_count,
+                          WamrImport *imports, int import_count) {
     if (!body || body_len == 0) return -1;
     if (result) *result = NULL;
     if (result_count) *result_count = 0;
@@ -197,6 +294,7 @@ static int wasm_exec_func(const unsigned char *body, size_t body_len,
 
     int exited = 0;
     int32_t exit_val = 0;
+    int fd_write_calls = 0;
 
     while (pos < body_len) {
         unsigned char op = body[pos++];
@@ -208,10 +306,12 @@ static int wasm_exec_func(const unsigned char *body, size_t body_len,
             case 0x01: /* nop */
                 break;
 
-            case 0x02: case 0x03: { /* if / else */
-                int32_t cond = stack[--sp];
-                /* 简化: 不实现分支, 只处理非零条件 */
+            case 0x02: { /* if */
+                int32_t cond = sp > 0 ? stack[--sp] : 0;
                 (void)cond;
+                break;
+            }
+            case 0x03: { /* loop */
                 break;
             }
 
@@ -244,8 +344,59 @@ static int wasm_exec_func(const unsigned char *body, size_t body_len,
             case 0x10: { /* call */
                 int32_t func_idx;
                 if (leb128_read(body, body_len, &pos, &func_idx) < 0) return -1;
-                /* 简化: 不调用其他函数, 跳过 */
-                (void)func_idx;
+
+                /* 检查是否为 import 调用 */
+                if (func_idx >= 0 && func_idx < import_count && imports) {
+                    const char *name = imports[func_idx].name;
+
+                    if (strcmp(name, "fd_write") == 0) {
+                        /* fd_write(fd, iovs, iovs_len, rets) -> nwritten */
+                        if (sp < 4) return -1;
+                        int32_t rets = stack[--sp];
+                        int32_t iovs_len = stack[--sp];
+                        int32_t iovs = stack[--sp];
+                        int32_t fd = stack[--sp];
+                        (void)fd;
+
+                        /* 模拟 fd_write: 从 iovec 读取字符串并写入 stdout */
+                        int nwritten = 0;
+                        if (memory && iovs >= 0 && iovs + (iovs_len * 8) <= mem_size) {
+                            for (int j = 0; j < iovs_len; j++) {
+                                int32_t buf_ptr = 0, buf_len = 0;
+                                int offset = iovs + j * 8;
+                                if (offset + 8 <= mem_size) {
+                                    memcpy(&buf_ptr, memory + offset, 4);
+                                    memcpy(&buf_len, memory + offset + 4, 4);
+                                }
+                                if (buf_ptr >= 0 && buf_len > 0 &&
+                                    buf_ptr + buf_len <= mem_size) {
+                                    fwrite(memory + buf_ptr, 1, buf_len, stdout);
+                                    nwritten += buf_len;
+                                }
+                            }
+                            fflush(stdout);
+                        }
+                        /* 写入返回值到 rets */
+                        if (memory && rets >= 0 && rets + 4 <= mem_size) {
+                            memcpy(memory + rets, &nwritten, 4);
+                        }
+                        if (sp < 256) stack[sp++] = nwritten;
+                        fd_write_calls++;
+                    } else if (strcmp(name, "proc_exit") == 0) {
+                        int32_t code = sp > 0 ? stack[--sp] : 0;
+                        (void)code;
+                        exited = 1;
+                        break;
+                    } else {
+                        /* 未知 import: pop args, push 0 */
+                        if (sp > 0) sp--;
+                        if (sp < 256) stack[sp++] = 0;
+                    }
+                } else {
+                    /* 内部函数调用: 暂不支持递归 */
+                    if (sp > 0) sp--;
+                    if (sp < 256) stack[sp++] = 0;
+                }
                 break;
             }
 
@@ -315,7 +466,8 @@ static int wasm_exec_func(const unsigned char *body, size_t body_len,
                 if (sp < 2) return -1;
                 int32_t val = stack[--sp];
                 int32_t addr = stack[--sp] + offset;
-                if (addr >= 0 && addr + 4 <= mem_size && memory) {
+                int write_size = (op == 0x36) ? 4 : (op == 0x38) ? 1 : 2;
+                if (addr >= 0 && addr + write_size <= mem_size && memory) {
                     if (op == 0x36) memcpy(memory + addr, &val, 4);
                     else if (op == 0x38) memory[addr] = (uint8_t)val;
                     else if (op == 0x39) { uint16_t v = (uint16_t)val; memcpy(memory+addr,&v,2); }
@@ -426,6 +578,17 @@ int wamr_call_func(WamrInstance *inst, const char *func_name,
 
     if (!data || size < 8) return -1;
 
+    /* 解析 import 表 */
+    WamrImport imports[MAX_IMPORTS];
+    int import_count = 0;
+    parse_imports(data, size, imports, &import_count);
+
+    /* 加载 data section 到内存 */
+    int mem_size = inst->mem_pages * WAMR_PAGE_SIZE;
+    if (inst->memory) {
+        load_data_sections(data, size, inst->memory, mem_size);
+    }
+
     /* 遍历 section, 找到 code section (id=10) */
     size_t pos = 8; /* 跳过 magic + version */
     unsigned char *code_section = NULL;
@@ -456,7 +619,8 @@ int wamr_call_func(WamrInstance *inst, const char *func_name,
                 int32_t fidx;
                 if (leb128_read(data, size, &spos, &fidx) < 0) break;
                 if (kind == 0 && strcmp(name, func_name) == 0) {
-                    export_func_idx = fidx;
+                    /* 减去 import 数量，得到 code section 中的索引 */
+                    export_func_idx = fidx - import_count;
                     break;
                 }
             }
@@ -495,10 +659,10 @@ int wamr_call_func(WamrInstance *inst, const char *func_name,
         if (leb128_read(code_section, code_len, &cpos, &body_size) < 0) break;
 
         if (i == export_func_idx) {
-            int mem_size = inst->mem_pages * WAMR_PAGE_SIZE;
             return wasm_exec_func(code_section + cpos, body_size,
                                   inst->memory, mem_size,
-                                  argv, argc, result, result_count);
+                                  argv, argc, result, result_count,
+                                  imports, import_count);
         }
 
         cpos += body_size;

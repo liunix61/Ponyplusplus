@@ -76,6 +76,7 @@ static void repl_show_history(REPL *r) {
 }
 
 static int repl_eval_code(REPL *r, const char *input) {
+    (void)r;
     size_t len = strlen(input);
     if (len == 0) return 0;
 
@@ -124,6 +125,7 @@ static int repl_eval_code(REPL *r, const char *input) {
 }
 
 static int repl_eval_file(REPL *r, const char *path) {
+    (void)r;
     char *source = s_file_read(path);
     if (!source) {
         fprintf(stderr, "[REPL] 无法读取文件: %s\n", path);
@@ -179,7 +181,7 @@ static int repl_eval_file(REPL *r, const char *path) {
 }
 
 int repl_run(void) {
-    REPL r = { 0, NULL, 0, 1 };
+    REPL r = {0};
     r.runtime = pny_runtime_new();
     if (!r.runtime) {
         fprintf(stderr, "[REPL] 运行时初始化失败\n");

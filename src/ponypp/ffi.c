@@ -171,21 +171,24 @@ size_t ffi_func_count(void) {
 int64_t ffi_call_i64(FFIFunc *ff, int64_t a, int64_t b, int64_t c, int64_t d) {
     if (!ff || !ff->func_ptr) return -1;
     typedef int64_t (*ffifn)(int64_t, int64_t, int64_t, int64_t);
-    ffifn fn = (ffifn)ff->func_ptr;
+    ffifn fn;
+    memcpy(&fn, &ff->func_ptr, sizeof(fn));
     return fn(a, b, c, d);
 }
 
 double ffi_call_f64(FFIFunc *ff, double a, double b) {
     if (!ff || !ff->func_ptr) return -1.0;
     typedef double (*ffifn)(double, double);
-    ffifn fn = (ffifn)ff->func_ptr;
+    ffifn fn;
+    memcpy(&fn, &ff->func_ptr, sizeof(fn));
     return fn(a, b);
 }
 
 void *ffi_call_ptr(FFIFunc *ff, void *arg, int64_t a) {
     if (!ff || !ff->func_ptr) return NULL;
     typedef void *(*ffifn)(void *, int64_t);
-    ffifn fn = (ffifn)ff->func_ptr;
+    ffifn fn;
+    memcpy(&fn, &ff->func_ptr, sizeof(fn));
     return fn(arg, a);
 }
 

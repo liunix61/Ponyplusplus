@@ -379,6 +379,7 @@ int main(int argc, char *argv[]) {
 
     /* Phase 3 toolchain: if first arg after opts is a subcommand, dispatch */
     if (argc > optind && strcmp(argv[optind], "bootstrap") == 0) {
+        extern int tool_bootstrap(void);
         return tool_bootstrap();
     }
     if (argc > optind && (strcmp(argv[optind], "build") == 0 || strcmp(argv[optind], "run") == 0 ||

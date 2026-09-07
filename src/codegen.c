@@ -378,7 +378,7 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 }
                 /* 跨 actor 构造: Actor(args) → Actor_create(args) */
                 /* 如果 func 是当前 actor 名且参数匹配构造函数，改为 Actor_create(args) */
-                if (cg->actor_name && strcmp(func, cg->actor_name) == 0) {
+                if (strcmp(func, cg->actor_name) == 0 && cg->actor_name[0]) {
                     cg_emit_raw(cg, "%s_create(", func);
                     if (args) {
                         for (size_t i = 0; i < args->child_count; i++) {

@@ -311,10 +311,15 @@ int tool_bootstrap(void) {
             project_root = exe_path;
         }
     }
-    const char *comp_dir = project_root ? project_root : ".";
+    char comp_dir[1024];
+    if (project_root) {
+        snprintf(comp_dir, sizeof(comp_dir), "%.1023s", project_root);
+    } else {
+        snprintf(comp_dir, sizeof(comp_dir), ".");
+    }
 
     /* 步骤 1: 用 ponyppc 编译 compiler/lexer.pny → 可执行文件 */
-    char input_path[512], output_path[512];
+    char input_path[2048], output_path[512];
     snprintf(input_path, sizeof(input_path), "%s/compiler/lexer.pny", comp_dir);
     snprintf(output_path, sizeof(output_path), "/tmp/ponypp_bootstrap_bin");
 
@@ -356,7 +361,7 @@ int tool_bootstrap(void) {
     /* 步骤 3: 检查标准库 .pny 文件 (验证编译器可生成 C 代码) */
     printf("[bootstrap] 阶段 3: 检查标准库\n");
     fflush(stdout);
-    char stdlib_dir[512];
+    char stdlib_dir[2048];
     snprintf(stdlib_dir, sizeof(stdlib_dir), "%s/stdlib/std/", comp_dir);
     DIR *d = opendir(stdlib_dir);
     int stdlib_count = 0, stdlib_ok = 0;
@@ -366,7 +371,7 @@ int tool_bootstrap(void) {
             size_t dlen = strlen(ent->d_name);
             if (dlen > 4 && strncmp(ent->d_name + dlen - 4, ".pny", 4) == 0) {
                 stdlib_count++;
-                char stdlib_path[512], stdlib_out[512];
+                char stdlib_path[2048], stdlib_out[512];
                 snprintf(stdlib_path, sizeof(stdlib_path), "%s/stdlib/std/%s", comp_dir, ent->d_name);
                 snprintf(stdlib_out, sizeof(stdlib_out), "/tmp/ponypp_stdlib_%s", ent->d_name);
                 /* 只检查 ponyppc 能否生成 C 代码 (跳过 gcc, 标准库不是可执行文件) */

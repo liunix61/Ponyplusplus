@@ -63,7 +63,7 @@ int wit_write_program(ASTNode *ast, const char *output, TargetKind target) {
         if (!name) name = "default";
 
         /* 检查泛型类型参数 */
-        char tparams_str[512] = "";
+        char tparams_str[514] = "";
         for (size_t j = 0; j < actor->child_count; j++) {
             ASTNode *c = actor->children[j];
             if (c && c->data && strcmp((const char *)c->data, "typeparams") == 0) {
@@ -173,7 +173,6 @@ int wit_write_program(ASTNode *ast, const char *output, TargetKind target) {
         /* world — target 感知 */
         if (target == TARGET_MCU_WASM) {
             /* MCU world: 硬件外设 imports */
-            const char *mcu_platform = "generic";
             /* 简化: 默认 generic 外设 */
             fprintf(f, "world %s {\n", name);
             wit_indent(f, 1);
