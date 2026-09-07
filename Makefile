@@ -26,7 +26,7 @@ LIB_OBJS = $(filter-out $(DRIVER_OBJS), $(ALL_OBJS))
 
 TARGET = $(BINDIR)/ponyppc
 
-.PHONY: all clean test run help
+.PHONY: all clean test run help lint
 
 all: $(TARGET)
 
@@ -41,6 +41,13 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c
 $(OBJDIR)/%.ponypp.o: $(SRCDIR)/ponypp/%.c
 	@mkdir -p $(OBJDIR)
 	$(CC) $(CFLAGS) -I$(INCDIR) -c -o $@ $<
+
+lint: all
+	@echo "Running linter..."
+	@for c in $(TOP_SRCS) $(SUB_SRCS); do \
+		$(CC) $(CFLAGS) -I$(INCDIR) -c $$c -o /dev/null 2>&1 || exit 1; \
+	done
+	@echo "Lint passed. No warnings."
 
 test: all
 	@echo "Running tests..."

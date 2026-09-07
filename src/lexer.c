@@ -274,40 +274,70 @@ static TokenType advance(Lexer *lex) {
         return TK_STRING;
     }
 
-    /* 字符字面量 'a' */
+    /* 单引号字面量：1字符→TK_CHAR，多字符→TK_STRING */
     if (c == '\'') {
+        /* 向前扫描判断长度 */
+        size_t save_pos = lex->pos;
+        size_t save_line = lex->line;
+        size_t save_col = lex->column;
         advance_char(lex); /* 跳过开引号 */
-        char cval = '\0';
-        if (lex->pos < lex->length) {
+        size_t len = 0;
+        while (lex->pos < lex->length && lex->source[lex->pos] != '\'') {
             if (lex->source[lex->pos] == '\\' && lex->pos + 1 < lex->length) {
                 advance_char(lex);
-                char esc = lex->source[lex->pos];
-                switch (esc) {
-                    case 'n': cval = '\n'; break;
-                    case 't': cval = '\t'; break;
-                    case 'r': cval = '\r'; break;
-                    case '\\': cval = '\\'; break;
-                    case '\'': cval = '\''; break;
-                    default: cval = esc; break;
+            }
+            advance_char(lex);
+            len++;
+        }
+        /* 回退到开头重新处理 */
+        lex->pos = save_pos;
+        lex->line = save_line;
+        lex->column = save_col;
+
+        if (len <= 1) {
+            /* 单字符字面量 'a' */
+            advance_char(lex); /* 跳过开引号 */
+            char cval = '\0';
+            if (lex->pos < lex->length) {
+                if (lex->source[lex->pos] == '\\' && lex->pos + 1 < lex->length) {
+                    advance_char(lex);
+                    char esc = lex->source[lex->pos];
+                    switch (esc) {
+                        case 'n': cval = '\n'; break;
+                        case 't': cval = '\t'; break;
+                        case 'r': cval = '\r'; break;
+                        case '\\': cval = '\\'; break;
+                        case '\'': cval = '\''; break;
+                        default: cval = esc; break;
+                    }
+                    advance_char(lex);
+                } else {
+                    cval = lex->source[lex->pos];
+                    advance_char(lex);
                 }
-                advance_char(lex);
-            } else {
-                cval = lex->source[lex->pos];
+            }
+            if (lex->pos < lex->length && lex->source[lex->pos] == '\'') {
                 advance_char(lex);
             }
+            char *cv = s_malloc(2);
+            cv[0] = cval;
+            cv[1] = '\0';
+            lex->current.type = TK_CHAR;
+            lex->current.value = cv;
+            lex->current.line = start_line;
+            lex->current.column = start_col;
+            lex->current.length = 1;
+            return TK_CHAR;
+        } else {
+            /* 多字符单引号字符串 'world' → TK_STRING */
+            char *str = lex_string(lex);
+            lex->current.type = TK_STRING;
+            lex->current.value = str;
+            lex->current.line = start_line;
+            lex->current.column = start_col;
+            lex->current.length = (int)strlen(str);
+            return TK_STRING;
         }
-        if (lex->pos < lex->length && lex->source[lex->pos] == '\'') {
-            advance_char(lex); /* 跳过闭引号 */
-        }
-        char *cv = s_malloc(2);
-        cv[0] = cval;
-        cv[1] = '\0';
-        lex->current.type = TK_CHAR;
-        lex->current.value = cv;
-        lex->current.line = start_line;
-        lex->current.column = start_col;
-        lex->current.length = 1;
-        return TK_CHAR;
     }
 
     /* 多字符运算符 */

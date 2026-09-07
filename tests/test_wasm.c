@@ -14,7 +14,7 @@ static int tests_failed = 0;
 
 #define CHECK(cond, msg) do { \
     if (cond) { tests_passed++; printf("  \342\234\223 %s\n", msg); } \
-    else { tests_failed++; printf("  \342\234\224 %s\n", msg); } \
+    else { tests_failed++; printf("  \342\234\227 %s\n", msg); } \
 } while(0)
 
 static ASTNode *parse_to_ast(const char *src) {
@@ -55,9 +55,8 @@ static int test_wasm_generates_file(void) {
 
 static int test_wasm_target_name(void) {
     printf("test_wasm_target_name\n");
-    CHECK(strcmp(wasm_target_name(1), "component") == 0 ||
-          wasm_target_name(1) != NULL, "TARGET_COMPONENT 有名称");
-    CHECK(strcmp(wasm_target_name(4), "native") == 0, "TARGET_NATIVE 名称正确");
+    CHECK(strcmp(wasm_target_name(TARGET_COMPONENT), "component") == 0, "TARGET_COMPONENT 名称正确");
+    CHECK(strcmp(wasm_target_name(TARGET_NATIVE), "native") == 0, "TARGET_NATIVE 名称正确");
     return tests_failed == 0;
 }
 
