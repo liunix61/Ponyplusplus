@@ -885,6 +885,19 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
                     else if (strcmp(tn, "F32") == 0) rtype = "float";
                     else if (strcmp(tn, "ActorRef") == 0) rtype = "void *";
                     else if (strcmp(tn, "Char") == 0) rtype = "char";
+                    else {
+                        /* 检查是否为 actor 类型 → void * */
+                        int is_actor = 0;
+                        for (size_t k = 0; k < atc; k++) {
+                            if (actor_types && actor_types[k] && strcmp(actor_types[k], tn) == 0) {
+                                is_actor = 1; break;
+                            }
+                        }
+                        rtype = is_actor ? "void *" : cg_type_of(c2, actor_types, atc);
+                    }
+                } else if (c2->type == NODE_TYPE_PARAM && body == NULL) {
+                    /* NODE_TYPE_PARAM = 泛型返回类型如 List[Actor] */
+                    rtype = cg_type_of(c2, actor_types, atc);
                 } else if (body == NULL) {
                     body = c2;
                 }

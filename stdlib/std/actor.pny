@@ -10,20 +10,21 @@
  */
 actor Actor {
   var name: String
-  var children: List[ActorRef]
+  var children: List[Actor]
   new create(name: String = "actor") => {
     this.name = name
     this.children = List()
   }
-  be spawn(child_name: String) => {
+  be spawn(child_name: String) : Actor => {
     val ref = Actor(child_name)
     this.children.append(ref)
+    return ref
   }
   be stop() => {}
-  be supervise(child: ActorRef, strategy: String = "one_for_one") => {
+  be supervise(child: Actor, strategy: String = "one_for_one") => {
     this.children.append(child)
   }
-  be children() => {
+  be children() : List[Actor] => {
     return this.children
   }
 }

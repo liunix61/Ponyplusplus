@@ -89,21 +89,25 @@ static int tc_check_expr(ASTNode *n, const char **actor_fields, size_t fcount,
         case NODE_IDENT:
             if (n->data) {
                 const char *name = (const char *)n->data;
-                if (!tc_is_builtin_type(name)) {
+                /* 剥离 "this." 前缀（parser 对 this.field 产出 "this.field"） */
+                const char *field_name = name;
+                if (strncmp(name, "this.", 5) == 0) field_name = name + 5;
+                if (!tc_is_builtin_type(field_name)) {
                     int found = 0;
                     for (size_t i = 0; i < fcount; i++) {
-                        if (actor_fields && actor_fields[i] && strcmp(actor_fields[i], name) == 0) {
+                        if (actor_fields && actor_fields[i] && strcmp(actor_fields[i], field_name) == 0) {
                             found = 1; break;
                         }
                     }
                     if (!found) {
                         for (size_t i = 0; i < atype_count; i++) {
-                            if (actor_types && actor_types[i] && strcmp(actor_types[i], name) == 0) {
+                            if (actor_types && actor_types[i] && strcmp(actor_types[i], field_name) == 0) {
                                 found = 1; break;
                             }
                         }
                     }
                     if (!found) {
+                        fprintf(stderr, "DEBUG: unknown identifier '%s' (field='%s')\n", name, field_name);
                         const char *msg = "unknown identifier (may be an actor field)";
                         tc_add_error(n->line, msg);
                         errs++;
