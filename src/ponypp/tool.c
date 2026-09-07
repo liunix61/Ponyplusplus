@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include "ponypp/tool.h"
 #include "ponypp.h"
 #include "ponypp/util.h"

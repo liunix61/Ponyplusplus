@@ -18,6 +18,8 @@ struct Codegen {
     char **field_types; /* 字段类型: "String"/"U32"/"U64" 等 */
     int in_constructor; /* 1=self 值类型 self.field, 0=指针 self->field */
     char actor_name[64]; /* 当前 Actor 名称, 用于方法调用 */
+    char **params;      /* 当前方法的参数名 */
+    size_t param_count; /* 当前方法的参数数量 */
 };
 
 Codegen *codegen_new(FILE *out) {
@@ -92,9 +94,25 @@ static const char *cg_field_type(Codegen *cg, const char *name) {
 
 static void cg_set_ctor(Codegen *cg, int in_ctor) { cg->in_constructor = in_ctor; }
 
+static void cg_set_params(Codegen *cg, size_t pc, char **params) {
+    for (size_t i = 0; i < cg->param_count; i++) free(cg->params[i]);
+    free(cg->params);
+    cg->params = params;
+    cg->param_count = pc;
+}
+
+static int cg_is_param(Codegen *cg, const char *name) {
+    for (size_t i = 0; i < cg->param_count; i++) {
+        if (cg->params[i] && strcmp(cg->params[i], name) == 0) return 1;
+    }
+    return 0;
+}
+
 static void cg_emit_field_access(Codegen *cg, const char *name) {
-    if (name && cg_has_field(cg, name)) {
-        cg_emit_raw(cg, "self%s%s", cg->in_constructor ? "." : "->", name);
+    if (name && name[0] == 't' && name[1] == 'h' && name[2] == 'i' && name[3] == 's' && name[4] == '.') {
+        cg_emit_raw(cg, "self->%s", name + 5);
+    } else if (name && cg_has_field(cg, name)) {
+        cg_emit_raw(cg, "self->%s", name);
     } else {
         cg_emit_raw(cg, "%s", name ? name : "0");
     }
@@ -127,6 +145,7 @@ static const char *cg_type_of(ASTNode *n, const char **actor_types, size_t atc) 
     if (strcmp(name, "I64") == 0) return "signed long long";
     if (strcmp(name, "F32") == 0) return "float";
     if (strcmp(name, "F64") == 0) return "double";
+    if (strcmp(name, "ActorRef") == 0) return "void *";
     if (strcmp(name, "String") == 0) return "const char *";
     if (strcmp(name, "Char") == 0) return "char";
     if (strcmp(name, "Bool") == 0) return "int";
@@ -294,9 +313,97 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     cg_emit_raw(cg, ") ? 1 : 1)"); /* placeholder — toUpperCase stub */
                     break;
                 }
+                /* List.append(item) → pny_list_append(self->field, item) */
+                if (strcmp(method_name, "append") == 0) {
+                    cg_emit_raw(cg, "pny_list_append(");
+                    cg_emit_field_access(cg, receiver);
+                    cg_emit_raw(cg, ", ");
+                    if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                    else cg_emit_raw(cg, "NULL");
+                    cg_emit_raw(cg, ")");
+                    break;
+                }
+                /* List.length → pny_list_len(self->field) */
+                if (strcmp(method_name, "length") == 0) {
+                    cg_emit_raw(cg, "pny_list_len(");
+                    cg_emit_field_access(cg, receiver);
+                    cg_emit_raw(cg, ")");
+                    break;
+                }
                 /* Generic method: receiver->method(...) — stub for now */
                 cg_emit_raw(cg, "0"); /* stub: unknown method returns 0 */
                 break;
+            }
+            /* 类型构造函数: List(), Set(), Map(), ActorRef() 等 */
+            if (func) {
+                /* List() → pny_list_new() */
+                if (strcmp(func, "List") == 0) {
+                    cg_emit_raw(cg, "pny_list_new()");
+                    break;
+                }
+                /* Set() → pny_set_new() */
+                if (strcmp(func, "Set") == 0) {
+                    cg_emit_raw(cg, "pny_set_new()");
+                    break;
+                }
+                /* Map() → pny_map_new() */
+                if (strcmp(func, "Map") == 0) {
+                    cg_emit_raw(cg, "pny_map_new()");
+                    break;
+                }
+                /* ActorRef() → NULL (无参) 或构造调用 */
+                if (strcmp(func, "ActorRef") == 0) {
+                    if (args && args->child_count > 0) {
+                        cg_emit_raw(cg, "pny_actor_send(NULL, \"%s\", ", func);
+                        cg_expr(cg, args->children[0]);
+                        cg_emit_raw(cg, ")");
+                    } else {
+                        cg_emit_raw(cg, "NULL");
+                    }
+                    break;
+                }
+                /* String() → strdup() */
+                if (strcmp(func, "String") == 0) {
+                    if (args && args->child_count > 0) {
+                        cg_emit_raw(cg, "strdup(");
+                        cg_expr(cg, args->children[0]);
+                        cg_emit_raw(cg, ")");
+                    } else {
+                        cg_emit_raw(cg, "strdup(\"\")");
+                    }
+                    break;
+                }
+                /* 跨 actor 构造: Actor(args) → Actor_create(args) */
+                /* 如果 func 是当前 actor 名且参数匹配构造函数，改为 Actor_create(args) */
+                if (cg->actor_name && strcmp(func, cg->actor_name) == 0) {
+                    cg_emit_raw(cg, "%s_create(", func);
+                    if (args) {
+                        for (size_t i = 0; i < args->child_count; i++) {
+                            if (i > 0) cg_emit_raw(cg, ", ");
+                            cg_expr(cg, args->children[i]);
+                        }
+                    }
+                    cg_emit_raw(cg, ")");
+                    break;
+                }
+                /* 如果是其他 actor 名 (Actor, NotTheActor)，生成 Xxx_create(args) */
+                /* 检查是否是已知 actor 类型 */
+                int is_actor_type = 0;
+                if (args && args->child_count > 0) {
+                    is_actor_type = 1; /* 有参数的调用可能是 actor 构造 */
+                }
+                if (is_actor_type && func[0] >= 'A' && func[0] <= 'Z') {
+                    /* 首字母大写，可能是 actor 类型 */
+                    cg_emit_raw(cg, "%s_create(", func);
+                    if (args) {
+                        for (size_t i = 0; i < args->child_count; i++) {
+                            if (i > 0) cg_emit_raw(cg, ", ");
+                            cg_expr(cg, args->children[i]);
+                        }
+                    }
+                    cg_emit_raw(cg, ")");
+                    break;
+                }
             }
             cg_emit_raw(cg, "%s_%s(", cg->actor_name[0] ? cg->actor_name : "main", func ? func : "?");
             if (args) {
@@ -339,11 +446,17 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
         }
         case NODE_IDENT: {
             const char *name = (const char *)n->data;
-            if (name && strcmp(name, "this") == 0) {
+            if (name && name[0] == 't' && name[1] == 'h' && name[2] == 'i' && name[3] == 's' && name[4] == '.') {
+                /* "this.field" → self->field */
+                cg_emit_raw(cg, "self->%s", name + 5);
+            } else if (name && strcmp(name, "this") == 0) {
                 cg_emit_raw(cg, "self");
             } else if (name && strcmp(name, "nil") == 0) {
                 cg_emit_raw(cg, "NULL");
-            } else {
+            } else if (name && cg_is_param(cg, name)) {
+                /* 参数名: 直接输出变量名, 不加 self-> */
+                cg_emit_raw(cg, "%s", name);
+            } else if (name) {
                 cg_emit_field_access(cg, name);
             }
             break;
@@ -463,7 +576,19 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
             /* 左值 */
             if (n->children[0]->type == NODE_IDENT && n->children[0]->data) {
                 const char *lhs = (const char *)n->children[0]->data;
-                cg_emit_raw(cg, "/* stmt */self%s%s = ", cg->in_constructor ? "." : "->", lhs);
+                if (lhs[0] == 't' && lhs[1] == 'h' && lhs[2] == 'i' && lhs[3] == 's' && lhs[4] == '.') {
+                    /* "this.field" → self->field */
+                    cg_emit_raw(cg, "/* stmt */self->%s = ", lhs + 5);
+                } else if (cg_is_param(cg, lhs)) {
+                    /* 参数赋值: 直接输出 */
+                    cg_emit_raw(cg, "/* stmt */%s = ", lhs);
+                } else if (cg_has_field(cg, lhs)) {
+                    /* 裸字段名 (如 pos = 0) → self->pos = 0 */
+                    cg_emit_raw(cg, "/* stmt */self->%s = ", lhs);
+                } else {
+                    /* 普通标识符 (局部变量) */
+                    cg_emit_raw(cg, "/* stmt */%s = ", lhs);
+                }
                 cg_expr(cg, n->children[1]);
                 cg_emit_raw(cg, ";");
                 return;
@@ -552,13 +677,13 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
                     cg_expr(cg, n->children[1]);
                 }
             } else {
-                /* val y = expr → int y = expr; */
-                cg_emit_raw(cg, "int %s", n->data);
+                /* val y = expr → void *y = expr; */
+                cg_emit_raw(cg, "void *%s", n->data);
                 if (n->child_count > 0) {
                     cg_emit_raw(cg, " = ");
                     cg_expr(cg, n->children[0]);
                 } else {
-                    cg_emit_raw(cg, " = 0");
+                    cg_emit_raw(cg, " = NULL");
                 }
             }
             cg_emit_raw(cg, ";\n");
@@ -574,13 +699,13 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
                     cg_expr(cg, n->children[1]);
                 }
             } else {
-                /* var x = expr → int x = expr; */
-                cg_emit_raw(cg, "int %s", n->data);
+                /* var x = expr → void *x = expr; */
+                cg_emit_raw(cg, "void *%s", n->data);
                 if (n->child_count > 0) {
                     cg_emit_raw(cg, " = ");
                     cg_expr(cg, n->children[0]);
                 } else {
-                    cg_emit_raw(cg, " = 0");
+                    cg_emit_raw(cg, " = NULL");
                 }
             }
             cg_emit_raw(cg, ";\n");
@@ -668,10 +793,10 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
         if (actor->children[i] && actor->children[i]->type == NODE_NEW) { has_ctor = 1; break; }
     }
     if (!has_ctor) {
-        cg_emit(cg, "static %s_t %s_create() {\n", name, name);
+        cg_emit(cg, "static %s_t *%s_create() {\n", name, name);
         cg_push(cg);
-        cg_emit(cg, "%s_t self;\n", name);
-        cg_emit(cg, "memset(&self, 0, sizeof(self));\n");
+        cg_emit(cg, "%s_t *self = (%s_t *)calloc(1, sizeof(%s_t));\n", name, name, name);
+        cg_emit(cg, "memset(self, 0, sizeof(*self));\n");
         cg_emit(cg, "return self;\n");
         cg_pop(cg);
         cg_emit(cg, "}\n\n");
@@ -682,7 +807,7 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
         if (!ch) continue;
         if (ch->type == NODE_NEW) {
             const char *ctor = (const char *)ch->data;
-            cg_emit(cg, "static %s_t %s_%s(", name, name, ctor ? ctor : "new");
+            cg_emit(cg, "static %s_t *%s_%s(", name, name, ctor ? ctor : "new");
             if (ch->child_count > 0 && ch->children[0] && ch->children[0]->data &&
                 strcmp((const char *)ch->children[0]->data, "params") == 0) {
                 for (size_t j = 0; j < ch->children[0]->child_count; j++) {
@@ -695,8 +820,24 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
             }
             cg_emit_raw(cg, ") {\n");
             cg_push(cg);
-            cg_emit(cg, "%s_t self;\n", name);
-            cg_emit(cg, "memset(&self, 0, sizeof(self));\n");
+            /* 收集参数名, 用于参数 vs 字段区分 */
+            {
+                size_t pc = 0;
+                char **param_names = NULL;
+                if (ch->child_count > 0 && ch->children[0] && ch->children[0]->data &&
+                    strcmp((const char *)ch->children[0]->data, "params") == 0) {
+                    ASTNode *pnode = ch->children[0];
+                    param_names = (char **)calloc(pnode->child_count, sizeof(char *));
+                    for (size_t j = 0; j < pnode->child_count; j++) {
+                        ASTNode *p = pnode->children[j];
+                        param_names[j] = s_strdup(p->data ? (const char *)p->data : "a");
+                        pc++;
+                    }
+                }
+                cg_set_params(cg, pc, param_names);
+            }
+            cg_emit(cg, "%s_t *self = (%s_t *)calloc(1, sizeof(%s_t));\n", name, name, name);
+            cg_emit(cg, "memset(self, 0, sizeof(*self));\n");
             cg_set_ctor(cg, 1);
             /* 找到构造体 (跳过 params 节点) */
             ASTNode *body = NULL;
@@ -741,6 +882,20 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
             }
             cg_emit_raw(cg, ") {\n");
             cg_push(cg);
+            /* 收集方法参数名 */
+            {
+                size_t pc = 0;
+                char **param_names = NULL;
+                if (params && params->child_count > 0) {
+                    param_names = (char **)calloc(params->child_count, sizeof(char *));
+                    for (size_t j = 0; j < params->child_count; j++) {
+                        ASTNode *p = params->children[j];
+                        param_names[j] = s_strdup(p->data ? (const char *)p->data : "a");
+                        pc++;
+                    }
+                }
+                cg_set_params(cg, pc, param_names);
+            }
             cg_set_ctor(cg, 0);
             if (body) {
                 for (size_t j = 0; j < body->child_count; j++) cg_stmt(cg, body->children[j]);
@@ -757,6 +912,31 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
 
 static void cg_emit_runtime(Codegen *cg) {
     cg_emit_raw(cg,
+        "typedef struct PnyList {\n"
+        "    void **items;\n"
+        "    size_t len, cap;\n"
+        "} PnyList;\n"
+        "static PnyList *pny_list_new(void) {\n"
+        "    PnyList *l = (PnyList *)calloc(1, sizeof(PnyList));\n"
+        "    return l;\n}\n"
+        "static void pny_list_append(PnyList *l, void *data) {\n"
+        "    if (!l) return;\n"
+        "    if (l->len >= l->cap) {\n"
+        "        l->cap = l->cap ? l->cap * 2 : 8;\n"
+        "        l->items = (void **)realloc(l->items, l->cap * sizeof(void *));\n"
+        "    }\n"
+        "    l->items[l->len++] = data;\n}\n"
+        "static size_t pny_list_len(const PnyList *l) { return l ? l->len : 0; }\n"
+        "typedef struct PnySet {\n"
+        "    void **items;\n"
+        "    size_t len, cap;\n"
+        "} PnySet;\n"
+        "static PnySet *pny_set_new(void) { return (PnySet *)calloc(1, sizeof(PnySet)); }\n"
+        "typedef struct PnyMap {\n"
+        "    void **items;\n"
+        "    size_t len, cap;\n"
+        "} PnyMap;\n"
+        "static PnyMap *pny_map_new(void) { return (PnyMap *)calloc(1, sizeof(PnyMap)); }\n"
         "typedef struct PnyActor {\n"
         "    const char *name;\n"
         "    void *state;\n"
@@ -891,7 +1071,7 @@ static void cg_emit_create_call(Codegen *cg, const char *name, ASTNode *actor) {
         }
     }
     if (has_params && ctor_params && ctor_params->child_count > 0) {
-        cg_emit(cg, "%s_t __main_obj = %s_create(", name, name);
+        cg_emit(cg, "%s_t *__main_obj = %s_create(", name, name);
         for (size_t k = 0; k < ctor_params->child_count; k++) {
             if (k > 0) cg_emit_raw(cg, ", ");
             ASTNode *param = ctor_params->children[k];
@@ -903,7 +1083,7 @@ static void cg_emit_create_call(Codegen *cg, const char *name, ASTNode *actor) {
         }
         cg_emit_raw(cg, ");\n");
     } else {
-        cg_emit(cg, "%s_t __main_obj = %s_create();\n", name, name);
+        cg_emit(cg, "%s_t *__main_obj = %s_create();\n", name, name);
     }
 }
 
@@ -921,10 +1101,10 @@ static void cg_emit_main(Codegen *cg, ASTNode *ast) {
             if (m && (m->type == NODE_BE || m->type == NODE_FUN) &&
                 m->data && strcmp((const char *)m->data, "run") == 0) {
                 cg_emit_create_call(cg, name, ch);
-                cg_emit(cg, "%s_%s(&__main_obj);\n", name, "run");
+                cg_emit(cg, "%s_%s(__main_obj);\n", name, "run");
                 cg_emit(cg, "PnyRuntime *r = pny_runtime_new();\n");
                 cg_emit(cg, "PnyActor *__actor = pny_actor_new(\"%s\", sizeof(%s_t));\n", name, name);
-                cg_emit(cg, "if (__actor) { memcpy(__actor->state, &__main_obj, sizeof(%s_t)); pny_actor_register(r, __actor); }\n", name);
+                cg_emit(cg, "if (__actor) { memcpy(__actor->state, __main_obj, sizeof(%s_t)); pny_actor_register(r, __actor); }\n", name);
                 cg_emit(cg, "(void)r; (void)__actor;\n");
                 goto skip_main_body;
             }
@@ -935,7 +1115,7 @@ static void cg_emit_main(Codegen *cg, ASTNode *ast) {
                 cg_emit_create_call(cg, name, ch);
                 cg_emit(cg, "PnyRuntime *r = pny_runtime_new();\n");
                 cg_emit(cg, "PnyActor *__actor = pny_actor_new(\"%s\", sizeof(%s_t));\n", name, name);
-                cg_emit(cg, "if (__actor) { memcpy(__actor->state, &__main_obj, sizeof(%s_t)); pny_actor_register(r, __actor); }\n", name);
+                cg_emit(cg, "if (__actor) { memcpy(__actor->state, __main_obj, sizeof(%s_t)); pny_actor_register(r, __actor); }\n", name);
                 cg_emit(cg, "(void)r; (void)__actor;\n");
                 goto skip_main_body;
             }

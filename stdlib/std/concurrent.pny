@@ -2,15 +2,15 @@
  * std.concurrent - 并发原语: Mutex, Channel, Future, Actor Group
  *
  * API:
- *   actor Mutex - be lock() / be unlock() / be try_lock() => Bool
- *   actor Channel[T] - be send(value: T) / be receive() => T / be close()
- *   actor Future[T] - be await() => T / be done() => Bool
- *   actor ActorGroup - be add(actor: ActorRef) / be remove(actor: ActorRef) / be count() => I64
+ *   actor Mutex - be lock() / be unlock() / be try_lock() : Bool => Bool
+ *   actor Channel[T] - be send(value: T) / be receive() : T / be close()
+ *   actor Future[T] - be await() : T / be done() : Bool
+ *   actor ActorGroup - be add(actor: ActorRef) / be remove(actor: ActorRef) / be count() : I64
  */
 actor Mutex {
   be lock() => {}
   be unlock() => {}
-  be try_lock() => Bool => {
+  be try_lock() : Bool => {
     return true
   }
 }
@@ -23,16 +23,16 @@ actor Channel {
     this.closed = false
   }
   be send(value: String) => {}
-  be receive() => String => {
+  be receive() : String => {
     return ""
   }
   be close() => {
     this.closed = true
   }
-  be is_closed() => Bool => {
+  be is_closed() : Bool => {
     return this.closed
   }
-  be len() => I64 => {
+  be len() : I64 => {
     return 0
   }
 }
@@ -48,10 +48,10 @@ actor Future {
     this.result = value
     this.done = true
   }
-  be await() => String => {
+  be await() : String => {
     return this.result
   }
-  be is_done() => Bool => {
+  be is_done() : Bool => {
     return this.done
   }
 }
@@ -61,11 +61,11 @@ actor ActorGroup {
   new create() => {
     this.actors = List()
   }
-  be add(actor: ActorRef) => {
-    this.actors.append(actor)
+  be add(ref: ActorRef) => {
+    this.actors.append(ref)
   }
-  be remove(actor: ActorRef) => {}
-  be count() => I64 => {
+  be remove(ref: ActorRef) => {}
+  be count() : I64 => {
     return this.actors.length
   }
   be broadcast(msg: String) => {}

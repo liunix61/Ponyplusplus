@@ -123,9 +123,11 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
 
     size_t len = s_strlen(source);
     printf("[ponyppc] 编译 '%s' (%zu 字节)\n", input_path, len);
+    fflush(stdout);
 
     /* 1. 词法分析 */
     printf("  [1/6] 词法分析...\n");
+    fflush(stdout);
     Lexer *lexer = lexer_new(input_path, source, len);
     if (!lexer) {
         fprintf(stderr, "错误: 词法分析器创建失败\n");
@@ -152,6 +154,7 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
 
     /* 2. 语法分析 */
     printf("  [2/6] 语法分析...\n");
+    fflush(stdout);
     Parser *parser = parser_new(input_path, tokens, token_count);
     if (!parser) {
         fprintf(stderr, "错误: 语法分析器创建失败\n");
@@ -180,6 +183,7 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
 
     /* 3. 类型检查 */
     printf("  [3/6] 类型检查...\n");
+    fflush(stdout);
     TypeCheckResult *tc_result = (TypeCheckResult *)calloc(1, sizeof(TypeCheckResult));
     if (typecheck_program(ast, tc_result) != 0) {
         fprintf(stderr, "类型错误: %d 个错误\n", tc_result->error_count);
@@ -196,6 +200,7 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
 
     /* 4. 引用能力验证 */
     printf("  [4/6] 引用能力验证...\n");
+    fflush(stdout);
     CapCheckResult *cap_result = (CapCheckResult *)calloc(1, sizeof(CapCheckResult));
     if (capabilities_check_program(ast, cap_result) != 0) {
         fprintf(stderr, "引用能力错误: %d 个错误\n", cap_result->error_count);
@@ -279,6 +284,7 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
 
     /* 6. 清理 */
     printf("  [6/6] 清理...\n");
+    fflush(stdout);
     ast_node_free(ast);
     parser_free(parser);
     lexer_free(lexer);

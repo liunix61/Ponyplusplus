@@ -45,6 +45,7 @@ static const struct {
     /* 能力 */
     {"iso", TK_CAP}, {"trn", TK_CAP}, {"ref", TK_CAP},
     {"val", TK_CAP}, {"box", TK_CAP}, {"tag", TK_CAP},
+    {"this", TK_CAP},
     /* 类型 */
     {"U64", TK_TYPE}, {"U32", TK_TYPE}, {"U16", TK_TYPE}, {"U8", TK_TYPE},
     {"I64", TK_TYPE}, {"I32", TK_TYPE}, {"I16", TK_TYPE}, {"I8", TK_TYPE},
