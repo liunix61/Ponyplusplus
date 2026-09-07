@@ -121,11 +121,14 @@ static void cg_emit_field_access(Codegen *cg, const char *name) {
 static const char *cg_type_of(ASTNode *n, const char **actor_types, size_t atc) {
     if (!n || !n->data) return "int";
     const char *name = (const char *)n->data;
-    /* 泛型类型 List[T] / Set[T] / Map[K,V] 等: C 中用 void * */
+    /* 泛型类型 List[T] / Set[T] / Map[K,V] 等: C 中用对应指针类型 */
     if (n->child_count > 0 && n->children[0]) {
         /* NODE_EMPTY data="typeargs" 表示泛型 */
         if (n->children[0]->type == NODE_EMPTY && n->children[0]->data &&
             strcmp((const char *)n->children[0]->data, "typeargs") == 0) {
+            if (strcmp(name, "List") == 0) return "PnyList *";
+            if (strcmp(name, "Set") == 0) return "PnySet *";
+            if (strcmp(name, "Map") == 0) return "PnyMap *";
             return "void *";
         }
     }
