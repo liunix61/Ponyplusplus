@@ -61,20 +61,20 @@
 | 第 19 章 | 键值存储 | [ch19-kv-store.md](ch19-kv-store.md) |
 | 第 20 章 | 响应式管道 | [ch20-reactive-pipeline.md](ch20-reactive-pipeline.md) |
 
-### 附录（计划中）
+### 附录
 
-| 附录 | 标题 |
-|------|------|
-| A | 完整语法参考 |
-| B | 完整 API 参考 |
-| C | 术语表（中英对照） |
-| D | 常见错误与调试 |
-| E | 能力系统形式化语义 |
-| F | 监督树策略详解 |
-| G | Wasm 组件模型深入 |
-| H | 编译器架构概览 |
-| I | 练习题答案 |
-| J | 参考资料 |
+| 附录 | 标题 | 文件 |
+|------|------|------|
+| A | 完整语法参考 | [appendix-a-syntax.md](appendix-a-syntax.md) |
+| B | 完整 API 参考 | [appendix-b-api.md](appendix-b-api.md) |
+| C | 术语表（中英对照） | [appendix-c-glossary.md](appendix-c-glossary.md) |
+| D | 常见错误与调试 | [appendix-d-errors.md](appendix-d-errors.md) |
+| E | 能力系统形式化语义 | [appendix-e-capabilities.md](appendix-e-capabilities.md) |
+| F | 监督树策略详解 | [appendix-f-supervision.md](appendix-f-supervision.md) |
+| G | Wasm 组件模型深入 | [appendix-g-wasm.md](appendix-g-wasm.md) |
+| H | 编译器架构概览 | [appendix-h-compiler.md](appendix-h-compiler.md) |
+| I | 练习题答案 | [appendix-i-exercises.md](appendix-i-exercises.md) |
+| J | 参考资料 | [appendix-j-references.md](appendix-j-references.md) |
 
 ---
 
