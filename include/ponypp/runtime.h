@@ -95,6 +95,7 @@ typedef struct PnyActor {
     void *state_data;
     size_t state_size;
     struct PnyActor *next;
+    struct PnyActor *prev;  /* Phase 5: O(1) 链表移除 */
     PnyMessage *messages;
     PnyMessage *messages_tail;  /* Phase 5: O(1) 消息入队 */
     size_t message_count;

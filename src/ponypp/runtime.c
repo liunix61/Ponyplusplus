@@ -71,8 +71,10 @@ PnyActor *pny_actor_new(PnyRuntime *r, const char *name, size_t state_size) {
     if (idx < r->scheduler.max_actors) {
         r->scheduler.registry[idx] = a;
     }
-    /* 插入链表 */
+    /* 插入链表 - Phase 5: 维护 prev 指针 */
     a->next = r->scheduler.actors;
+    a->prev = NULL;
+    if (r->scheduler.actors) r->scheduler.actors->prev = a;
     r->scheduler.actors = a;
     r->scheduler.actor_count++;
     r->stats.actors_created++;
@@ -84,6 +86,8 @@ void pny_actor_register(PnyRuntime *r, PnyActor *a) {
     /* 已在新版本中由 pny_actor_new 处理，这里保持兼容 */
     if (!a->next) {
         a->next = r->scheduler.actors;
+        a->prev = NULL;
+        if (r->scheduler.actors) r->scheduler.actors->prev = a;
         r->scheduler.actors = a;
         r->scheduler.actor_count++;
     }
@@ -93,15 +97,13 @@ void pny_actor_destroy(PnyRuntime *r, ActorRef *ref) {
     if (!r || !ref || !ref->actor) return;
     PnyActor *a = ref->actor;
     a->actor_state = ACTOR_STATE_STOPPED;
-    /* 从链表移除 */
-    PnyActor **pp = &r->scheduler.actors;
-    while (*pp) {
-        if (*pp == a) {
-            *pp = a->next;
-            break;
-        }
-        pp = &(*pp)->next;
+    /* 从链表移除 - Phase 5: O(1) 双向链表移除 */
+    if (a->prev) {
+        a->prev->next = a->next;
+    } else {
+        r->scheduler.actors = a->next;
     }
+    if (a->next) a->next->prev = a->prev;
     /* 清理 */
     PnyMessage *m = a->messages;
     while (m) { PnyMessage *n = m->next; pny_msg_free(m); m = n; }
