@@ -1,0 +1,28 @@
+// 02-future.pny - Future 异步结果
+//
+// [CONCEPT] Future: 异步计算的结果占位符
+// [CONCEPT] be resolve()/await()/is_done()
+
+import std
+
+actor Task {
+  var future: Future
+
+  new create(future: Future) => {
+    this.future = future
+  }
+
+  be execute() => {
+    this.future.resolve("done")
+  }
+}
+
+actor main {
+  new create() => {
+    var f: Future = Future()
+    var task: Task = Task(f)
+    task.execute()
+    print(f.is_done())
+    print(f.await())
+  }
+}

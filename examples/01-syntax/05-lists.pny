@@ -1,0 +1,19 @@
+// 05-lists.pny - 列表与遍历
+//
+// [CONCEPT] List[T]: 有序集合, 支持遍历
+// [CONCEPT] for: 遍历语法
+
+actor main {
+  var numbers: List[U32] = [1, 2, 3, 4, 5]
+  var names: List[String] = ["Alice", "Bob", "Carol"]
+
+  new create() => {
+    for n in numbers {
+      print(n)
+    }
+
+    for name in names {
+      print(name)
+    }
+  }
+}

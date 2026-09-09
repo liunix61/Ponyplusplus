@@ -1,0 +1,15 @@
+// 01-greeting.pny - 变量与字符串拼接
+//
+// 演示: var 声明, String 拼接, print()
+//
+// [CONCEPT] Pony++ 是静态类型语言, 变量必须显式声明类型
+// [CONCEPT] String 是不可变的, 用 + 拼接产生新字符串
+
+actor main {
+  var name: String = "World"
+  var greeting: String = "Hello, "
+
+  new create() => {
+    print(greeting + name + "!")
+  }
+}

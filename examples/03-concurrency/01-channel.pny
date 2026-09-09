@@ -1,0 +1,49 @@
+// 01-channel.pny - Channel 消息通道
+//
+// [CONCEPT] Channel: actor 间通信管道
+// [CONCEPT] be send()/receive()/close()/is_closed()
+// [CONCEPT] import std.concurrent 导入并发原语
+
+import std.concurrent
+
+// [CONCEPT] Sender: 发送消息的 actor
+actor Sender {
+  var ch: Channel
+
+  new create(ch: Channel) => {
+    this.ch = ch
+  }
+
+  be send_all() => {
+    this.ch.send("msg-0")
+    this.ch.send("msg-1")
+    this.ch.send("msg-2")
+    this.ch.close()
+  }
+}
+
+// [CONCEPT] Receiver: 接收消息的 actor
+actor Receiver {
+  var ch: Channel
+
+  new create(ch: Channel) => {
+    this.ch = ch
+  }
+
+  be receive_all() => {
+    while not this.ch.is_closed() {
+      var msg: String = this.ch.receive()
+      print("Received: " + msg)
+    }
+  }
+}
+
+actor main {
+  new create() => {
+    var ch: Channel = Channel(10)
+    var sender: Sender = Sender(ch)
+    var receiver: Receiver = Receiver(ch)
+    sender.send_all()
+    receiver.receive_all()
+  }
+}

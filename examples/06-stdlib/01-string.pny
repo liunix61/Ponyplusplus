@@ -1,0 +1,21 @@
+// 01-string.pny - 字符串处理
+//
+// [CONCEPT] String 方法: len/upper/lower/trim/substring/split/contains
+
+actor main {
+  var s: String = "  Hello, World!  "
+
+  new create() => {
+    print(s.len())
+    print(s.upper())
+    print(s.lower())
+    print(s.trim())
+    print(s.contains("World"))
+    print(s.starts_with("  "))
+    print(s.ends_with("!  "))
+    print(s.substring(2, 7))
+
+    var parts: List[String] = s.split(",")
+    print(parts.len())
+  }
+}

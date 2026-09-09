@@ -1,0 +1,36 @@
+// 02-message-passing.pny - Actor 间消息传递
+//
+// [CONCEPT] 消息传递: actor 间不共享内存, 通过消息通信
+// [CONCEPT] be 方法: 异步, 消息队列驱动
+
+actor Worker {
+  var name: String
+  var processed: U32 = 0
+
+  new create(name: String) => {
+    this.name = name
+  }
+
+  be handle_message(msg: String) => {
+    processed += 1
+    print(this.name + " got: " + msg)
+  }
+
+  fun get_processed(): U32 => {
+    return processed
+  }
+}
+
+actor main {
+  new create() => {
+    var w1: Worker = Worker("Worker-1")
+    var w2: Worker = Worker("Worker-2")
+
+    w1.handle_message("Hello")
+    w1.handle_message("World")
+    w2.handle_message("Task A")
+
+    print(w1.get_processed())
+    print(w2.get_processed())
+  }
+}

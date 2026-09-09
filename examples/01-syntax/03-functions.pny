@@ -1,0 +1,23 @@
+// 03-functions.pny - 函数定义与调用
+//
+// [CONCEPT] fun: 纯函数, 同步调用, 有返回值
+// [CONCEPT] 支持递归
+
+fun add(a: U32, b: U32): U32 => {
+  return a + b
+}
+
+fun factorial(n: U32): U64 => {
+  if n <= 1 {
+    return 1
+  }
+  return n * factorial(n - 1)
+}
+
+actor main {
+  new create() => {
+    print(add(1, 2))
+    print(add(10, 20))
+    print(factorial(5))
+  }
+}

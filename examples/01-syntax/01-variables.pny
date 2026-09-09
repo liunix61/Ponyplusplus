@@ -1,0 +1,21 @@
+// 01-variables.pny - 变量声明与基本类型
+//
+// 演示: var 声明, 类型注解, 字面量
+//
+// [CONCEPT] 基本类型: U32(无符号), I32(有符号), F64(浮点), Bool, String
+
+actor main {
+  var x: U32 = 42
+  var y: I32 = -10
+  var pi: F64 = 3.14159
+  var ok: Bool = true
+  var name: String = "Pony++"
+
+  new create() => {
+    print(x)
+    print(y)
+    print(pi)
+    print(ok)
+    print(name)
+  }
+}

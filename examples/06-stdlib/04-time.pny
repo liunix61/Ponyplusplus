@@ -1,0 +1,13 @@
+// 04-time.pny - 时间处理
+//
+// [CONCEPT] 时间戳, 耗时计算
+
+actor main {
+  new create() => {
+    var now: U64 = time_now()
+    print(now)
+
+    var elapsed: U64 = time_elapsed(now)
+    print(elapsed)
+  }
+}

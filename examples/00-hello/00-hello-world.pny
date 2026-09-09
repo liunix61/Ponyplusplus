@@ -1,0 +1,12 @@
+// 00-hello-world.pny - 最简单的 Pony++ 程序
+//
+// 演示: actor main 是入口, new create() 是构造, print() 输出
+//
+// 编译: ./bin/ponyppc -o 00-hello-world.ponypp 00-hello-world.pny
+// 运行: wasmtime run 00-hello-world.ponypp
+
+actor main {
+  new create() => {
+    print("Hello, World!")
+  }
+}

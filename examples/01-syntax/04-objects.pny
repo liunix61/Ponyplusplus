@@ -1,0 +1,48 @@
+// 04-objects.pny - 面向对象: class / 字段 / 方法 / 继承
+//
+// [CONCEPT] class: 定义新类型
+// [CONCEPT] new create(): 构造函数
+// [CONCEPT] fun: 纯方法, be: 行为方法
+// [CONCEPT] extends: 继承
+
+class Person {
+  var name: String
+  var age: U32
+
+  new create(name: String, age: U32) => {
+    this.name = name
+    this.age = age
+  }
+
+  fun introduce(): String => {
+    return "I am " + this.name
+  }
+
+  be grow() => {
+    this.age += 1
+  }
+}
+
+class Student extends Person {
+  var major: String
+
+  new create(name: String, age: U32, major: String) => {
+    super(name, age)
+    this.major = major
+  }
+
+  fun describe(): String => {
+    return this.name + " studies " + this.major
+  }
+}
+
+actor main {
+  new create() => {
+    var p: Person = Person("Alice", 30)
+    print(p.introduce())
+
+    var s: Student = Student("Bob", 22, "CS")
+    print(s.describe())
+    print(s.introduce())
+  }
+}

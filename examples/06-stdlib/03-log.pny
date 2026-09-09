@@ -1,0 +1,12 @@
+// 03-log.pny - 结构化日志
+//
+// [CONCEPT] 日志级别: debug/info/warn/error
+
+actor main {
+  new create() => {
+    log_debug("debug message")
+    log_info("app started")
+    log_warn("low memory")
+    log_error("failed")
+  }
+}

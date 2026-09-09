@@ -1,0 +1,16 @@
+// 00-hello-native.pny - Native 目标 Hello World
+//
+// 演示: 同一个 .pny 文件可以同时编译到 native 和 wasm
+//
+// 编译 (native): ./bin/ponyppc --target native -o 00-hello-native 00-hello-native.pny
+//                gcc 00-hello-native.c -o 00-hello-native && ./00-hello-native
+// 编译 (wasm):   ./bin/ponyppc -o 00-hello-native.ponypp 00-hello-native.pny
+//                wasmtime run 00-hello-native.ponypp
+//
+// 预期输出: Hello from native!
+
+actor main {
+  new create() => {
+    print("Hello from native!")
+  }
+}

@@ -1,0 +1,29 @@
+// 03-actor-group.pny - Actor 组广播
+//
+// [CONCEPT] ActorGroup: 管理一组 actor, 支持广播
+
+actor Worker {
+  var name: String
+
+  new create(name: String) => {
+    this.name = name
+  }
+
+  be handle(msg: String) => {
+    print(this.name + " got: " + msg)
+  }
+}
+
+actor main {
+  new create() => {
+    var group: ActorGroup = ActorGroup()
+    var w1: Worker = Worker("W1")
+    var w2: Worker = Worker("W2")
+    var w3: Worker = Worker("W3")
+    group.add(w1)
+    group.add(w2)
+    group.add(w3)
+    print(group.count())
+    group.broadcast("Hello")
+  }
+}

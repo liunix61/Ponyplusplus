@@ -1,0 +1,15 @@
+// 02-multi-line.pny - 多行输出
+//
+// 演示: 多次 print, 多变量, 字符串拼接
+
+actor main {
+  var lang: String = "Pony++"
+  var year: String = "2026"
+  var tagline: String = "Actor language for cloud-native"
+
+  new create() => {
+    print(lang + " - " + tagline)
+    print("Version: " + year)
+    print("Welcome to " + lang + "!")
+  }
+}

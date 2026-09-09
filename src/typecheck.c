@@ -48,6 +48,72 @@ static int tc_is_builtin_type(const char *name) {
     return 0;
 }
 
+/* 内置函数名: 即使 import 了 std 也总是可用 */
+static int tc_is_builtin_func(const char *name) {
+    if (!name) return 0;
+    const char *funcs[] = {
+        "print", "println", "parse_json",
+        "log_debug", "log_info", "log_warn", "log_error",
+        "time_now", "time_elapsed",
+        "math_pi", "math_sqrt", "math_sin", "math_cos",
+        NULL
+    };
+    for (int i = 0; funcs[i]; i++) {
+        if (strcmp(name, funcs[i]) == 0) return 1;
+    }
+    return 0;
+}
+
+/* std 各模块提供的类型名 */
+static const char *TC_STDCONCURRENT_TYPES[] = {
+    "Channel", "Future", "Mutex", "ActorGroup", NULL
+};
+static const char *TC_STD_IO_TYPES[] = {
+    "File", "Path", NULL
+};
+static const char *TC_STD_JSON_TYPES[] = {
+    "JSON", NULL
+};
+static const char *TC_STD_TIME_TYPES[] = {
+    "Timer", NULL
+};
+static const char *TC_STD_LOG_TYPES[] = {
+    "Logger", NULL
+};
+
+/* 根据 import 模块名返回该模块提供的类型列表（返回 NULL 表示无新增类型） */
+static const char **tc_module_types(const char *module) {
+    if (!module) return NULL;
+    /* 支持 std, std.*, 或具体模块路径 */
+    if (strcmp(module, "std") == 0) {
+        /* std 通用导入: 返回所有 std 类型 */
+        return NULL; /* 用 tc_is_std_imported_type 单独处理 */
+    }
+    if (strncmp(module, "std.concurrent", 14) == 0) return TC_STDCONCURRENT_TYPES;
+    if (strncmp(module, "std.io", 6) == 0) return TC_STD_IO_TYPES;
+    if (strncmp(module, "std.json", 8) == 0) return TC_STD_JSON_TYPES;
+    if (strncmp(module, "std.time", 8) == 0) return TC_STD_TIME_TYPES;
+    if (strncmp(module, "std.log", 7) == 0) return TC_STD_LOG_TYPES;
+    return NULL;
+}
+
+/* 检查是否是已被 import 的类型（用于 std 通用导入场景） */
+static int tc_is_std_imported_type(const char *name, int import_std_wildcard) {
+    if (!import_std_wildcard) return 0;
+    static const char *std_types[] = {
+        "Channel", "Future", "Mutex", "ActorGroup",
+        "File", "Path",
+        "JSON",
+        "Timer",
+        "Logger",
+        NULL
+    };
+    for (int i = 0; std_types[i]; i++) {
+        if (strcmp(name, std_types[i]) == 0) return 1;
+    }
+    return 0;
+}
+
 /* 判断是否是数字类型 */
 static int tc_is_int_type(const char *name) {
     return name && (
@@ -175,9 +241,44 @@ int typecheck_program(ASTNode *ast, TypeCheckResult *result) {
 
     int total_errs = 0;
 
-    /* 收集所有 Actor 名称作为类型集合 */
+    /* 收集所有 Actor 名称 + import 的类型名作为类型集合 */
     const char **actor_types = NULL;
     size_t atype_count = 0;
+
+    /* 先解析 import 声明，收集导入的类型 */
+    for (size_t i = 0; i < ast->child_count; i++) {
+        ASTNode *ch = ast->children[i];
+        if (!ch || ch->type != NODE_IMPORT) continue;
+        const char *mod = (const char *)ch->data;
+        if (!mod) continue;
+
+        /* 通用 std 导入: 添加所有 std 类型 */
+        if (strcmp(mod, "std") == 0) {
+            const char *all_std[] = {
+                "Channel", "Future", "Mutex", "ActorGroup",
+                "File", "Path", "JSON", "Timer", "Logger",
+                NULL
+            };
+            for (int k = 0; all_std[k]; k++) {
+                atype_count++;
+                actor_types = (const char **)realloc(actor_types, atype_count * sizeof(char *));
+                actor_types[atype_count - 1] = all_std[k];
+            }
+            continue;
+        }
+
+        /* 具体模块导入: 查找模块提供的类型 */
+        const char **mod_types = tc_module_types(mod);
+        if (mod_types) {
+            for (int k = 0; mod_types[k]; k++) {
+                atype_count++;
+                actor_types = (const char **)realloc(actor_types, atype_count * sizeof(char *));
+                actor_types[atype_count - 1] = mod_types[k];
+            }
+        }
+    }
+
+    /* 再收集所有 Actor 类型名 */
     for (size_t i = 0; i < ast->child_count; i++) {
         ASTNode *ch = ast->children[i];
         if (!ch || ch->type != NODE_ACTOR) continue;

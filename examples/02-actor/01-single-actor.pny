@@ -1,0 +1,34 @@
+// 01-single-actor.pny - 单个 Actor
+//
+// [CONCEPT] actor: 并发单元, 独立内存空间
+// [CONCEPT] fun: 同步函数, be: 异步行为
+// [CONCEPT] var: actor 内可读写字段
+
+actor Counter {
+  var count: U32 = 0
+
+  fun get_count(): U32 => {
+    return count
+  }
+
+  be increment() => {
+    count += 1
+  }
+
+  be reset() => {
+    count = 0
+  }
+}
+
+actor main {
+  new create() => {
+    var c: Counter = Counter()
+    print(c.get_count())
+    c.increment()
+    print(c.get_count())
+    c.increment()
+    print(c.get_count())
+    c.reset()
+    print(c.get_count())
+  }
+}

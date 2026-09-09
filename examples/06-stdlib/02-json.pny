@@ -1,0 +1,17 @@
+// 02-json.pny - JSON 处理
+//
+// [CONCEPT] JSON 解析与生成
+
+actor main {
+  new create() => {
+    var json_str: String = "{"name":"Pony++","version":"1.0"}"
+    var obj: JSON = parse_json(json_str)
+    print(obj.get("name"))
+    print(obj.get("version"))
+
+    var new_obj: JSON = JSON()
+    new_obj.set("key1", "value1")
+    new_obj.set("key2", "value2")
+    print(new_obj.to_string())
+  }
+}

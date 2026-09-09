@@ -1,0 +1,31 @@
+// 02-control-flow.pny - 控制流: if / else / match / while
+//
+// [CONCEPT] if/else: 条件判断, 花括号包裹语句
+// [CONCEPT] match: 穷尽模式匹配 (类似 Rust match)
+// [CONCEPT] while: 条件循环
+
+actor main {
+  new create() => {
+    var score: U32 = 85
+    if score >= 90 {
+      print("A")
+    } else if score >= 80 {
+      print("B")
+    } else {
+      print("F")
+    }
+
+    var color: String = "red"
+    match color {
+      "red"   => print("stop")
+      "green" => print("go")
+      _       => print("other")
+    }
+
+    var i: U32 = 0
+    while i < 3 {
+      print(i)
+      i += 1
+    }
+  }
+}

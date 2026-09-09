@@ -1,0 +1,24 @@
+// 03-multiple-actors.pny - 多 Actor 协作
+//
+// [CONCEPT] 生产者-消费者模式
+
+actor Producer {
+  be produce() => {
+    print("Producer started")
+  }
+}
+
+actor Consumer {
+  be consume() => {
+    print("Consumer ready")
+  }
+}
+
+actor main {
+  new create() => {
+    var p: Producer = Producer()
+    var c: Consumer = Consumer()
+    p.produce()
+    c.consume()
+  }
+}
