@@ -1,4 +1,7 @@
 actor main {
+  // Pony++ 关键词表 (用于 bootstrap 自举词法分析)
+  // 关键词: actor class be fun new match var val let
+
   var pos: U32
   var count: U32
   var src: String

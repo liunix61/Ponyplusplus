@@ -157,6 +157,30 @@ static const char *cg_type_of(ASTNode *n, const char **actor_types, size_t atc) 
     return name;
 }
 
+/* 内置类型名 → C 类型名（不依赖 actor_types，用于 var/let 声明） */
+static const char *cg_builtin_type(const char *name) {
+    if (!name) return "int";
+    if (strcmp(name, "U8") == 0) return "unsigned char";
+    if (strcmp(name, "U16") == 0) return "unsigned short";
+    if (strcmp(name, "U32") == 0) return "unsigned int";
+    if (strcmp(name, "U64") == 0) return "unsigned long long";
+    if (strcmp(name, "I8") == 0) return "signed char";
+    if (strcmp(name, "I16") == 0) return "signed short";
+    if (strcmp(name, "I32") == 0) return "signed int";
+    if (strcmp(name, "I64") == 0) return "signed long long";
+    if (strcmp(name, "F32") == 0) return "float";
+    if (strcmp(name, "F64") == 0) return "double";
+    if (strcmp(name, "String") == 0) return "const char *";
+    if (strcmp(name, "Char") == 0) return "char";
+    if (strcmp(name, "Bool") == 0) return "int";
+    if (strcmp(name, "Int") == 0) return "long long";
+    if (strcmp(name, "None") == 0 || strcmp(name, "NoneType") == 0) return "void";
+    if (strcmp(name, "List") == 0) return "PnyList *";
+    if (strcmp(name, "Set") == 0) return "PnySet *";
+    if (strcmp(name, "Map") == 0) return "PnyMap *";
+    return name;
+}
+
 static char *cg_cstr_escape(const char *s, char *buf, size_t sz) {
     size_t j = 0;
     for (size_t i = 0; s && s[i] && j < sz - 3; i++) {
@@ -481,16 +505,48 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 cg_emit_raw(cg, "int _match_expr = ");
                 cg_expr(cg, n->children[0]);
                 cg_emit_raw(cg, ";\n");
+
+                int first_concrete = 1;
+                int emitted_wildcard = 0;
+
                 for (size_t i = 1; i < n->child_count; i++) {
                     ASTNode *arm = n->children[i];
                     if (!arm || arm->child_count < 2) continue;
-                    cg_emit_raw(cg, "if (");
-                    cg_expr(cg, arm->children[0]);
-                    cg_emit_raw(cg, " == _match_expr) {\n");
-                    cg_expr(cg, arm->children[1]);
-                    cg_emit_raw(cg, "; } else ");
+
+                    ASTNode *pat = arm->children[0];
+                    int is_wildcard = (pat && pat->type == NODE_IDENT && pat->data &&
+                                       strcmp((const char *)pat->data, "_") == 0);
+
+                    if (is_wildcard) {
+                        /* 通配符: else { ... } */
+                        cg_emit_raw(cg, "else { ");
+                        cg_expr(cg, arm->children[1]);
+                        cg_emit_raw(cg, "; }");
+                        emitted_wildcard = 1;
+                    } else {
+                        /* 具体模式: if (pat == _match_expr) { ... } */
+                        if (first_concrete) {
+                            cg_emit_raw(cg, "if (");
+                            first_concrete = 0;
+                        } else {
+                            cg_emit_raw(cg, "else if (");
+                        }
+                        cg_expr(cg, pat);
+                        cg_emit_raw(cg, " == _match_expr) {");
+                        cg_expr(cg, arm->children[1]);
+                        cg_emit_raw(cg, "; }");
+                    }
                 }
-                cg_emit_raw(cg, "{ }\n");
+
+                if (first_concrete) {
+                    /* 无有效分支 */
+                    cg_emit_raw(cg, "\n");
+                } else if (!emitted_wildcard) {
+                    /* 有具体分支但无通配符，补 catch-all */
+                    cg_emit_raw(cg, " else { }\n");
+                } else {
+                    cg_emit_raw(cg, "\n");
+                }
             }
             break;
         }
@@ -673,8 +729,9 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
         case NODE_LET: {
             if (!n->data) break;
             if (n->child_count > 0 && n->children[0]->type == NODE_CAP && n->children[0]->data && strcmp((const char *)n->children[0]->data, "type") == 0) {
-                /* val y: Type = expr → Type y = expr; */
-                cg_emit_raw(cg, "%s %s", (const char *)n->children[0]->children[0]->data, n->data);
+                /* val y: Type = expr → Ctype y = expr; */
+                const char *ptype = cg_builtin_type((const char *)n->children[0]->children[0]->data);
+                cg_emit_raw(cg, "%s %s", ptype, n->data);
                 if (n->child_count > 1) {
                     cg_emit_raw(cg, " = ");
                     cg_expr(cg, n->children[1]);
@@ -695,8 +752,9 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
         case NODE_VAR: {
             if (!n->data) break;
             if (n->child_count > 0 && n->children[0]->type == NODE_CAP && n->children[0]->data && strcmp((const char *)n->children[0]->data, "type") == 0) {
-                /* var x: Type = expr → Type x = expr; */
-                cg_emit_raw(cg, "%s %s", (const char *)n->children[0]->children[0]->data, n->data);
+                /* var x: Type = expr → Ctype x = expr; */
+                const char *ptype = cg_builtin_type((const char *)n->children[0]->children[0]->data);
+                cg_emit_raw(cg, "%s %s", ptype, n->data);
                 if (n->child_count > 1) {
                     cg_emit_raw(cg, " = ");
                     cg_expr(cg, n->children[1]);

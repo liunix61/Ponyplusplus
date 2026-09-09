@@ -247,7 +247,12 @@ static ASTNode *parse_statement(Parser *p) {
             if (match(p, TK_COLON)) {
                 advance(p);
                 ASTNode *type = parse_type(p);
-                if (type && node) ast_node_add_child(node, type);
+                /* 与 val 一致：用 NODE_CAP(data="type") 包装类型，
+                   codegen 通过识别 NODE_CAP.data=="type" 来提取类型名 */
+                ASTNode *wrapper = ast_node_new(NODE_CAP, line, col);
+                if (wrapper) wrapper->data = s_strdup("type");
+                if (wrapper && type) ast_node_add_child(wrapper, type);
+                if (wrapper && node) ast_node_add_child(node, wrapper);
             }
             if (match(p, TK_EQ)) {
                 advance(p);
@@ -273,7 +278,10 @@ static ASTNode *parse_statement(Parser *p) {
             if (match(p, TK_COLON)) {
                 advance(p);
                 ASTNode *type = parse_type(p);
-                if (type && node) ast_node_add_child(node, type);
+                ASTNode *wrapper = ast_node_new(NODE_CAP, line, col);
+                if (wrapper) wrapper->data = s_strdup("type");
+                if (wrapper && type) ast_node_add_child(wrapper, type);
+                if (wrapper && node) ast_node_add_child(node, wrapper);
             }
             if (match(p, TK_EQ)) {
                 advance(p);

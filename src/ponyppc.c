@@ -41,6 +41,7 @@ static void print_usage(const char *prog) {
     printf("  --ast        输出 AST\n");
     printf("  --ast-dot    输出 DOT 格式的 AST 图\n");
     printf("  --pretty     美化输出 (pretty print)\n");
+    printf("  --bootstrap  编译内置 bootstrap 模块\n");
     printf("  --version    显示版本信息\n");
     printf("  -h, --help   显示帮助\n");
     printf("\n子命令:\n");

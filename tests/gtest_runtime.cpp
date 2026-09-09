@@ -9,6 +9,20 @@
 #include <stdlib.h>
 #include <assert.h>
 
+/* 项目根目录 (用于 P4Bootstrap 测试的相对路径解析) */
+static const char *p4_root(void) {
+    const char *env = getenv("PONYPP_ROOT");
+    if (env && env[0]) return env;
+    return "/home/liunix/Ponyplusplus";
+}
+
+/* 打开项目根目录下的文件 */
+static FILE *p4_open(const char *relpath, const char *mode) {
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/%s", p4_root(), relpath);
+    return fopen(path, mode);
+}
+
 void actor_behavior_dummy(PnyActor *self, PnyMessage *msg) {
     (void)self;
     (void)msg;
@@ -947,7 +961,7 @@ TEST(P4Bootstrap, CompilerFilesExist) {
     const char *files[] = {"compiler/lexer.pny", "compiler/parser.pny",
                            "compiler/codegen.pny", "compiler/main.pny"};
     for (int i = 0; i < 4; i++) {
-        FILE *f = fopen(files[i], "r");
+        FILE *f = p4_open(files[i], "r");
         EXPECT_TRUE(f != nullptr) << files[i];
         if (f) fclose(f);
     }
@@ -958,7 +972,7 @@ TEST(P4Bootstrap, StdlibFilesExist) {
                            "stdlib/std/io.pny", "stdlib/std/actor.pny",
                            "stdlib/std/json.pny", "stdlib/std/math.pny"};
     for (int i = 0; i < 6; i++) {
-        FILE *f = fopen(files[i], "r");
+        FILE *f = p4_open(files[i], "r");
         EXPECT_TRUE(f != nullptr) << files[i];
         if (f) fclose(f);
     }
@@ -968,7 +982,7 @@ TEST(P4Bootstrap, CompilerSourceNonEmpty) {
     const char *files[] = {"compiler/lexer.pny", "compiler/parser.pny",
                            "compiler/codegen.pny", "compiler/main.pny"};
     for (int i = 0; i < 4; i++) {
-        FILE *f = fopen(files[i], "r");
+        FILE *f = p4_open(files[i], "r");
         if (!f) continue;
         fseek(f, 0, SEEK_END);
         long size = ftell(f);
@@ -978,7 +992,7 @@ TEST(P4Bootstrap, CompilerSourceNonEmpty) {
 }
 
 TEST(P4Bootstrap, LexerKeywords) {
-    FILE *f = fopen("compiler/lexer.pny", "r");
+    FILE *f = p4_open("compiler/lexer.pny", "r");
     ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
@@ -998,7 +1012,7 @@ TEST(P4Bootstrap, LexerKeywords) {
 }
 
 TEST(P4Bootstrap, ParserASTTypes) {
-    FILE *f = fopen("compiler/parser.pny", "r");
+    FILE *f = p4_open("compiler/parser.pny", "r");
     ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
@@ -1016,7 +1030,7 @@ TEST(P4Bootstrap, ParserASTTypes) {
 }
 
 TEST(P4Bootstrap, CodegenTargets) {
-    FILE *f = fopen("compiler/codegen.pny", "r");
+    FILE *f = p4_open("compiler/codegen.pny", "r");
     ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
@@ -1033,7 +1047,7 @@ TEST(P4Bootstrap, CodegenTargets) {
 }
 
 TEST(P4Bootstrap, PonyppcBootstrapFlag) {
-    FILE *f = fopen("src/ponyppc.c", "r");
+    FILE *f = p4_open("src/ponyppc.c", "r");
     ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
@@ -1049,7 +1063,7 @@ TEST(P4Bootstrap, PonyppcBootstrapFlag) {
 }
 
 TEST(P4Bootstrap, ToolBootstrapImpl) {
-    FILE *f = fopen("src/ponypp/tool.c", "r");
+    FILE *f = p4_open("src/ponypp/tool.c", "r");
     ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
@@ -1065,7 +1079,7 @@ TEST(P4Bootstrap, ToolBootstrapImpl) {
 }
 
 TEST(P4Bootstrap, ToolEnumHasBootstrap) {
-    FILE *f = fopen("include/ponypp/tool.h", "r");
+    FILE *f = p4_open("include/ponypp/tool.h", "r");
     ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
@@ -1080,7 +1094,7 @@ TEST(P4Bootstrap, ToolEnumHasBootstrap) {
 }
 
 TEST(P4Bootstrap, StringStdlibAPI) {
-    FILE *f = fopen("stdlib/std/string.pny", "r");
+    FILE *f = p4_open("stdlib/std/string.pny", "r");
     ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
@@ -1098,7 +1112,7 @@ TEST(P4Bootstrap, StringStdlibAPI) {
 }
 
 TEST(P4Bootstrap, ListStdlibAPI) {
-    FILE *f = fopen("stdlib/std/list.pny", "r");
+    FILE *f = p4_open("stdlib/std/list.pny", "r");
     ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
@@ -1116,7 +1130,7 @@ TEST(P4Bootstrap, ListStdlibAPI) {
 }
 
 TEST(P4Bootstrap, IOSTDlibAPI) {
-    FILE *f = fopen("stdlib/std/io.pny", "r");
+    FILE *f = p4_open("stdlib/std/io.pny", "r");
     ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);

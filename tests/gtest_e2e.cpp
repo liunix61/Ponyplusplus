@@ -8,12 +8,11 @@ static const char* find_bin() {
     if (env && env[0]) return env;
     /* Try multiple locations */
     const char* candidates[] = {
+        "/home/liunix/Ponyplusplus/build/ponyppc",
         "/home/liunix/Ponyplusplus/build-cmake/ponyppc",
-        "/home/liunix/Ponyplusplus/build-cmak/home/liunix/Ponyplusplus/build-cmake/ponyppc",
-        "/home/liunix/Ponyplusplus/bi/home/liunix/Ponyplusplus/build-cmake/ponyppc",
-        "./bi/home/liunix/Ponyplusplus/build-cmake/ponyppc",
-        "../../bi/home/liunix/Ponyplusplus/build-cmake/ponyppc",
-        "../bi/home/liunix/Ponyplusplus/build-cmake/ponyppc",
+        "./ponyppc",
+        "../../ponyppc",
+        "../ponyppc",
         nullptr
     };
     for (int i = 0; candidates[i]; i++) {
