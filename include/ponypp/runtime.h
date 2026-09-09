@@ -96,6 +96,7 @@ typedef struct PnyActor {
     size_t state_size;
     struct PnyActor *next;
     PnyMessage *messages;
+    PnyMessage *messages_tail;  /* Phase 5: O(1) 消息入队 */
     size_t message_count;
     size_t max_messages;
     ActorState actor_state;

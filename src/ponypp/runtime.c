@@ -164,13 +164,13 @@ int pny_actor_send(ActorRef *from, ActorRef *to, const char *method, void *arg, 
     m->sender.actor = from ? from->actor : NULL;
     /* 分配 exactly-once 消息 ID */
     m->msg_id = a->next_msg_id++;
-    if (a->messages) {
-        PnyMessage *tail = a->messages;
-        while (tail->next) tail = tail->next;
-        tail->next = m;
+    /* Phase 5: O(1) 尾部追加 */
+    if (a->messages_tail) {
+        a->messages_tail->next = m;
     } else {
         a->messages = m;
     }
+    a->messages_tail = m;
     a->message_count++;
     if (pny_runtime_global) pny_runtime_global->stats.messages_sent++;
     return 0;
@@ -194,14 +194,13 @@ int pny_actor_call(ActorRef *from, ActorRef *to, const char *method, void *arg, 
     reply->done = 0;
     reply->error = 0;
     m->reply = reply;
-    /* 入队 */
-    if (a->messages) {
-        PnyMessage *tail = a->messages;
-        while (tail->next) tail = tail->next;
-        tail->next = m;
+    /* 入队 - Phase 5: O(1) 尾部追加 */
+    if (a->messages_tail) {
+        a->messages_tail->next = m;
     } else {
         a->messages = m;
     }
+    a->messages_tail = m;
     a->message_count++;
     if (pny_runtime_global) pny_runtime_global->stats.messages_sent++;
     /* 同步等待：调度器 tick 直到有结果（最多 1000 次防止死循环） */
@@ -251,6 +250,7 @@ void pny_scheduler_tick(PnyRuntime *r) {
         if (a->messages && a->actor_state == ACTOR_STATE_RUNNING) {
             PnyMessage *m = a->messages;
             a->messages = m->next;
+            if (!a->messages) a->messages_tail = NULL;  /* Phase 5: 队列空, 重置tail */
             a->message_count--;
             /* exactly-once 去重 */
             if (m->msg_id > 0 && pny_msg_delivered(a, m->msg_id) == 1) {

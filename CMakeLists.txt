@@ -63,6 +63,7 @@ set(PONYPP_SRCS
     src/ponypp/pkg.c
     src/browser.c
     src/debugger.c
+    src/version_compat.c
 )
 
 # ---- Library (no driver, no main) ----
@@ -104,6 +105,10 @@ if(BUILD_TESTING)
         add_test(NAME ${tname} COMMAND ${tname})
     endforeach()
 endif()
+
+# ---- Benchmarks ----
+add_executable(bench_runtime benchmarks/bench_runtime.c)
+target_link_libraries(bench_runtime PRIVATE ponypp_lib m pthread)
 
 # ---- Install ----
 install(TARGETS ponyppc ponypp_lib
