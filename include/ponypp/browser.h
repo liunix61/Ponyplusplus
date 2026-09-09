@@ -85,11 +85,9 @@ int browser_atomic_store(BrowserRuntime *rt, int32_t *ptr, int32_t value);
 
 /* ======================== Emscripten 集成 ======================== */
 
-#ifdef __EMSCRIPTEN__
-/* Emscripten 特有: 直接调用 EM_ASM */
+/* Emscripten 环境下调用 EM_ASM, 非 Emscripten 下为 stub */
 void browser_emscripten_init(void);
 void browser_emscripten_post_worker(const char *msg);
-#endif
 
 #ifdef __cplusplus
 }

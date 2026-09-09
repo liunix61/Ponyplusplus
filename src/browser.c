@@ -229,8 +229,8 @@ int browser_call_js(BrowserRuntime *rt, const char *func_name,
 
 int browser_call_actor(BrowserRuntime *rt, int actor_id,
                        const char *method, const void *arg, size_t arg_size) {
-    (void)actor_id; (void)method; (void)arg; (void)arg_size;
-    if (!rt) return -1;
+    (void)actor_id; (void)arg; (void)arg_size;
+    if (!rt || !method) return -1;
     rt->stats.messages_posted++;
     fprintf(stderr, "[browser] stub: call_actor(%d, %s)\n", actor_id, method ? method : "?");
     return 0;
