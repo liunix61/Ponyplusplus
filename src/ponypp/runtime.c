@@ -154,11 +154,16 @@ int pny_actor_send(ActorRef *from, ActorRef *to, const char *method, void *arg, 
     if (a->actor_state != ACTOR_STATE_RUNNING &&
         a->actor_state != ACTOR_STATE_INIT) return -2;
     if (a->message_count >= a->max_messages) return -3;
+    /* 背压检查 */
+    BackpressureState bp = pny_backpressure_check(a);
+    if (bp == BACKPRESSURE_FULL) return -6; /* 队列满，通知发送方 */
     PnyMessage *m = pny_msg_new(method, arg, arg_size);
     if (!m) return -4;
     m->sender.id = from ? from->id : -1;
     m->sender.name = from ? s_strdup(from->name) : NULL;
     m->sender.actor = from ? from->actor : NULL;
+    /* 分配 exactly-once 消息 ID */
+    m->msg_id = a->next_msg_id++;
     if (a->messages) {
         PnyMessage *tail = a->messages;
         while (tail->next) tail = tail->next;

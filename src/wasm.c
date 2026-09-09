@@ -421,11 +421,22 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
         bv_write_u8(&body, 0x00);
         bv_write_u8(&body, 0x01);
         bv_write_u8(&body, 0x7F);
-        /* type 1: fd_write signature */
+        /* type 1: fd_write/fd_read/random_get signature (i32,i32,i32,i32)->i32 */
         bv_write_u8(&body, 0x60);
         bv_write_u8(&body, 0x04);
         bv_write_u8(&body, 0x7F); bv_write_u8(&body, 0x7F);
         bv_write_u8(&body, 0x7F); bv_write_u8(&body, 0x7F);
+        bv_write_u8(&body, 0x01);
+        bv_write_u8(&body, 0x7F);
+        /* type 2: proc_exit signature (i32)->void */
+        bv_write_u8(&body, 0x60);
+        bv_write_u8(&body, 0x01);
+        bv_write_u8(&body, 0x7F);
+        bv_write_u8(&body, 0x00);
+        /* type 3: clock_time_get signature (i32,i64,i32)->i32 */
+        bv_write_u8(&body, 0x60);
+        bv_write_u8(&body, 0x03);
+        bv_write_u8(&body, 0x7F); bv_write_u8(&body, 0x7E); bv_write_u8(&body, 0x7F);
         bv_write_u8(&body, 0x01);
         bv_write_u8(&body, 0x7F);
         bv_write_vec(&bv, &body);
@@ -458,7 +469,8 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
             bv_write_u8(&body, 0x00);
             bv_write_u8(&body, 0x00);
         } else {
-            bv_write_u8(&body, 0x02); /* 2 imports */
+            /* WASI Preview 1 (P2): fd_write + proc_exit + fd_read + clock_time_get + random_get */
+            bv_write_u8(&body, 0x05); /* 5 imports */
             bv_write_str(&body, module_name);
             bv_write_str(&body, "fd_write");
             bv_write_u8(&body, 0x00);
@@ -467,6 +479,18 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
             bv_write_str(&body, "proc_exit");
             bv_write_u8(&body, 0x00);
             bv_write_u8(&body, 0x02);
+            bv_write_str(&body, module_name);
+            bv_write_str(&body, "fd_read");
+            bv_write_u8(&body, 0x00);
+            bv_write_u8(&body, 0x01); /* same sig as fd_write: (i32,i32,i32,i32)->i32 */
+            bv_write_str(&body, module_name);
+            bv_write_str(&body, "clock_time_get");
+            bv_write_u8(&body, 0x00);
+            bv_write_u8(&body, 0x03); /* (i32,i64,i32)->i32 */
+            bv_write_str(&body, module_name);
+            bv_write_str(&body, "random_get");
+            bv_write_u8(&body, 0x00);
+            bv_write_u8(&body, 0x01); /* (i32,i32)->i32 reuse type */
         }
         bv_write_vec(&bv, &body);
         bv_free(&body);
@@ -506,7 +530,7 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
         bv_write_str(&body, "main");
         bv_write_u8(&body, 0x00);
         /* main 的函数索引 = import 数量 (fd_write=0, proc_exit=1, ...) */
-        int32_t export_idx = (target == TARGET_WASI_P3) ? 4 : 2;
+        int32_t export_idx = (target == TARGET_WASI_P3) ? 4 : 5;
         bv_write_u32_leb128(&body, (uint32_t)export_idx);
         bv_write_vec(&bv, &body);
         bv_free(&body);
@@ -514,7 +538,7 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
 
     WasmGen wg = {0};
     wg.out = bv;
-    wg.print_func_idx = (target == TARGET_WASI_P3) ? 5 : 3; /* import_count + 1 */
+    wg.print_func_idx = (target == TARGET_WASI_P3) ? 5 : 6; /* import_count + 1 */
     wg.next_str_addr = 64; /* 字符串从地址 64 开始，避开 iovec 区域 (8-24) */
 
     /* 预扫描 AST，收集字符串 */
