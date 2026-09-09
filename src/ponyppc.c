@@ -253,9 +253,20 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
         codegen_free(cg);
         fclose(sf);
 
+        /* AOT 优化分级: 根据 OptLevel 映射 gcc 优化选项 */
+        const char *opt_flags = "";
+        switch (cfg->optimize) {
+            case OPT_OPTIMIZE_0: opt_flags = "-O0"; break;
+            case OPT_OPTIMIZE_1: opt_flags = "-O1"; break;
+            case OPT_OPTIMIZE_2: opt_flags = "-O2"; break;
+            case OPT_OPTIMIZE_3: opt_flags = "-O3 -funroll-loops"; break;
+            case OPT_OPTIMIZE_4: opt_flags = "-O3 -funroll-loops -flto -march=native"; break;
+            default: opt_flags = "-O2"; break;
+        }
+        /* AOT 优化分级: 根据 OptLevel 映射 gcc 优化选项 */
         char cmdbuf[4096];
         int cmdlen = snprintf(cmdbuf, sizeof(cmdbuf),
-            "gcc -std=c11 -Wall -o %s %s", binary_output, c_output);
+            "gcc -std=c11 -Wall %s -o %s %s", opt_flags, binary_output, c_output);
         if (cmdlen <= 0 || cmdlen >= (int)sizeof(cmdbuf) || system(cmdbuf) != 0) {
             s_free(binary_output);
             s_free(c_output);

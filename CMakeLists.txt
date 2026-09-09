@@ -61,6 +61,7 @@ set(PONYPP_SRCS
     src/ponypp/distributed.c
     src/ponypp/ffi.c
     src/ponypp/pkg.c
+    src/browser.c
 )
 
 # ---- Library (no driver, no main) ----
