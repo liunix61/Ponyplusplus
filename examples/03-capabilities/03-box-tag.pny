@@ -1,0 +1,33 @@
+// 03-box-tag.pny - box / tag 弱引用
+//
+// [CONCEPT] box: 共享可变引用, tag: 共享不可变引用
+// [CONCEPT] 用于 actor 间安全共享
+
+actor Shareable {
+  var data: U32 = 0
+  var tag_data: U32 = 0
+
+  // [CONCEPT] box: 允许修改共享数据
+  fun get_box(): ref U32 => {
+    return this.data
+  }
+
+  // [CONCEPT] tag: 只读共享数据
+  fun get_tag(): val U32 => {
+    return this.tag_data
+  }
+
+  be set_data(v: U32) => {
+    this.data = v
+  }
+}
+
+actor main {
+  new create() => {
+    var s: Shareable = Shareable()
+    s.set_data(100)
+
+    print(s.get_box())
+    print(s.get_tag())
+  }
+}

@@ -1,0 +1,21 @@
+// 01-call-c.pny - FFI 调用 C 函数
+//
+// [CONCEPT] Pony++ 通过 FFI 调用 C 函数
+// [CONCEPT] 编译到 native 时使用, 编译到 wasm 时使用 wasm-interop
+
+actor main {
+  new create() => {
+    // [CONCEPT] FFI 声明 (实际实现需要 @ffi 注解)
+    // fun extern strlen(s: String): U64 @ffi("strlen")
+    // print(strlen("hello"))
+
+    // 模拟: 计算字符串长度
+    var s: String = "hello pony"
+    print(s.len())
+
+    // [CONCEPT] 数值计算 (模拟 C 库调用)
+    var x: U32 = 42
+    var y: U32 = 58
+    print(x + y)
+  }
+}

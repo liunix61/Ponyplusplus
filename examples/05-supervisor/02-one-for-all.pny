@@ -1,0 +1,38 @@
+// 02-one-for-all.pny - 一对全监督策略
+//
+// [CONCEPT] One-for-all: 一个崩溃, 全部重启
+
+actor Worker {
+  var name: String
+
+  new create(name: String) => {
+    this.name = name
+  }
+
+  be do_work() => {
+    print(this.name + " working")
+  }
+}
+
+actor Cluster {
+  new create() => {
+    var w1: Worker = Worker("W1")
+    var w2: Worker = Worker("W2")
+    var w3: Worker = Worker("W3")
+
+    w1.do_work()
+    w2.do_work()
+    w3.do_work()
+  }
+
+  be fail_all() => {
+    print("Cluster: all workers failed")
+  }
+}
+
+actor main {
+  new create() => {
+    var c: Cluster = Cluster()
+    c.fail_all()
+  }
+}

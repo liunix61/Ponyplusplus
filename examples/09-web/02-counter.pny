@@ -1,0 +1,42 @@
+// 02-counter.pny - 浏览器 WASM 组件: 计数器
+//
+// [CONCEPT] 交互组件: 状态管理 + 事件处理
+
+actor Counter {
+  var count: U32 = 0
+
+  new create() => {
+    print("Counter initialized")
+  }
+
+  be increment() => {
+    this.count += 1
+  }
+
+  be decrement() => {
+    if this.count > 0 {
+      this.count -= 1
+    }
+  }
+
+  fun get_count(): U32 => {
+    return this.count
+  }
+
+  be reset() => {
+    this.count = 0
+  }
+}
+
+actor main {
+  new create() => {
+    var c: Counter = Counter()
+    c.increment()
+    c.increment()
+    c.increment()
+    c.decrement()
+    print(c.get_count())
+    c.reset()
+    print(c.get_count())
+  }
+}

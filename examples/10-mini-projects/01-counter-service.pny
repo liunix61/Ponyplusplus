@@ -1,0 +1,66 @@
+// 01-counter-service.pny - 计数器服务
+//
+// [CONCEPT] 综合项目: Actor + 并发操作
+
+actor Counter {
+  var name: String
+  var value: U32 = 0
+
+  new create(name: String) => {
+    this.name = name
+  }
+
+  fun get_value(): U32 => {
+    return this.value
+  }
+
+  fun get_name(): String => {
+    return this.name
+  }
+
+  be increment() => {
+    this.value += 1
+    print(this.name)
+    print(this.value)
+  }
+
+  be decrement() => {
+    if this.value > 0 {
+      this.value -= 1
+    }
+    print(this.name)
+    print(this.value)
+  }
+
+  be reset() => {
+    this.value = 0
+    print(this.name + ": 0")
+  }
+}
+
+actor CounterService {
+  new create() => {
+    var c1: Counter = Counter("hits")
+    var c2: Counter = Counter("visits")
+    var c3: Counter = Counter("errors")
+
+    c1.increment()
+    c1.increment()
+    c1.increment()
+    c2.increment()
+    c3.increment()
+
+    print("hits: " + c1.get_name())
+    print(c1.get_value())
+    print("visits: " + c2.get_name())
+    print(c2.get_value())
+    print("errors: " + c3.get_name())
+    print(c3.get_value())
+  }
+}
+
+actor main {
+  new create() => {
+    var service: CounterService = CounterService()
+  }
+}

@@ -1,0 +1,37 @@
+// 01-greeter.pny - 浏览器 WASM 组件: 消息组件
+//
+// [CONCEPT] WASM 组件: 编译为 WebAssembly, 在浏览器运行
+//
+// 编译: ./bin/ponyppc --target component -o greeter.ponypp 01-greeter.pny
+
+actor Greeter {
+  var name: String
+
+  new create(name: String) => {
+    this.name = name
+  }
+
+  // [CONCEPT] 导出方法: 浏览器可调用
+  fun greet(): String => {
+    return "Hello, " + this.name + "!"
+  }
+
+  // [CONCEPT] 设置名字
+  be set_name(new_name: String) => {
+    this.name = new_name
+  }
+
+  fun get_name(): String => {
+    return this.name
+  }
+}
+
+actor main {
+  new create() => {
+    var g: Greeter = Greeter("World")
+    print(g.greet())
+
+    g.set_name("Browser")
+    print(g.greet())
+  }
+}

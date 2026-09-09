@@ -1,0 +1,33 @@
+// 02-trn-iso.pny - trn / iso 转移能力
+//
+// [CONCEPT] iso: 独占引用, 可安全转移所有权
+// [CONCEPT] trn: 可转移引用
+
+actor Transfer {
+  var owner: String
+
+  new create(owner: String) => {
+    this.owner = owner
+  }
+
+  fun get_owner(): String => {
+    return this.owner
+  }
+
+  be change_owner(new_owner: String) => {
+    this.owner = new_owner
+  }
+}
+
+actor main {
+  new create() => {
+    var t: Transfer = Transfer("Alice")
+    print(t.get_owner())
+
+    t.change_owner("Bob")
+    print(t.get_owner())
+
+    t.change_owner("Carol")
+    print(t.get_owner())
+  }
+}

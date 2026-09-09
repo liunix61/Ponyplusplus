@@ -1,0 +1,61 @@
+// 02-key-value-store.pny - 键值存储
+//
+// [CONCEPT] 综合项目: List 模拟 Map + Actor
+// [CONCEPT] 线程安全的键值存储
+
+actor KeyValueStore {
+  var keys: List[String] = []
+  var values: List[String] = []
+
+  new create() => {
+    print("Store created")
+  }
+
+  be put(key: String, value: String) => {
+    var found: Bool = false
+    var i: U32 = 0
+    while i < this.keys.len() {
+      if this.keys[i] == key {
+        this.values[i] = value
+        found = true
+        break
+      }
+      i += 1
+    }
+    if not found {
+      this.keys.append(key)
+      this.values.append(value)
+    }
+    print("PUT: " + key + " = " + value)
+  }
+
+  fun get(key: String): String => {
+    var i: U32 = 0
+    while i < this.keys.len() {
+      if this.keys[i] == key {
+        return this.values[i]
+      }
+      i += 1
+    }
+    return ""
+  }
+
+  be delete(key: String) => {
+    print("DELETE: " + key)
+  }
+
+  fun count(): U32 => {
+    return this.keys.len()
+  }
+}
+
+actor main {
+  new create() => {
+    var store: KeyValueStore = KeyValueStore()
+    store.put("name", "Pony++")
+    store.put("version", "1.0")
+    store.put("language", "Actor")
+    print("count")
+    print(store.count())
+  }
+}

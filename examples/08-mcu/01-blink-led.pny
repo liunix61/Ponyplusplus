@@ -1,0 +1,63 @@
+// 01-blink-led.pny - STM32 LED 闪烁
+//
+// [CONCEPT] MCU 目标: STM32 / ESP32
+// [CONCEPT] 数字 IO, GPIO 控制
+//
+// 编译: ./bin/ponyppc --target mcu --mcu stm32f4 -o blink 01-blink-led.pny
+
+actor Gpio {
+  var pin: U32
+  var state: Bool
+
+  new create(pin: U32) => {
+    this.pin = pin
+    this.state = false
+  }
+
+  // [CONCEPT] be 方法: 异步执行 GPIO 操作
+  be set_high() => {
+    this.state = true
+    print("GPIO HIGH")
+  }
+
+  be set_low() => {
+    this.state = false
+    print("GPIO LOW")
+  }
+
+  fun is_high(): Bool => {
+    return this.state
+  }
+}
+
+actor Timer {
+  var interval_ms: U32
+
+  new create(interval_ms: U32) => {
+    this.interval_ms = interval_ms
+  }
+
+  be start() => {
+    print("Timer started")
+  }
+
+  be stop() => {
+    print("Timer stopped")
+  }
+}
+
+actor main {
+  new create() => {
+    // [CONCEPT] STM32 PA5 (典型 LED 引脚)
+    var led: Gpio = Gpio(5)
+    var timer: Timer = Timer(500)
+    timer.start()
+
+    // 闪烁模式: 高 -> 低 -> 高
+    led.set_high()
+    led.set_low()
+    led.set_high()
+
+    timer.stop()
+  }
+}

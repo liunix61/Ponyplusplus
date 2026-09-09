@@ -1,0 +1,37 @@
+// 01-val-ref.pny - val / ref 引用能力
+//
+// [CONCEPT] val: 不可变引用, ref: 可变引用
+// [CONCEPT] 编译期能力系统保证并发安全
+
+actor Box {
+  var x: U32 = 0
+
+  // [CONCEPT] val: 返回不可变引用
+  fun get_val(): val U32 => {
+    return this.x
+  }
+
+  // [CONCEPT] ref: 返回可变引用
+  fun get_ref(): ref U32 => {
+    return this.x
+  }
+
+  be set_value(v: U32) => {
+    this.x = v
+  }
+}
+
+actor main {
+  new create() => {
+    var b: Box = Box()
+    b.set_value(42)
+
+    // val 不可修改
+    var v: val U32 = b.get_val()
+    print(v)
+
+    // ref 可以修改
+    var r: ref U32 = b.get_ref()
+    print(r)
+  }
+}

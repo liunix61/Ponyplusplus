@@ -1,0 +1,29 @@
+// 02-read-adc.pny - ESP32 ADC 读取
+//
+// [CONCEPT] ADC: 模数转换, 读取模拟传感器
+
+actor Adc {
+  var channel: U32
+  var value: U32 = 0
+
+  new create(channel: U32) => {
+    this.channel = channel
+  }
+
+  be read() => {
+    this.value = 2048
+    print("ADC read")
+  }
+
+  fun get_value(): U32 => {
+    return this.value
+  }
+}
+
+actor main {
+  new create() => {
+    var adc: Adc = Adc(3)
+    adc.read()
+    print(adc.get_value())
+  }
+}

@@ -1,0 +1,48 @@
+// 01-one-for-one.pny - 一对一监督策略
+//
+// [CONCEPT] Supervisor: 监控子 actor, 处理崩溃
+// [CONCEPT] One-for-one: 只重启崩溃的 actor
+
+actor Worker {
+  var name: String
+
+  new create(name: String) => {
+    this.name = name
+  }
+
+  be do_work() => {
+    print(this.name + " working")
+  }
+}
+
+actor Supervisor {
+  var name: String
+
+  new create(name: String) => {
+    this.name = name
+  }
+
+  be supervise() => {
+    print(this.name + " supervising")
+  }
+
+  be restart_child() => {
+    print(this.name + " restarting child")
+  }
+}
+
+actor main {
+  new create() => {
+    var s: Supervisor = Supervisor("MainSup")
+    s.supervise()
+
+    var w1: Worker = Worker("Worker-1")
+    var w2: Worker = Worker("Worker-2")
+
+    w1.do_work()
+    w2.do_work()
+
+    // 模拟崩溃恢复
+    s.restart_child()
+  }
+}

@@ -1,0 +1,42 @@
+// 03-error-recovery.pny - 错误恢复
+//
+// [CONCEPT] 错误传播, 重试, 降级
+
+actor Service {
+  var name: String
+  var failed: Bool = false
+
+  new create(name: String) => {
+    this.name = name
+  }
+
+  be call() => {
+    if this.failed {
+      print(this.name + ": failed")
+    } else {
+      print(this.name + ": success")
+    }
+  }
+
+  be fail() => {
+    this.failed = true
+  }
+
+  be recover() => {
+    this.failed = false
+    print(this.name + ": recovered")
+  }
+}
+
+actor main {
+  new create() => {
+    var s: Service = Service("API")
+    s.call()
+
+    s.fail()
+    s.call()
+
+    s.recover()
+    s.call()
+  }
+}
