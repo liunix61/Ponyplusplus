@@ -17,6 +17,7 @@
 #include <string.h>
 #include <time.h>
 #include "ponypp/runtime.h"
+#include "ponypp/gc.h"
 
 static double now_ms(void) {
     struct timespec ts;
@@ -235,6 +236,65 @@ static void bench_many_actors(int n) {
     pny_runtime_free(r);
 }
 
+/* ======================== 7. GC 分配 ======================== */
+
+static void bench_gc_alloc(int n) {
+    GCHeap *heap = gc_heap_new(1024 * 1024); /* 1MB */
+    if (!heap) return;
+    
+    double t0 = now_ms();
+    for (int i = 0; i < n; i++) {
+        void *p = gc_alloc(heap, 64);
+        if (!p) break; /* 空间满 */
+    }
+    double t1 = now_ms();
+    
+    print_result("GC 分配 (64B)", n, t1 - t0);
+    
+    size_t ss, fu, tu, ta, tf;
+    int gen;
+    gc_stats(heap, &ss, &fu, &tu, &gen, &ta, &tf);
+    printf("    from_used=%zu total_alloc=%zu generations=%d occupancy=%.2f\n",
+           fu, ta, gen, gc_occupancy(heap));
+    
+    gc_heap_free(heap);
+}
+
+/* ======================== 8. GC 回收 ======================== */
+
+static void bench_gc_collect(int n) {
+    GCHeap *heap = gc_heap_new(4 * 1024 * 1024); /* 4MB */
+    if (!heap) return;
+    
+    /* 分配一些对象 */
+    void **roots = (void **)malloc(sizeof(void *) * 100);
+    for (int i = 0; i < 100; i++) {
+        roots[i] = gc_alloc(heap, 128);
+    }
+    
+    /* 分配大量垃圾 */
+    for (int i = 0; i < n; i++) {
+        gc_alloc(heap, 64);
+    }
+    
+    double t0 = now_ms();
+    for (int i = 0; i < 10; i++) {
+        gc_collect(heap, roots, 100);
+        gc_flip(heap);
+    }
+    double t1 = now_ms();
+    
+    print_result("GC 回收 (10次, 100 roots)", 10, t1 - t0);
+    
+    size_t ss, fu, tu, ta, tf;
+    int gen;
+    gc_stats(heap, &ss, &fu, &tu, &gen, &ta, &tf);
+    printf("    generations=%d total_alloc=%zu total_freed=%zu\n", gen, ta, tf);
+    
+    free(roots);
+    gc_heap_free(heap);
+}
+
 /* ======================== 主函数 ======================== */
 
 int main(int argc, char *argv[]) {
@@ -266,6 +326,10 @@ int main(int argc, char *argv[]) {
     bench_end_to_end(N_E2E);
     printf("\n");
     bench_many_actors(N_MASS);
+    printf("\n");
+    bench_gc_alloc(N_CREATE);
+    printf("\n");
+    bench_gc_collect(N_SEND);
     
     printf("\n");
     printf("══════════════════════════════════════════════════════════════\n");
