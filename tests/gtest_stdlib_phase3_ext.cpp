@@ -12,28 +12,28 @@
 TEST(Network, TcpListenInvalidPort) {
     /* Port 0 should fail */
     PnySocket *s = pny_tcp_listen(0);
-    ASSERT_EQ(s, nullptr);
+    ASSERT_TRUE(s == nullptr);
     /* Port -1 should fail */
     s = pny_tcp_listen(-1);
-    ASSERT_EQ(s, nullptr);
+    ASSERT_TRUE(s == nullptr);
 }
 
 TEST(Network, TcpConnectInvalidHost) {
     /* Invalid host should return NULL */
     PnySocket *s = pny_tcp_connect("256.256.256.256", 80);
-    ASSERT_EQ(s, nullptr);
+    ASSERT_TRUE(s == nullptr);
 }
 
 TEST(Network, TcpConnectInvalidPort) {
     /* Port 0 should fail */
     PnySocket *s = pny_tcp_connect("127.0.0.1", 0);
-    ASSERT_EQ(s, nullptr);
+    ASSERT_TRUE(s == nullptr);
 }
 
 TEST(Network, TcpConnectNoServer) {
     /* Connect to a port with no listener should fail */
     PnySocket *s = pny_tcp_connect("127.0.0.1", 1);
-    ASSERT_EQ(s, nullptr);
+    ASSERT_TRUE(s == nullptr);
 }
 
 TEST(Network, TcpConnectValidHost) {
@@ -89,14 +89,14 @@ TEST(Network, TcpClose) {
 
 TEST(Profiler, NewAndFree) {
     PnyProfiler *p = pny_profiler_new();
-    ASSERT_NE(p, nullptr);
+    ASSERT_TRUE(p != nullptr);
     ASSERT_EQ(pny_profiler_sample_count(p), 0);
     pny_profiler_free(p);
 }
 
 TEST(Profiler, StartStop) {
     PnyProfiler *p = pny_profiler_new();
-    ASSERT_NE(p, nullptr);
+    ASSERT_TRUE(p != nullptr);
     pny_profiler_start(p);
     pny_profiler_stop(p);
     pny_profiler_free(p);
@@ -104,7 +104,7 @@ TEST(Profiler, StartStop) {
 
 TEST(Profiler, SampleCount) {
     PnyProfiler *p = pny_profiler_new();
-    ASSERT_NE(p, nullptr);
+    ASSERT_TRUE(p != nullptr);
     /* Should not sample when not started */
     pny_profiler_sample(p, 1, "method", 100);
     ASSERT_EQ(pny_profiler_sample_count(p), 0);
@@ -117,7 +117,7 @@ TEST(Profiler, SampleCount) {
 
 TEST(Profiler, SampleWhileRunning) {
     PnyProfiler *p = pny_profiler_new();
-    ASSERT_NE(p, nullptr);
+    ASSERT_TRUE(p != nullptr);
     pny_profiler_start(p);
     pny_profiler_sample(p, 1, "init", 1500);
     pny_profiler_sample(p, 2, "update", 2500);
@@ -139,7 +139,7 @@ TEST(Profiler, NullSafe) {
 
 TEST(Profiler, Export) {
     PnyProfiler *p = pny_profiler_new();
-    ASSERT_NE(p, nullptr);
+    ASSERT_TRUE(p != nullptr);
     pny_profiler_start(p);
     pny_profiler_sample(p, 1, "actor1_method", 1500000);
     pny_profiler_sample(p, 2, "actor2_method", 2500000);
@@ -152,7 +152,7 @@ TEST(Profiler, Export) {
 
     /* Verify file was created and has content */
     FILE *f = fopen(path, "r");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     char buf[1024];
     size_t n = fread(buf, 1, sizeof(buf) - 1, f);
     ASSERT_GT(n, 0);
@@ -160,12 +160,12 @@ TEST(Profiler, Export) {
     fclose(f);
 
     /* Check JSON structure */
-    ASSERT_NE(strstr(buf, "total_samples"), nullptr);
-    ASSERT_NE(strstr(buf, "3"), nullptr)
+    ASSERT_TRUE(strstr(buf, "total_samples") != nullptr);
+    ASSERT_TRUE(strstr(buf, "3") != nullptr)
         << "Expected count=3 in: " << buf;
-    ASSERT_NE(strstr(buf, "actor1_method"), nullptr);
-    ASSERT_NE(strstr(buf, "actor2_method"), nullptr);
-    ASSERT_NE(strstr(buf, "actor3_method"), nullptr);
+    ASSERT_TRUE(strstr(buf, "actor1_method") != nullptr);
+    ASSERT_TRUE(strstr(buf, "actor2_method") != nullptr);
+    ASSERT_TRUE(strstr(buf, "actor3_method") != nullptr);
 
     remove(path);
     pny_profiler_free(p);
@@ -173,19 +173,19 @@ TEST(Profiler, Export) {
 
 TEST(Profiler, ExportNullPath) {
     PnyProfiler *p = pny_profiler_new();
-    ASSERT_NE(p, nullptr);
+    ASSERT_TRUE(p != nullptr);
     ASSERT_EQ(pny_profiler_export(p, NULL), -1);
     pny_profiler_free(p);
 }
 
 TEST(Profiler, ExportNoSamples) {
     PnyProfiler *p = pny_profiler_new();
-    ASSERT_NE(p, nullptr);
+    ASSERT_TRUE(p != nullptr);
     const char *path = "/tmp/ponypp_profile_empty.json";
     int rc = pny_profiler_export(p, path);
     ASSERT_EQ(rc, 0);
     FILE *f = fopen(path, "r");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     fclose(f);
     remove(path);
     pny_profiler_free(p);
@@ -193,7 +193,7 @@ TEST(Profiler, ExportNoSamples) {
 
 TEST(Profiler, MultipleSamples) {
     PnyProfiler *p = pny_profiler_new();
-    ASSERT_NE(p, nullptr);
+    ASSERT_TRUE(p != nullptr);
     pny_profiler_start(p);
     for (int i = 0; i < 100; i++) {
         pny_profiler_sample(p, i % 5, "loop", (int64_t)(i * 1000));
@@ -220,15 +220,15 @@ TEST(Json, DeeplyNested) {
     /* Deeply nested JSON */
     const char *input = "{\"a\":{\"b\":{\"c\":{\"d\":[1,{\"e\":true}]}}}}";
     JsonValue *v = json_parse(input, strlen(input));
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     JsonValue *a = json_obj_get(v, "a");
-    ASSERT_NE(a, nullptr);
+    ASSERT_TRUE(a != nullptr);
     JsonValue *b = json_obj_get(a, "b");
-    ASSERT_NE(b, nullptr);
+    ASSERT_TRUE(b != nullptr);
     JsonValue *c = json_obj_get(b, "c");
-    ASSERT_NE(c, nullptr);
+    ASSERT_TRUE(c != nullptr);
     JsonValue *d = json_obj_get(c, "d");
-    ASSERT_NE(d, nullptr);
+    ASSERT_TRUE(d != nullptr);
     ASSERT_EQ(d->arr.count, 2);
     ASSERT_EQ(d->arr.items[0]->i, 1);
     ASSERT_TRUE(d->arr.items[1]->type == JSON_OBJECT);
@@ -240,9 +240,9 @@ TEST(Json, DeeplyNested) {
 TEST(Json, SpecialChars) {
     /* JSON with special characters */
     JsonValue *v = json_parse("{\"msg\":\"hello\\tworld\\r\\n\"}", 30);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     JsonValue *msg = json_obj_get(v, "msg");
-    ASSERT_NE(msg, nullptr);
+    ASSERT_TRUE(msg != nullptr);
     ASSERT_STREQ(msg->s, "hello\tworld\r\n");
     json_free(v);
 }
@@ -251,7 +251,7 @@ TEST(Json, UnicodeEscapes) {
     /* JSON with Unicode escape — \u0048 = 'H', \u0065 = 'e' */
     const char *input = "\"\\u0048\\u0065\"";
     JsonValue *v = json_parse(input, strlen(input));
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_STRING);
     ASSERT_STREQ(v->s, "He");
     json_free(v);
@@ -269,9 +269,9 @@ TEST(Json, StringifyDeep) {
     json_obj_set(obj, "data", arr);
     json_obj_set(obj, "count", json_new_int(3));
     char *s = json_stringify(obj);
-    ASSERT_NE(s, nullptr);
+    ASSERT_TRUE(s != nullptr);
     JsonValue *parsed = json_parse(s, strlen(s));
-    ASSERT_NE(parsed, nullptr);
+    ASSERT_TRUE(parsed != nullptr);
     ASSERT_EQ(json_obj_get(parsed, "data")->arr.count, 3);
     ASSERT_EQ(json_obj_get(parsed, "count")->i, 3);
     ASSERT_TRUE(json_obj_get(json_obj_get(parsed, "data")->arr.items[2], "flag")->b);
@@ -282,7 +282,7 @@ TEST(Json, StringifyDeep) {
 
 TEST(Json, EmptyString) {
     JsonValue *v = json_parse("\"\"", 2);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_STRING);
     ASSERT_STREQ(v->s, "");
     json_free(v);
@@ -296,9 +296,9 @@ TEST(Json, LargeArray) {
     }
     ASSERT_EQ(arr->arr.count, 100);
     char *s = json_stringify(arr);
-    ASSERT_NE(s, nullptr);
+    ASSERT_TRUE(s != nullptr);
     JsonValue *parsed = json_parse(s, strlen(s));
-    ASSERT_NE(parsed, nullptr);
+    ASSERT_TRUE(parsed != nullptr);
     ASSERT_EQ(parsed->arr.count, 100);
     ASSERT_EQ(parsed->arr.items[0]->i, 0);
     ASSERT_EQ(parsed->arr.items[99]->i, 99);

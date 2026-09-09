@@ -10,7 +10,7 @@
 TEST(StdlibIO, FileWriteRead) {
     const char *path = "/tmp/ponypp_test_io.txt";
     PnyFile *f = pny_file_open(path, FILE_MODE_WRITE);
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     int r = pny_file_write(f, "Hello Pony++", 12);
     ASSERT_EQ(r, 0);
     r = pny_file_close(f);
@@ -18,22 +18,22 @@ TEST(StdlibIO, FileWriteRead) {
     ASSERT_EQ(pny_file_size(path), 12);
 
     f = pny_file_open(path, FILE_MODE_READ);
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     char *content = pny_file_read_all(f);
-    ASSERT_NE(content, nullptr);
+    ASSERT_TRUE(content != nullptr);
     ASSERT_STREQ(content, "Hello Pony++");
     free(content);
     pny_file_close(f);
 
     f = pny_file_open(path, FILE_MODE_APPEND);
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     pny_file_write(f, " World", 6);
     pny_file_close(f);
     ASSERT_EQ(pny_file_size(path), 18);
 
     f = pny_file_open(path, FILE_MODE_READ);
     content = pny_file_read_all(f);
-    ASSERT_NE(content, nullptr);
+    ASSERT_TRUE(content != nullptr);
     ASSERT_STREQ(content, "Hello Pony++ World");
     free(content);
     pny_file_close(f);
@@ -43,14 +43,14 @@ TEST(StdlibIO, FileWriteRead) {
 TEST(StdlibIO, FileReadLine) {
     const char *path = "/tmp/ponypp_test_lines.txt";
     PnyFile *f = pny_file_open(path, FILE_MODE_WRITE);
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     pny_file_printf(f, "line1\nline2\nline3\n");
     pny_file_close(f);
 
     f = pny_file_open(path, FILE_MODE_READ);
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     char *l1 = pny_file_read_line(f);
-    ASSERT_NE(l1, nullptr);
+    ASSERT_TRUE(l1 != nullptr);
     ASSERT_STREQ(l1, "line1");
     free(l1);
     char *l2 = pny_file_read_line(f);
@@ -62,14 +62,14 @@ TEST(StdlibIO, FileReadLine) {
 
 TEST(StdlibIO, FileNotFound) {
     PnyFile *f = pny_file_open("/tmp/ponypp_nonexist_xyz.txt", FILE_MODE_READ);
-    ASSERT_EQ(f, nullptr);
+    ASSERT_TRUE(f == nullptr);
     ASSERT_EQ(pny_file_size("/tmp/ponypp_nonexist_xyz.txt"), -1);
 }
 
 TEST(StdlibIO, FilePrintf) {
     const char *path = "/tmp/ponypp_test_printf.txt";
     PnyFile *f = pny_file_open(path, FILE_MODE_WRITE);
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     int r = pny_file_printf(f, "count=%d active=%s", 42, "true");
     ASSERT_GT(r, 0);
     pny_file_close(f);
@@ -79,7 +79,7 @@ TEST(StdlibIO, FilePrintf) {
 
 TEST(StdlibIO, PathJoin) {
     char *r = pny_path_join("/tmp", "sub");
-    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r != nullptr);
     ASSERT_STREQ(r, "/tmp/sub");
     free(r);
 
@@ -139,7 +139,7 @@ TEST(StdlibString, Cat) {
 TEST(StdlibString, Slice) {
     PnyString *s = pny_str_new("Hello World");
     PnyString *sub = pny_str_slice(s, 6, 11);
-    ASSERT_NE(sub, nullptr);
+    ASSERT_TRUE(sub != nullptr);
     ASSERT_EQ(pny_str_len(sub), 5);
     ASSERT_EQ(pny_str_cmp_cstr(sub, "World"), 0);
     pny_str_free(sub);
@@ -176,7 +176,7 @@ TEST(StdlibString, Replace) {
     PnyString *old_ = pny_str_new("World");
     PnyString *new_ = pny_str_new("Pony");
     PnyString *r = pny_str_replace(s, old_, new_);
-    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r != nullptr);
     ASSERT_EQ(pny_str_cmp_cstr(r, "Hello Pony Pony"), 0);
     pny_str_free(r); pny_str_free(s); pny_str_free(old_); pny_str_free(new_);
 }
@@ -200,7 +200,7 @@ TEST(StdlibString, UpperLowerTrim) {
 
 TEST(StdlibString, Format) {
     PnyString *s = pny_str_format("count=%d, pi=%.2f, ok=%s", 42, 3.14, "true");
-    ASSERT_NE(s, nullptr);
+    ASSERT_TRUE(s != nullptr);
     ASSERT_EQ(pny_str_cmp_cstr(s, "count=42, pi=3.14, ok=true"), 0);
     pny_str_free(s);
 }
@@ -382,10 +382,10 @@ TEST(StdlibMap, Basic) {
     ASSERT_EQ(pny_map_size(m), 2);
 
     void *v = pny_map_get(m, key1);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(*(int*)v, 100);
     v = pny_map_get(m, key2);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(*(int*)v, 200);
 
     int *key3 = (int*)malloc(sizeof(int)); *key3 = 3;
@@ -454,7 +454,7 @@ static void test_pass_case(void) { }
 
 TEST(StdlibTest, Suite) {
     PnyTestSuite *s = pny_test_suite_new("TestSuite");
-    ASSERT_NE(s, nullptr);
+    ASSERT_TRUE(s != nullptr);
     pny_test_suite_add(s, test_pass_case);
     pny_test_suite_add(s, test_pass_case);
     ASSERT_EQ(s->count, 2);

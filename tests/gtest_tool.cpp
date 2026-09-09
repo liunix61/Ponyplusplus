@@ -210,8 +210,8 @@ TEST(ToolFmt, Validate) {
 
     /* File should be unchanged */
     char *content = s_file_read(path);
-    ASSERT_NE(content, nullptr);
-    ASSERT_NE(strstr(content, "actor main"), nullptr);
+    ASSERT_TRUE(content != nullptr);
+    ASSERT_TRUE(strstr(content, "actor main") != nullptr);
     s_free(content);
     remove(path);
 }
@@ -243,7 +243,7 @@ TEST(ToolPkg, NewProject) {
     ASSERT_TRUE(s_file_read(main) != nullptr);
 
     char *t = s_file_read(toml);
-    ASSERT_NE(strstr(t, tmpdir), nullptr);
+    ASSERT_TRUE(strstr(t, tmpdir) != nullptr);
     s_free(t);
     remove(toml);
     remove(main);
@@ -254,7 +254,7 @@ TEST(ToolPkg, NewProject) {
 TEST(ToolPkg, AddDep) {
     /* Create ponypp.toml in current dir */
     FILE *f = fopen("ponypp.toml", "w");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     fprintf(f, "[package]\nname = \"test\"\n\n[dependencies]\n");
     fclose(f);
 
@@ -262,7 +262,7 @@ TEST(ToolPkg, AddDep) {
     ASSERT_EQ(ret, 0);
 
     char *t = s_file_read("ponypp.toml");
-    ASSERT_NE(strstr(t, "http"), nullptr);
+    ASSERT_TRUE(strstr(t, "http") != nullptr);
     s_free(t);
     remove("ponypp.toml");
 }

@@ -268,7 +268,10 @@ int pkg_version_compare(const char *a, const char *b) {
 
 bool pkg_version_satisfies(const char *version, const char *constraint) {
     if (!version || !constraint) return false;
-    constraint = str_trim((char *)constraint);
+    // Copy constraint because str_trim modifies the input in-place
+    char *cstr = strdup(constraint);
+    if (!cstr) return false;
+    constraint = str_trim(cstr);
     if (constraint[0] == '^') {
         return pkg_version_compare(version, constraint + 1) >= 0;
     }

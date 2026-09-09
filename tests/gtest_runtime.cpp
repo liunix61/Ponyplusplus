@@ -340,7 +340,7 @@ TEST(RuntimeSupervision, NoSupervisionNoCrash) {
 TEST(P1Serialization, SerializeDeserialize) {
     uint8_t arg_data[] = {0x34, 0x32};
     PnyMessage *msg = pny_msg_new("increment", arg_data, 2);
-    ASSERT_NE(msg, nullptr);
+    ASSERT_TRUE(msg != nullptr);
     msg->cap_mark = PNY_CAP_VAL;
 
     uint8_t buf[256];
@@ -352,8 +352,8 @@ TEST(P1Serialization, SerializeDeserialize) {
     PnyMessage *deserialized = NULL;
     rc = pny_msg_deserialize(buf, out_size, &deserialized);
     ASSERT_EQ(rc, 0);
-    ASSERT_NE(deserialized, nullptr);
-    ASSERT_NE(deserialized->method, nullptr);
+    ASSERT_NE(deserialized, static_cast<void*>(nullptr));
+    ASSERT_TRUE(deserialized->method != nullptr);
     EXPECT_STREQ(deserialized->method, "increment");
     EXPECT_EQ(deserialized->cap_mark, PNY_CAP_VAL);
 
@@ -375,7 +375,7 @@ TEST(P1Serialization, DeserializeNull) {
 TEST(P1Serialization, RoundTripWithArg) {
     uint8_t arg_data[12] = {0};
     PnyMessage *msg = pny_msg_new("add", arg_data, 12);
-    ASSERT_NE(msg, nullptr);
+    ASSERT_TRUE(msg != nullptr);
     msg->cap_mark = PNY_CAP_ISO;
 
     uint8_t buf[512];
@@ -386,7 +386,7 @@ TEST(P1Serialization, RoundTripWithArg) {
     PnyMessage *out = NULL;
     rc = pny_msg_deserialize(buf, out_size, &out);
     ASSERT_EQ(rc, 0);
-    ASSERT_NE(out, nullptr);
+    ASSERT_TRUE(out != nullptr);
     EXPECT_STREQ(out->method, "add");
     EXPECT_EQ(out->arg_size, 12);
     EXPECT_EQ(out->cap_mark, PNY_CAP_ISO);
@@ -464,7 +464,7 @@ TEST(P1ExactlyOnce, NullActor) {
 
 TEST(P1Serialization, CapabilityMarks) {
     PnyMessage *msg = pny_msg_new("test", NULL, 0);
-    ASSERT_NE(msg, nullptr);
+    ASSERT_TRUE(msg != nullptr);
     msg->cap_mark = PNY_CAP_ISO;
     uint8_t buf[64];
     size_t out_size = 0;
@@ -549,7 +549,7 @@ TEST(P2HotUpgrade, SetNewBehavior) {
     EXPECT_EQ(a->version, 1);
     EXPECT_EQ(pny_hot_upgrade_version(a), 1);
     pny_hot_upgrade(a, new_behavior);
-    EXPECT_NE(a->new_behavior, nullptr);
+    EXPECT_TRUE(a->new_behavior != nullptr);
     pny_runtime_free(r);
 }
 
@@ -601,10 +601,10 @@ TEST(P2Diagnostics, DumpText) {
     pny_scheduler_tick(r);
     char buf[1024];
     const char *result = pny_diagnostics_dump(r, buf, sizeof(buf));
-    ASSERT_NE(result, nullptr);
-    EXPECT_NE(strstr(buf, "Pony++ Diagnostics"), nullptr);
-    EXPECT_NE(strstr(buf, "Actors:"), nullptr);
-    EXPECT_NE(strstr(buf, "Messages:"), nullptr);
+    ASSERT_TRUE(result != nullptr);
+    EXPECT_TRUE(strstr(buf, "Pony++ Diagnostics") != nullptr);
+    EXPECT_TRUE(strstr(buf, "Actors:") != nullptr);
+    EXPECT_TRUE(strstr(buf, "Messages:") != nullptr);
     pny_runtime_free(r);
 }
 
@@ -651,7 +651,7 @@ TEST(P2MN, EnqueueAndDequeue) {
     int rc = pny_mn_enqueue(a, msg, 0);
     EXPECT_EQ(rc, 0);
     PnyMessage *got = pny_mn_dequeue_local(&pny_mn_global->workers[0]);
-    EXPECT_NE(got, nullptr);
+    EXPECT_TRUE(got != nullptr);
     if (got) {
         EXPECT_STREQ(got->method, "m1");
         pny_msg_free(got);
@@ -667,7 +667,7 @@ TEST(P2MN, StealFromOtherWorker) {
     PnyMessage *msg = pny_msg_new("steal", NULL, 0);
     pny_mn_enqueue(a, msg, 1);
     PnyMessage *stolen = pny_mn_steal(&pny_mn_global->workers[0]);
-    EXPECT_NE(stolen, nullptr);
+    EXPECT_TRUE(stolen != nullptr);
     if (stolen) {
         EXPECT_STREQ(stolen->method, "steal");
         pny_msg_free(stolen);
@@ -711,7 +711,7 @@ TEST(P2MN, RunTick) {
 
 TEST(P2CrossSupervise, NewFree) {
     CrossComponentSupervisor *cs = pny_cross_supervise_new();
-    ASSERT_NE(cs, nullptr);
+    ASSERT_TRUE(cs != nullptr);
     EXPECT_EQ(cs->child_count, 0);
     pny_cross_supervise_free(cs);
 }
@@ -784,12 +784,12 @@ TEST(P2CrossSupervise, OneForAll) {
 
 TEST(P3Dist, ConnListenInvalid) {
     DistConnection *c = dist_conn_listen(0);
-    EXPECT_EQ(c, nullptr);
+    EXPECT_TRUE(c == nullptr);
 }
 
 TEST(P3Dist, RuntimeNewInvalid) {
     DistributedRuntime *dr = dist_runtime_new(NULL, 8080);
-    EXPECT_EQ(dr, nullptr);
+    EXPECT_TRUE(dr == nullptr);
 }
 
 TEST(P3Dist, RegisterRemote) {
@@ -805,7 +805,7 @@ TEST(P3Dist, NodeId) {
     PnyRuntime *r = pny_runtime_new();
     DistributedRuntime *dr = dist_runtime_new(r, 8080);
     const char *id = dist_runtime_node_id(dr);
-    EXPECT_NE(id, NULL);
+    EXPECT_TRUE(id != NULL);
     EXPECT_GT(strlen(id), 0u);
     dist_runtime_free(dr);
     pny_runtime_free(r);
@@ -824,18 +824,18 @@ TEST(P3Dist, SendNoRemote) {
 
 TEST(P3FFI, RuntimeInit) {
     FFIRuntime *rt = ffi_runtime_new();
-    EXPECT_NE(rt, NULL);
+    EXPECT_TRUE(rt != NULL);
     EXPECT_EQ(ffi_func_count(), 0u);
     ffi_runtime_free();
 }
 
 TEST(P3FFI, RegisterFuncNotFound) {
     FFIRuntime *rt = ffi_runtime_new();
-    EXPECT_NE(rt, NULL);
+    EXPECT_TRUE(rt != NULL);
     int rc = ffi_register_func("nonexistent_func_xyz", "C", FFI_TYPE_VOID, NULL, NULL, 0);
     EXPECT_EQ(rc, -2);
     FFIFunc *f = ffi_find_func("nonexistent_func_xyz");
-    EXPECT_EQ(f, nullptr);
+    EXPECT_TRUE(f == nullptr);
     ffi_runtime_free();
 }
 
@@ -849,11 +849,11 @@ TEST(P3FFI, TypeNames) {
 
 TEST(P3FFI, Dump) {
     FFIRuntime *rt = ffi_runtime_new();
-    EXPECT_NE(rt, NULL);
+    EXPECT_TRUE(rt != NULL);
     char buf[1024];
     int len = ffi_dump(buf, sizeof(buf));
     EXPECT_GT(len, 0);
-    EXPECT_NE(strstr(buf, "Functions:"), nullptr);
+    EXPECT_TRUE(strstr(buf, "Functions:") != nullptr);
     ffi_runtime_free();
 }
 
@@ -877,7 +877,7 @@ TEST(P3Pkg, ParseToml) {
         "path = \"https://github.com/liunix61/network\"\n";
 
     PkgManifest *pm = pkg_parse_toml_content(toml);
-    EXPECT_NE(pm, NULL);
+    EXPECT_TRUE(pm != NULL);
     if (pm) {
         EXPECT_STREQ(pm->name, "mypkg");
         EXPECT_STREQ(pm->version, "0.1.0");
@@ -897,7 +897,7 @@ TEST(P3Pkg, ManifestPrint) {
         "version = \"1.0.0\"\n"
         "author = \"tester\"\n";
     PkgManifest *pm = pkg_parse_toml_content(toml);
-    EXPECT_NE(pm, NULL);
+    EXPECT_TRUE(pm != NULL);
     if (pm) {
         char buf[512];
         int len = pkg_manifest_print(pm, buf, sizeof(buf));
@@ -909,16 +909,16 @@ TEST(P3Pkg, ManifestPrint) {
 
 TEST(P3Pkg, ManagerCRUD) {
     PkgManager *pm = pkg_manager_new("/workspace");
-    EXPECT_NE(pm, NULL);
+    EXPECT_TRUE(pm != NULL);
     EXPECT_NE(pkg_manager_add(pm, "dep1", "1.0.0", NULL, NULL), -1);
     EXPECT_NE(pkg_manager_add(pm, "dep2", "2.0.0", NULL, NULL), -1);
     EXPECT_EQ(pkg_manager_resolve(pm), 2);
     PkgManifest *found = pkg_manager_find(pm, "dep1");
-    EXPECT_NE(found, NULL);
+    EXPECT_TRUE(found != NULL);
     if (found) EXPECT_STREQ(found->name, "dep1");
     EXPECT_NE(pkg_manager_remove(pm, "dep1"), -2);
     found = pkg_manager_find(pm, "dep1");
-    EXPECT_EQ(found, nullptr);
+    EXPECT_TRUE(found == nullptr);
     EXPECT_EQ(pkg_manager_resolve(pm), 1);
     char buf[512];
     int len = pkg_manager_dump(pm, buf, sizeof(buf));
@@ -948,7 +948,7 @@ TEST(P4Bootstrap, CompilerFilesExist) {
                            "compiler/codegen.pny", "compiler/main.pny"};
     for (int i = 0; i < 4; i++) {
         FILE *f = fopen(files[i], "r");
-        EXPECT_NE(f, nullptr) << files[i];
+        EXPECT_TRUE(f != nullptr) << files[i];
         if (f) fclose(f);
     }
 }
@@ -959,7 +959,7 @@ TEST(P4Bootstrap, StdlibFilesExist) {
                            "stdlib/std/json.pny", "stdlib/std/math.pny"};
     for (int i = 0; i < 6; i++) {
         FILE *f = fopen(files[i], "r");
-        EXPECT_NE(f, nullptr) << files[i];
+        EXPECT_TRUE(f != nullptr) << files[i];
         if (f) fclose(f);
     }
 }
@@ -979,156 +979,156 @@ TEST(P4Bootstrap, CompilerSourceNonEmpty) {
 
 TEST(P4Bootstrap, LexerKeywords) {
     FILE *f = fopen("compiler/lexer.pny", "r");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
     char *buf = (char *)malloc(size + 1);
-    ASSERT_NE(buf, NULL);
+    ASSERT_TRUE(buf != NULL);
     fread(buf, 1, size, f);
     buf[size] = 0;
     fclose(f);
-    EXPECT_NE(strstr(buf, "actor"), NULL);
-    EXPECT_NE(strstr(buf, "class"), NULL);
-    EXPECT_NE(strstr(buf, "be"), NULL);
-    EXPECT_NE(strstr(buf, "fun"), NULL);
-    EXPECT_NE(strstr(buf, "new"), NULL);
-    EXPECT_NE(strstr(buf, "match"), NULL);
+    EXPECT_TRUE(strstr(buf, "actor") != NULL);
+    EXPECT_TRUE(strstr(buf, "class") != NULL);
+    EXPECT_TRUE(strstr(buf, "be") != NULL);
+    EXPECT_TRUE(strstr(buf, "fun") != NULL);
+    EXPECT_TRUE(strstr(buf, "new") != NULL);
+    EXPECT_TRUE(strstr(buf, "match") != NULL);
     free(buf);
 }
 
 TEST(P4Bootstrap, ParserASTTypes) {
     FILE *f = fopen("compiler/parser.pny", "r");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
     char *buf = (char *)malloc(size + 1);
-    ASSERT_NE(buf, NULL);
+    ASSERT_TRUE(buf != NULL);
     fread(buf, 1, size, f);
     buf[size] = 0;
     fclose(f);
-    EXPECT_NE(strstr(buf, "NODE_ACTOR"), NULL);
-    EXPECT_NE(strstr(buf, "NODE_PROGRAM"), NULL);
-    EXPECT_NE(strstr(buf, "NODE_BE"), NULL);
-    EXPECT_NE(strstr(buf, "NODE_CALL"), NULL);
+    EXPECT_TRUE(strstr(buf, "NODE_ACTOR") != NULL);
+    EXPECT_TRUE(strstr(buf, "NODE_PROGRAM") != NULL);
+    EXPECT_TRUE(strstr(buf, "NODE_BE") != NULL);
+    EXPECT_TRUE(strstr(buf, "NODE_CALL") != NULL);
     free(buf);
 }
 
 TEST(P4Bootstrap, CodegenTargets) {
     FILE *f = fopen("compiler/codegen.pny", "r");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
     char *buf = (char *)malloc(size + 1);
-    ASSERT_NE(buf, NULL);
+    ASSERT_TRUE(buf != NULL);
     fread(buf, 1, size, f);
     buf[size] = 0;
     fclose(f);
-    EXPECT_NE(strstr(buf, "TARGET_NATIVE"), NULL);
-    EXPECT_NE(strstr(buf, "TARGET_WASM"), NULL);
-    EXPECT_NE(strstr(buf, "TARGET_AST"), NULL);
+    EXPECT_TRUE(strstr(buf, "TARGET_NATIVE") != NULL);
+    EXPECT_TRUE(strstr(buf, "TARGET_WASM") != NULL);
+    EXPECT_TRUE(strstr(buf, "TARGET_AST") != NULL);
     free(buf);
 }
 
 TEST(P4Bootstrap, PonyppcBootstrapFlag) {
     FILE *f = fopen("src/ponyppc.c", "r");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
     char *buf = (char *)malloc(size + 1);
-    ASSERT_NE(buf, NULL);
+    ASSERT_TRUE(buf != NULL);
     fread(buf, 1, size, f);
     buf[size] = 0;
     fclose(f);
-    EXPECT_NE(strstr(buf, "bootstrap"), NULL);
-    EXPECT_NE(strstr(buf, "--bootstrap"), NULL);
+    EXPECT_TRUE(strstr(buf, "bootstrap") != NULL);
+    EXPECT_TRUE(strstr(buf, "--bootstrap") != NULL);
     free(buf);
 }
 
 TEST(P4Bootstrap, ToolBootstrapImpl) {
     FILE *f = fopen("src/ponypp/tool.c", "r");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
     char *buf = (char *)malloc(size + 1);
-    ASSERT_NE(buf, NULL);
+    ASSERT_TRUE(buf != NULL);
     fread(buf, 1, size, f);
     buf[size] = 0;
     fclose(f);
-    EXPECT_NE(strstr(buf, "tool_bootstrap"), NULL);
-    EXPECT_NE(strstr(buf, "TOOL_BOOTSTRAP"), NULL);
+    EXPECT_TRUE(strstr(buf, "tool_bootstrap") != NULL);
+    EXPECT_TRUE(strstr(buf, "TOOL_BOOTSTRAP") != NULL);
     free(buf);
 }
 
 TEST(P4Bootstrap, ToolEnumHasBootstrap) {
     FILE *f = fopen("include/ponypp/tool.h", "r");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
     char *buf = (char *)malloc(size + 1);
-    ASSERT_NE(buf, NULL);
+    ASSERT_TRUE(buf != NULL);
     fread(buf, 1, size, f);
     buf[size] = 0;
     fclose(f);
-    EXPECT_NE(strstr(buf, "TOOL_BOOTSTRAP"), NULL);
+    EXPECT_TRUE(strstr(buf, "TOOL_BOOTSTRAP") != NULL);
     free(buf);
 }
 
 TEST(P4Bootstrap, StringStdlibAPI) {
     FILE *f = fopen("stdlib/std/string.pny", "r");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
     char *buf = (char *)malloc(size + 1);
-    ASSERT_NE(buf, NULL);
+    ASSERT_TRUE(buf != NULL);
     fread(buf, 1, size, f);
     buf[size] = 0;
     fclose(f);
-    EXPECT_NE(strstr(buf, "len"), NULL);
-    EXPECT_NE(strstr(buf, "concat"), NULL);
-    EXPECT_NE(strstr(buf, "contains"), NULL);
-    EXPECT_NE(strstr(buf, "split"), NULL);
+    EXPECT_TRUE(strstr(buf, "len") != NULL);
+    EXPECT_TRUE(strstr(buf, "concat") != NULL);
+    EXPECT_TRUE(strstr(buf, "contains") != NULL);
+    EXPECT_TRUE(strstr(buf, "split") != NULL);
     free(buf);
 }
 
 TEST(P4Bootstrap, ListStdlibAPI) {
     FILE *f = fopen("stdlib/std/list.pny", "r");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
     char *buf = (char *)malloc(size + 1);
-    ASSERT_NE(buf, NULL);
+    ASSERT_TRUE(buf != NULL);
     fread(buf, 1, size, f);
     buf[size] = 0;
     fclose(f);
-    EXPECT_NE(strstr(buf, "append"), NULL);
-    EXPECT_NE(strstr(buf, "remove"), NULL);
-    EXPECT_NE(strstr(buf, "map"), NULL);
-    EXPECT_NE(strstr(buf, "filter"), NULL);
+    EXPECT_TRUE(strstr(buf, "append") != NULL);
+    EXPECT_TRUE(strstr(buf, "remove") != NULL);
+    EXPECT_TRUE(strstr(buf, "map") != NULL);
+    EXPECT_TRUE(strstr(buf, "filter") != NULL);
     free(buf);
 }
 
 TEST(P4Bootstrap, IOSTDlibAPI) {
     FILE *f = fopen("stdlib/std/io.pny", "r");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
     char *buf = (char *)malloc(size + 1);
-    ASSERT_NE(buf, NULL);
+    ASSERT_TRUE(buf != NULL);
     fread(buf, 1, size, f);
     buf[size] = 0;
     fclose(f);
-    EXPECT_NE(strstr(buf, "print"), NULL);
-    EXPECT_NE(strstr(buf, "println"), NULL);
-    EXPECT_NE(strstr(buf, "file_open"), NULL);
-    EXPECT_NE(strstr(buf, "file_read"), NULL);
+    EXPECT_TRUE(strstr(buf, "print") != NULL);
+    EXPECT_TRUE(strstr(buf, "println") != NULL);
+    EXPECT_TRUE(strstr(buf, "file_open") != NULL);
+    EXPECT_TRUE(strstr(buf, "file_read") != NULL);
     free(buf);
 }

@@ -10,14 +10,14 @@
 
 TEST(JsonBasic, ParseNull) {
     JsonValue *v = json_parse("null", 4);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_NULL);
     json_free(v);
 }
 
 TEST(JsonBasic, ParseTrue) {
     JsonValue *v = json_parse("true", 4);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_BOOL);
     ASSERT_TRUE(v->b);
     json_free(v);
@@ -25,7 +25,7 @@ TEST(JsonBasic, ParseTrue) {
 
 TEST(JsonBasic, ParseFalse) {
     JsonValue *v = json_parse("false", 5);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_BOOL);
     ASSERT_FALSE(v->b);
     json_free(v);
@@ -33,7 +33,7 @@ TEST(JsonBasic, ParseFalse) {
 
 TEST(JsonBasic, ParseInt) {
     JsonValue *v = json_parse("42", 2);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_INT);
     ASSERT_EQ(v->i, 42);
     json_free(v);
@@ -41,7 +41,7 @@ TEST(JsonBasic, ParseInt) {
 
 TEST(JsonBasic, ParseNegInt) {
     JsonValue *v = json_parse("-7", 2);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_INT);
     ASSERT_EQ(v->i, -7);
     json_free(v);
@@ -49,7 +49,7 @@ TEST(JsonBasic, ParseNegInt) {
 
 TEST(JsonBasic, ParseDouble) {
     JsonValue *v = json_parse("3.14", 4);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_DOUBLE);
     ASSERT_NEAR(v->d, 3.14, 0.001);
     json_free(v);
@@ -57,7 +57,7 @@ TEST(JsonBasic, ParseDouble) {
 
 TEST(JsonBasic, ParseString) {
     JsonValue *v = json_parse("\"hello\"", 7);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_STRING);
     ASSERT_STREQ(v->s, "hello");
     json_free(v);
@@ -65,7 +65,7 @@ TEST(JsonBasic, ParseString) {
 
 TEST(JsonBasic, ParseStringEscapes) {
     JsonValue *v = json_parse("\"a\\nb\\tc\"", 9);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_STRING);
     ASSERT_STREQ(v->s, "a\nb\tc");
     json_free(v);
@@ -73,7 +73,7 @@ TEST(JsonBasic, ParseStringEscapes) {
 
 TEST(JsonBasic, ParseArray) {
     JsonValue *v = json_parse("[1,2,3]", 7);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_ARRAY);
     ASSERT_EQ(v->arr.count, 3);
     ASSERT_EQ(v->arr.items[0]->i, 1);
@@ -84,7 +84,7 @@ TEST(JsonBasic, ParseArray) {
 
 TEST(JsonBasic, ParseEmptyArray) {
     JsonValue *v = json_parse("[]", 2);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_ARRAY);
     ASSERT_EQ(v->arr.count, 0);
     json_free(v);
@@ -92,21 +92,21 @@ TEST(JsonBasic, ParseEmptyArray) {
 
 TEST(JsonBasic, ParseObject) {
     JsonValue *v = json_parse("{\"name\":\"Pony++\",\"version\":3}", 31);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_OBJECT);
     ASSERT_EQ(v->obj.count, 2);
     JsonValue *name = json_obj_get(v, "name");
-    ASSERT_NE(name, nullptr);
+    ASSERT_TRUE(name != nullptr);
     ASSERT_STREQ(name->s, "Pony++");
     JsonValue *ver = json_obj_get(v, "version");
-    ASSERT_NE(ver, nullptr);
+    ASSERT_TRUE(ver != nullptr);
     ASSERT_EQ(ver->i, 3);
     json_free(v);
 }
 
 TEST(JsonBasic, ParseEmptyObject) {
     JsonValue *v = json_parse("{}", 2);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_OBJECT);
     ASSERT_EQ(v->obj.count, 0);
     json_free(v);
@@ -114,11 +114,11 @@ TEST(JsonBasic, ParseEmptyObject) {
 
 TEST(JsonBasic, ParseNested) {
     JsonValue *v = json_parse("{\"a\":{\"b\":[1,2,{\"c\":true}]}}", 31);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     JsonValue *a = json_obj_get(v, "a");
-    ASSERT_NE(a, nullptr);
+    ASSERT_TRUE(a != nullptr);
     JsonValue *b = json_obj_get(a, "b");
-    ASSERT_NE(b, nullptr);
+    ASSERT_TRUE(b != nullptr);
     ASSERT_EQ(b->type, JSON_ARRAY);
     ASSERT_EQ(b->arr.count, 3);
     ASSERT_EQ(b->arr.items[0]->i, 1);
@@ -129,7 +129,7 @@ TEST(JsonBasic, ParseNested) {
 
 TEST(JsonBasic, ParseWhitespace) {
     JsonValue *v = json_parse("  [ 1 , 2 ]  ", 14);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_ARRAY);
     ASSERT_EQ(v->arr.count, 2);
     json_free(v);
@@ -197,7 +197,7 @@ TEST(JsonConstruct, ObjSet) {
     ASSERT_EQ(json_obj_set(obj, "count", json_new_int(10)), 0);
     ASSERT_EQ(obj->obj.count, 2);
     JsonValue *n = json_obj_get(obj, "name");
-    ASSERT_NE(n, nullptr);
+    ASSERT_TRUE(n != nullptr);
     ASSERT_STREQ(n->s, "Pony++");
     json_free(obj);
 }
@@ -212,12 +212,12 @@ TEST(JsonConstruct, ObjSetExistingKey) {
 
 TEST(JsonStringify, Basic) {
     JsonValue *v = json_parse("{\"a\":1,\"b\":[2,3],\"c\":true,\"d\":null}", 42);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     char *s = json_stringify(v);
-    ASSERT_NE(s, nullptr);
+    ASSERT_TRUE(s != nullptr);
     /* Parse back to verify */
     JsonValue *v2 = json_parse(s, strlen(s));
-    ASSERT_NE(v2, nullptr);
+    ASSERT_TRUE(v2 != nullptr);
     ASSERT_EQ(v2->type, JSON_OBJECT);
     ASSERT_EQ(json_obj_get(v2, "a")->i, 1);
     ASSERT_EQ(json_obj_get(v2, "b")->arr.count, 2);
@@ -230,9 +230,9 @@ TEST(JsonStringify, Basic) {
 
 TEST(JsonStringify, StringEscape) {
     JsonValue *v = json_parse("\"hello\\nworld\"", 14);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     char *s = json_stringify(v);
-    ASSERT_NE(s, nullptr);
+    ASSERT_TRUE(s != nullptr);
     ASSERT_STREQ(s, "\"hello\\nworld\"");
     free(s);
     json_free(v);
@@ -243,10 +243,10 @@ TEST(JsonStringify, ConstructAndStringify) {
     json_obj_set(obj, "name", json_new_string("Pony++"));
     json_obj_set(obj, "version", json_new_int(1));
     char *s = json_stringify(obj);
-    ASSERT_NE(s, nullptr);
+    ASSERT_TRUE(s != nullptr);
     /* Parse back */
     JsonValue *v = json_parse(s, strlen(s));
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_OBJECT);
     ASSERT_STREQ(json_obj_get(v, "name")->s, "Pony++");
     ASSERT_EQ(json_obj_get(v, "version")->i, 1);
@@ -257,9 +257,9 @@ TEST(JsonStringify, ConstructAndStringify) {
 
 TEST(JsonStringify, NegativeNumber) {
     JsonValue *v = json_parse("-42.5", 5);
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     char *s = json_stringify(v);
-    ASSERT_NE(s, nullptr);
+    ASSERT_TRUE(s != nullptr);
     ASSERT_STREQ(s, "-42.5");
     free(s);
     json_free(v);
@@ -275,9 +275,9 @@ TEST(JsonStringify, ConstructTree) {
     json_obj_set(obj, "total", json_new_int(3));
     json_obj_set(obj, "active", json_new_bool(true));
     char *s = json_stringify(obj);
-    ASSERT_NE(s, nullptr);
+    ASSERT_TRUE(s != nullptr);
     JsonValue *v = json_parse(s, strlen(s));
-    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v != nullptr);
     ASSERT_EQ(v->type, JSON_OBJECT);
     ASSERT_EQ(json_obj_get(v, "items")->arr.count, 3);
     ASSERT_EQ(json_obj_get(v, "total")->i, 3);
@@ -301,7 +301,7 @@ TEST(Timer, ElapsedNonNegative) {
 
 TEST(Timer, NewAndFree) {
     PnyTimer *t = pny_timer_new(1000, NULL, NULL, false);
-    ASSERT_NE(t, nullptr);
+    ASSERT_TRUE(t != nullptr);
     ASSERT_FALSE(pny_timer_running(t));
     pny_timer_start(t);
     ASSERT_TRUE(pny_timer_running(t));
@@ -321,8 +321,8 @@ TEST(Timer, ElapsedIncreases) {
 TEST(Timer, MultipleTimers) {
     PnyTimer *t1 = pny_timer_new(100, NULL, NULL, false);
     PnyTimer *t2 = pny_timer_new(200, NULL, NULL, true);
-    ASSERT_NE(t1, nullptr);
-    ASSERT_NE(t2, nullptr);
+    ASSERT_TRUE(t1 != nullptr);
+    ASSERT_TRUE(t2 != nullptr);
     pny_timer_start(t1);
     pny_timer_start(t2);
     ASSERT_TRUE(pny_timer_running(t1));
@@ -344,7 +344,7 @@ TEST(Timer, NullSafe) {
 
 TEST(Logger, NewAndFree) {
     PnyLogger *l = pny_logger_new("test");
-    ASSERT_NE(l, nullptr);
+    ASSERT_TRUE(l != nullptr);
     ASSERT_EQ(pny_logger_get_level(l), LOG_INFO);
     pny_logger_free(l);
 }

@@ -33,9 +33,9 @@ TEST(Util, SStrCmp) {
     ASSERT_EQ(s_strcmp("a", "a"), 0);
     ASSERT_EQ(s_strcmp("a", "b") < 0, true);
     ASSERT_EQ(s_strcmp("b", "a") > 0, true);
-    ASSERT_EQ(s_strcmp(NULL, nullptr), 0);
-    ASSERT_EQ(s_strcmp(NULL, "a"), -1);
-    ASSERT_EQ(s_strcmp("a", nullptr), 1);
+    ASSERT_EQ(s_strcmp((const char*)nullptr, (const char*)nullptr), 0);
+    ASSERT_EQ(s_strcmp((const char*)nullptr, "a"), -1);
+    ASSERT_EQ(s_strcmp("a", (const char*)nullptr), 1);
 }
 
 TEST(Util, SStrlcpy) {
@@ -77,7 +77,7 @@ TEST(Util, SResolveOutput) {
     s_free(r);
     char *r2 = s_resolve_output(NULL, "wasm");
     ASSERT_TRUE(r2 != nullptr);
-    ASSERT_NE((void*)strstr(r2, "ponypp_output"), nullptr);
+    ASSERT_TRUE((void*)strstr(r2, "ponypp_output") != nullptr);
     s_free(r2);
 }
 
@@ -135,8 +135,8 @@ TEST(Util, AstNodePrint) {
 
     char *buf = s_file_read("/tmp/ponypp_ast_print_test.txt");
     ASSERT_TRUE(buf != nullptr);
-    ASSERT_NE((void*)strstr(buf, "Program"), nullptr);
-    ASSERT_NE((void*)strstr(buf, "Function"), nullptr);
+    ASSERT_TRUE((void*)strstr(buf, "Program") != nullptr);
+    ASSERT_TRUE((void*)strstr(buf, "Function") != nullptr);
     s_free(buf);
     ast_node_free(root);
     remove("/tmp/ponypp_ast_print_test.txt");

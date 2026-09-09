@@ -97,7 +97,7 @@ TEST(WAMR, ModuleLoadValidWasm) {
     const char *path = "/tmp/ponypp_wamr_test.wasm";
     unsigned char wasm[] = {0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00};
     FILE *f = fopen(path, "wb");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     fwrite(wasm, 1, sizeof(wasm), f);
     fclose(f);
 
@@ -107,7 +107,7 @@ TEST(WAMR, ModuleLoadValidWasm) {
     WamrModule *mod = NULL;
     int rc = wamr_module_load(&cfg, &mod);
     EXPECT_EQ(rc, 0);
-    EXPECT_NE(mod, nullptr);
+    EXPECT_TRUE(mod != nullptr);
     if (mod) {
         EXPECT_EQ(mod->mcu_type, MCU_GENERIC);
         EXPECT_EQ(mod->size, 8);
@@ -121,7 +121,7 @@ TEST(WAMR, ModuleLoadInvalidWasm) {
     const char *path = "/tmp/ponypp_wamr_invalid.wasm";
     unsigned char bad[] = {0x00, 0x00, 0x00, 0x00};
     FILE *f = fopen(path, "wb");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     fwrite(bad, 1, sizeof(bad), f);
     fclose(f);
 
@@ -129,7 +129,7 @@ TEST(WAMR, ModuleLoadInvalidWasm) {
     cfg.wasm_path = path;
     WamrModule *mod = NULL;
     EXPECT_EQ(wamr_module_load(&cfg, &mod), -1);
-    EXPECT_EQ(mod, nullptr);
+    EXPECT_TRUE(mod == nullptr);
     remove(path);
 }
 
@@ -145,7 +145,7 @@ TEST(WAMR, InstanceCreate) {
     WamrInstance *inst = NULL;
     int rc = wamr_instance_create(&mod, &cfg, &inst);
     EXPECT_EQ(rc, 0);
-    EXPECT_NE(inst, nullptr);
+    EXPECT_TRUE(inst != nullptr);
     if (inst) {
         EXPECT_EQ(inst->mem_pages, 1);
         EXPECT_EQ(inst->mem_used, 0);
@@ -184,12 +184,12 @@ TEST(WAMR, MemAlloc) {
 
     void *ptr = NULL;
     EXPECT_EQ(wamr_mem_alloc(inst, 64, &ptr), 0);
-    EXPECT_NE(ptr, nullptr);
+    EXPECT_TRUE(ptr != nullptr);
     EXPECT_EQ(inst->mem_used, 64);
 
     void *ptr2 = NULL;
     EXPECT_EQ(wamr_mem_alloc(inst, 32, &ptr2), 0);
-    EXPECT_NE(ptr2, nullptr);
+    EXPECT_TRUE(ptr2 != nullptr);
     EXPECT_EQ(inst->mem_used, 96);
 
     wamr_instance_free(inst);
@@ -343,7 +343,7 @@ TEST(WAMR, FullLifecycle) {
     const char *path = "/tmp/ponypp_wamr_full.wasm";
     unsigned char wasm[] = {0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00};
     FILE *f = fopen(path, "wb");
-    ASSERT_NE(f, nullptr);
+    ASSERT_TRUE(f != nullptr);
     fwrite(wasm, 1, sizeof(wasm), f);
     fclose(f);
 
@@ -352,12 +352,12 @@ TEST(WAMR, FullLifecycle) {
     /* 加载模块 */
     WamrModule *mod = NULL;
     EXPECT_EQ(wamr_module_load(&cfg, &mod), 0);
-    EXPECT_NE(mod, nullptr);
+    EXPECT_TRUE(mod != nullptr);
 
     /* 创建实例 */
     WamrInstance *inst = NULL;
     EXPECT_EQ(wamr_instance_create(mod, &cfg, &inst), 0);
-    EXPECT_NE(inst, nullptr);
+    EXPECT_TRUE(inst != nullptr);
 
     /* 启动 */
     EXPECT_EQ(wamr_instance_start(inst, "main"), 0);

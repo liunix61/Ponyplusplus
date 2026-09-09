@@ -107,8 +107,8 @@ TEST(Phase2Syntax, CodegenSupervise) {
     char *out = s_file_read(path);
     ASSERT_TRUE(out != nullptr);
     /* Verify supervise registration code is generated */
-    ASSERT_NE(strstr(out, "pny_supervise_register"), nullptr);
-    ASSERT_NE(strstr(out, "Worker"), nullptr);
+    ASSERT_TRUE(strstr(out, "pny_supervise_register") != nullptr);
+    ASSERT_TRUE(strstr(out, "Worker") != nullptr);
     s_free(out);
     remove(path);
     ast_node_free(ast);
