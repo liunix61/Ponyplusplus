@@ -54,7 +54,8 @@ typedef enum {
 typedef enum {
     SUPERVISE_ONE_FOR_ONE,
     SUPERVISE_ONE_FOR_ALL,
-    SUPERVISE_RESTART,
+    SUPERVISE_REST_FOR_ONE,   /* 重启崩溃的子 Actor 及其后注册的所有兄弟 */
+    SUPERVISE_RESTART,        /* 兼容旧名 = rest_for_one */
     SUPERVISE_NONE
 } SuperviseStrategy;
 
@@ -225,6 +226,7 @@ typedef struct WorkerThread {
     bool running;
     size_t steal_count;
     size_t local_count;
+    pthread_t thread;
 } WorkerThread;
 
 typedef struct MNWorker {
@@ -236,6 +238,7 @@ typedef struct MNWorker {
     bool running;
     uint64_t total_steals;
     uint64_t total_local_deliveries;
+    PnyRuntime *runtime;
 } MNWorker;
 
 void pny_mn_init(PnyRuntime *r, int worker_count);
@@ -246,6 +249,8 @@ PnyMessage *pny_mn_dequeue_local(WorkerThread *wt);
 PnyMessage *pny_mn_steal(WorkerThread *wt);
 void pny_mn_run_tick(PnyRuntime *r);
 size_t pny_mn_steal_stats(PnyRuntime *r);
+void pny_mn_start(PnyRuntime *r);
+void pny_mn_stop(PnyRuntime *r);
 
 /* 跨组件监督 */
 typedef struct CrossComponentSupervisor {

@@ -237,10 +237,24 @@ void pny_scheduler_tick(PnyRuntime *r) {
     PnyActor *a = r->scheduler.actors;
     while (a) {
         PnyActor *next = a->next;
+        /* 热代码升级: 在处理下一条消息前切换 behavior */
+        if (a->new_behavior) {
+            a->behavior = a->new_behavior;
+            a->new_behavior = NULL;
+            a->version++;
+        }
         if (a->messages && a->actor_state == ACTOR_STATE_RUNNING) {
             PnyMessage *m = a->messages;
             a->messages = m->next;
             a->message_count--;
+            /* exactly-once 去重 */
+            if (m->msg_id > 0 && pny_msg_delivered(a, m->msg_id) == 1) {
+                /* 已投递过，跳过 */
+                r->stats.messages_delivered++;
+                pny_msg_free(m);
+                a = next;
+                continue;
+            }
             if (a->behavior) {
                 a->behavior(a, m);
             }
@@ -349,8 +363,18 @@ void pny_supervisor_handle_crash(PnyRuntime *r, ActorRef *crashed) {
                 }
             }
             break;
+        case SUPERVISE_REST_FOR_ONE:
         case SUPERVISE_RESTART:
+            /* 重启崩溃的 Actor 及其后注册的所有兄弟 */
             a->actor_state = ACTOR_STATE_RESTARTING;
+            if (meta->supervisor.actor && meta->supervisor.actor->children) {
+                bool found = false;
+                for (size_t i = 0; i < meta->supervisor.actor->child_count; i++) {
+                    PnyActor *c = meta->supervisor.actor->children[i];
+                    if (c == a) { found = true; continue; }
+                    if (found && c) c->actor_state = ACTOR_STATE_RESTARTING;
+                }
+            }
             break;
         case SUPERVISE_NONE:
             a->actor_state = ACTOR_STATE_STOPPED;
@@ -799,6 +823,100 @@ size_t pny_mn_steal_stats(PnyRuntime *r) {
     (void)r;
     if (!pny_mn_global) return 0;
     return pny_mn_global->total_steals;
+}
+
+/* ======================== M:N 多线程 Worker ======================== */
+
+static void *mn_worker_fn(void *arg) {
+    WorkerThread *wt = (WorkerThread *)arg;
+    MNWorker *mn = pny_mn_global;
+    if (!wt || !mn) return NULL;
+
+    while (wt->running && mn->running) {
+        PnyMessage *msg = NULL;
+
+        /* 1. 本地队列 */
+        msg = pop_local(wt->local);
+
+        /* 2. 窃取其他 worker */
+        if (!msg) {
+            msg = pny_mn_steal(wt);
+        }
+
+        /* 3. 全局队列 */
+        if (!msg) {
+            pthread_mutex_lock(&mn->global_lock);
+            if (mn->global && mn->global->count > 0) {
+                msg = pop_local(mn->global);
+            }
+            pthread_mutex_unlock(&mn->global_lock);
+        }
+
+        if (msg) {
+            /* 投递到对应 Actor */
+            PnyRuntime *r = wt->runtime;
+            if (r) {
+                for (PnyActor *a = r->scheduler.actors; a; a = a->next) {
+                    if (a->actor_state == ACTOR_STATE_RUNNING && a->behavior) {
+                        /* 热升级检查 */
+                        if (a->new_behavior) {
+                            a->behavior = a->new_behavior;
+                            a->new_behavior = NULL;
+                            a->version++;
+                        }
+                        /* exactly-once 去重 */
+                        if (msg->msg_id > 0 && pny_msg_delivered(a, msg->msg_id) == 1) {
+                            break;
+                        }
+                        a->behavior(a, msg);
+                        r->stats.messages_delivered++;
+                        break;
+                    }
+                }
+            }
+            pny_msg_free(msg);
+        } else {
+            /* 无消息，短暂休眠 */
+            struct timespec ts = {0, 1000000}; /* 1ms */
+            nanosleep(&ts, NULL);
+        }
+    }
+    return NULL;
+}
+
+void pny_mn_start(PnyRuntime *r) {
+    if (!r || !pny_mn_global) return;
+    MNWorker *mn = pny_mn_global;
+    mn->running = true;
+    mn->runtime = r;
+
+    for (int i = 0; i < mn->worker_count; i++) {
+        mn->workers[i].running = true;
+        mn->workers[i].runtime = r;
+        if (pthread_create(&mn->workers[i].thread, NULL, mn_worker_fn, &mn->workers[i]) != 0) {
+            mn->workers[i].running = false;
+        }
+    }
+}
+
+void pny_mn_stop(PnyRuntime *r) {
+    (void)r;
+    if (!pny_mn_global) return;
+    MNWorker *mn = pny_mn_global;
+    mn->running = false;
+
+    /* 唤醒所有等待的线程 */
+    pthread_mutex_lock(&mn->global_lock);
+    pthread_cond_broadcast(&mn->global_cv);
+    pthread_mutex_unlock(&mn->global_lock);
+
+    /* 等待所有线程退出 */
+    for (int i = 0; i < mn->worker_count; i++) {
+        if (mn->workers[i].running) {
+            mn->workers[i].running = false;
+            pthread_join(mn->workers[i].thread, NULL);
+        }
+    }
 }
 
 /* ======================== 跨组件监督 ======================== */
