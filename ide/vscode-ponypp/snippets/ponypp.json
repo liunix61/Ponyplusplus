@@ -1,0 +1,96 @@
+{
+    "Actor": {
+        "prefix": "actor",
+        "body": [
+            "actor ${1:ActorName} {",
+            "  var _state: ${2:U64} = 0",
+            "",
+            "  new create() {",
+            "    $0",
+            "  }",
+            "",
+            "  be ${3:message}() {",
+            "    $0",
+            "  }",
+            "}"
+        ],
+        "description": "Pony++ Actor"
+    },
+    "Behavior": {
+        "prefix": "be",
+        "body": [
+            "be ${1:name}(${2:params}) {",
+            "  $0",
+            "}"
+        ],
+        "description": "Actor behavior (async method)"
+    },
+    "Function": {
+        "prefix": "fun",
+        "body": [
+            "fun ${1:name}(${2:params}): ${3:U64} {",
+            "  $0",
+            "}"
+        ],
+        "description": "Synchronous function"
+    },
+    "Class": {
+        "prefix": "class",
+        "body": [
+            "class ${1:ClassName} {",
+            "  var _${2:field}: ${3:U64}",
+            "",
+            "  new create(${$2}: ${$3}) {",
+            "    _$${$2} = ${$2}",
+            "  }",
+            "}"
+        ],
+        "description": "Pony++ Class"
+    },
+    "Match": {
+        "prefix": "match",
+        "body": [
+            "match ${1:expr} {",
+            "  | ${2:pattern} => $0",
+            "  | else =>",
+            "}"
+        ],
+        "description": "Pattern match"
+    },
+    "Try": {
+        "prefix": "try",
+        "body": [
+            "try",
+            "  $1",
+            "else",
+            "  $0",
+            "end"
+        ],
+        "description": "Try-else block"
+    },
+    "For loop": {
+        "prefix": "for",
+        "body": [
+            "for ${1:item} in ${2:iterable} do",
+            "  $0",
+            "end"
+        ],
+        "description": "For loop"
+    },
+    "While loop": {
+        "prefix": "while",
+        "body": [
+            "while ${1:condition} do",
+            "  $0",
+            "end"
+        ],
+        "description": "While loop"
+    },
+    "Use directive": {
+        "prefix": "use",
+        "body": [
+            "use \"${1:module}\""
+        ],
+        "description": "Import module"
+    }
+}

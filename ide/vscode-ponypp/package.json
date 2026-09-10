@@ -1,0 +1,75 @@
+{
+    "name": "ponypp",
+    "displayName": "Pony++ Language",
+    "description": "Pony++ programming language support for VS Code",
+    "version": "1.0.0",
+    "publisher": "liunix",
+    "engines": { "vscode": "^1.60.0" },
+    "categories": ["Programming Languages", "Debuggers"],
+    "contributes": {
+        "languages": [{
+            "id": "ponypp",
+            "aliases": ["Pony++", "ponypp"],
+            "extensions": [".pny", ".ponypp"],
+            "configuration": "./language-configuration.json"
+        }],
+        "grammars": [{
+            "language": "ponypp",
+            "scopeName": "source.ponypp",
+            "path": "./syntaxes/ponypp.tmLanguage.json"
+        }],
+        "snippets": [{
+            "language": "ponypp",
+            "path": "./snippets/ponypp.json"
+        }],
+        "debuggers": [{
+            "type": "ponypp",
+            "label": "Pony++ Debug",
+            "program": "./out/debugAdapter.js",
+            "runtime": "node",
+            "configurationAttributes": {
+                "launch": {
+                    "required": ["program"],
+                    "properties": {
+                        "program": {
+                            "type": "string",
+                            "description": "Path to the Pony++ program"
+                        },
+                        "args": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Command line arguments"
+                        },
+                        "stopOnEntry": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Stop at entry point"
+                        }
+                    }
+                }
+            },
+            "initialConfigurations": [{
+                "type": "ponypp",
+                "request": "launch",
+                "name": "Launch Pony++",
+                "program": "${workspaceFolder}/main.pny",
+                "stopOnEntry": true
+            }]
+        }],
+        "commands": [{
+            "command": "ponypp.compile",
+            "title": "Pony++: Compile"
+        },{
+            "command": "ponypp.run",
+            "title": "Pony++: Run"
+        }]
+    },
+    "scripts": {
+        "compile": "tsc -p .",
+        "watch": "tsc -watch -p ."
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.60.0",
+        "typescript": "^4.5.0"
+    }
+}

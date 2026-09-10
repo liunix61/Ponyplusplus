@@ -1,0 +1,162 @@
+{
+    "name": "Pony++",
+    "scopeName": "source.ponypp",
+    "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        { "include": "#numbers" },
+        { "include": "#keywords" },
+        { "include": "#types" },
+        { "include": "#capabilities" },
+        { "include": "#actors" },
+        { "include": "#functions" },
+        { "include": "#operators" }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.double-slash.ponypp",
+                    "match": "//.*$"
+                },
+                {
+                    "name": "comment.block.ponypp",
+                    "begin": "/\\*",
+                    "end": "\\*/"
+                }
+            ]
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "name": "string.quoted.double.ponypp",
+                    "begin": "\"",
+                    "end": "\"",
+                    "patterns": [
+                        { "name": "constant.character.escape.ponypp", "match": "\\\\." }
+                    ]
+                }
+            ]
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.hex.ponypp",
+                    "match": "0[xX][0-9a-fA-F_]+"
+                },
+                {
+                    "name": "constant.numeric.binary.ponypp",
+                    "match": "0[bB][01_]+"
+                },
+                {
+                    "name": "constant.numeric.float.ponypp",
+                    "match": "[0-9][0-9_]*\\.[0-9][0-9_]*([eE][+-]?[0-9]+)?[fFdD]?"
+                },
+                {
+                    "name": "constant.numeric.integer.ponypp",
+                    "match": "[0-9][0-9_]*[iIuU]?(8|16|32|64)?"
+                }
+            ]
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.ponypp",
+                    "match": "\\b(if|else|elseif|end|match|try|then|else|recover|consume|compile_intrinsic|compile_error|error|return|break|continue|for|while|repeat|until|do|new|is|not|and|or|xor)\\b"
+                },
+                {
+                    "name": "keyword.other.ponypp",
+                    "match": "\\b(actor|actorlet|class|primitive|interface|trait|struct|type|let|var|embed|fun|be|use|import|export|as|where)\\b"
+                },
+                {
+                    "name": "keyword.other.capability.ponypp",
+                    "match": "\\b(iso|trn|ref|val|box|tag|aliased|send|share|readonly)\\b"
+                },
+                {
+                    "name": "storage.modifier.ponypp",
+                    "match": "\\b(inline|noinline|unsafe|ifdef|ifndef|define|endif)\\b"
+                }
+            ]
+        },
+        "types": {
+            "patterns": [
+                {
+                    "name": "support.type.primitive.ponypp",
+                    "match": "\\b(U8|U16|U32|U64|U128|I8|I16|I32|I64|I128|F32|F64|Bool|String|None|Pointer|MaybePointer|DoNotOptimise)\\b"
+                },
+                {
+                    "name": "support.type.builtin.ponypp",
+                    "match": "\\b(Array|Seq|Map|Set|List|Buffer|Queue|Stack|String|Bytes|Reader|Writer)\\b"
+                },
+                {
+                    "name": "support.type.stdlib.ponypp",
+                    "match": "\\b(Promise|Future|Regex|Crypto|Hash|Timer|Logger|Json|Msgpack|ProtoBuf)\\b"
+                }
+            ]
+        },
+        "capabilities": {
+            "patterns": [
+                {
+                    "name": "keyword.other.capability.ponypp",
+                    "match": "@\\b(iso|trn|ref|val|box|tag)\\b"
+                }
+            ]
+        },
+        "actors": {
+            "patterns": [
+                {
+                    "name": "entity.name.type.actor.ponypp",
+                    "match": "\\bactor\\s+[A-Z][a-zA-Z0-9_]*"
+                },
+                {
+                    "name": "entity.name.type.class.ponypp",
+                    "match": "\\bclass\\s+[A-Z][a-zA-Z0-9_]*"
+                },
+                {
+                    "name": "entity.name.type.primitive.ponypp",
+                    "match": "\\bprimitive\\s+[A-Z][a-zA-Z0-9_]*"
+                },
+                {
+                    "name": "entity.name.type.interface.ponypp",
+                    "match": "\\binterface\\s+[A-Z][a-zA-Z0-9_]*"
+                }
+            ]
+        },
+        "functions": {
+            "patterns": [
+                {
+                    "name": "entity.name.function.ponypp",
+                    "match": "\\b(fun|be)\\s+([a-z_][a-zA-Z0-9_]*)"
+                },
+                {
+                    "name": "meta.function-call.ponypp",
+                    "match": "\\b([a-z_][a-zA-Z0-9_]*)\\s*\\("
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.assignment.ponypp",
+                    "match": "=|\\+=|-=|\\*=|/=|%="
+                },
+                {
+                    "name": "keyword.operator.comparison.ponypp",
+                    "match": "==|!=|<|>|<=|>=|<:|>:"
+                },
+                {
+                    "name": "keyword.operator.logical.ponypp",
+                    "match": "and|or|not|xor"
+                },
+                {
+                    "name": "keyword.operator.arithmetic.ponypp",
+                    "match": "\\+|-|\\*|/|%|\\*\\*"
+                },
+                {
+                    "name": "keyword.operator.bitwise.ponypp",
+                    "match": "&|\\||\\^|<<|>>|~"
+                }
+            ]
+        }
+    }
+}
