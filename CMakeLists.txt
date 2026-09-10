@@ -11,6 +11,17 @@ option(BUILD_TESTING "Build tests" ON)
 option(USE_ASAN "Address sanitizer" OFF)
 option(USE_UBSAN "Undefined behavior sanitizer" OFF)
 option(USE_TSAN "Thread sanitizer" OFF)
+# TLS 支持 (可选, 需要 OpenSSL)
+option(USE_TLS "Enable TLS support (requires OpenSSL)" OFF)
+if(USE_TLS)
+    find_package(OpenSSL REQUIRED)
+    add_definitions(-DPONYPP_USE_TLS)
+    list(APPEND PONYPP_LINK_LIBS OpenSSL::SSL OpenSSL::Crypto)
+    message(STATUS "TLS support: ENABLED")
+else()
+    message(STATUS "TLS support: DISABLED (use -DUSE_TLS=ON)")
+endif()
+
 option(COVERAGE "Coverage flags" OFF)
 
 # ---- Sanitizer / Coverage flags ----
@@ -113,6 +124,11 @@ if(USE_MBEDTLS AND MBEDTLS_CRYPTO_LIB)
     target_include_directories(ponypp_lib PUBLIC ${MBEDTLS_INCLUDE_DIR})
 elseif(USE_OPENSSL AND OpenSSL_FOUND)
     target_link_libraries(ponypp_lib PUBLIC OpenSSL::Crypto)
+endif()
+
+# Link TLS support
+if(USE_TLS)
+    target_link_libraries(ponypp_lib PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
 # ---- Compiler driver ----

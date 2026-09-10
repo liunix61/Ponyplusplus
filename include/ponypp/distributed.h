@@ -9,6 +9,7 @@ extern "C" {
 #include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include "ponypp/runtime.h"
 
 /* 远程 Actor */
 typedef struct RemoteActor {
@@ -28,6 +29,7 @@ typedef struct DistConnection {
     bool connected;
     uint64_t msgs_sent;
     uint64_t msgs_recv;
+    void *tls;  /* TlsContext*, 需PONYPP_USE_TLS */
 } DistConnection;
 
 /* 分布式运行时 */
@@ -56,7 +58,7 @@ RemoteActor *remote_actor_new(const char *name, const char *host, int port, int 
 void remote_actor_free(RemoteActor *ra);
 
 /* 分布式运行时 */
-DistributedRuntime *dist_runtime_new(void *local, int port);
+DistributedRuntime *dist_runtime_new(PnyRuntime *local, int port);
 void dist_runtime_free(DistributedRuntime *dr);
 int dist_runtime_listen(DistributedRuntime *dr);
 int dist_runtime_register_remote(DistributedRuntime *dr, const char *name,

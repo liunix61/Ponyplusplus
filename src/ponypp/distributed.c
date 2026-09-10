@@ -7,6 +7,7 @@
  * - Actor 消息通过网络发送/接收
  */
 #define _POSIX_C_SOURCE 200809L
+#include "ponypp/distributed.h"
 #include "ponypp/tool.h"
 #include "ponypp/runtime.h"
 #include "ponypp/util.h"
@@ -23,33 +24,7 @@
 #define PNY_DIST_MAGIC 0x504E5944  /* "PNYD" */
 #define PNY_DIST_MAX_PACKET 65536
 
-typedef struct RemoteActor {
-    char *name;
-    char *host;
-    int port;
-    int actor_id;
-    void *state;
-    size_t state_size;
-} RemoteActor;
-
-typedef struct DistConnection {
-    int fd;
-    char *peer_addr;
-    int peer_port;
-    bool connected;
-    uint64_t msgs_sent;
-    uint64_t msgs_recv;
-} DistConnection;
-
-typedef struct DistributedRuntime {
-    DistConnection *self_conn;     /* 作为 server 的监听连接 */
-    RemoteActor **remote_actors;
-    size_t remote_count;
-    size_t remote_cap;
-    PnyRuntime *local_runtime;
-    int port;
-    char node_id[64];
-} DistributedRuntime;
+/* 结构体定义在 ponypp/distributed.h 中 */
 
 /* ======================== 连接管理 ======================== */
 
@@ -305,3 +280,151 @@ const char *dist_runtime_node_id(DistributedRuntime *dr) {
     if (!dr) return NULL;
     return dr->node_id;
 }
+
+/* ==================== TLS 支持 ==================== */
+#ifdef PONYPP_USE_TLS
+
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/x509.h>
+#include <openssl/evp.h>
+#include <openssl/rsa.h>
+#include <openssl/bn.h>
+
+TlsContext *tls_ctx_new(bool is_server) {
+    TlsContext *tc = (TlsContext *)calloc(1, sizeof(TlsContext));
+    if (!tc) return NULL;
+
+    SSL_library_init();
+    SSL_load_error_strings();
+
+    const SSL_METHOD *method = is_server ? TLS_server_method() : TLS_client_method();
+    tc->ctx = SSL_CTX_new(method);
+    if (!tc->ctx) { free(tc); return NULL; }
+
+    /* 最低TLS 1.2 */
+    SSL_CTX_set_min_proto_version(tc->ctx, TLS1_2_VERSION);
+    tc->is_server = is_server;
+    return tc;
+}
+
+void tls_ctx_free(TlsContext *tc) {
+    if (!tc) return;
+    if (tc->ssl) SSL_free(tc->ssl);
+    if (tc->ctx) SSL_CTX_free(tc->ctx);
+    free(tc);
+}
+
+int tls_ctx_load_cert(TlsContext *tc, const char *cert_path, const char *key_path) {
+    if (!tc || !cert_path || !key_path) return -1;
+    if (SSL_CTX_use_certificate_file(tc->ctx, cert_path, SSL_FILETYPE_PEM) != 1)
+        return -2;
+    if (SSL_CTX_use_PrivateKey_file(tc->ctx, key_path, SSL_FILETYPE_PEM) != 1)
+        return -3;
+    if (SSL_CTX_check_private_key(tc->ctx) != 1) return -4;
+    return 0;
+}
+
+int tls_ctx_load_ca(TlsContext *tc, const char *ca_path) {
+    if (!tc || !ca_path) return -1;
+    if (SSL_CTX_load_verify_locations(tc->ctx, ca_path, NULL) != 1) return -2;
+    return 0;
+}
+
+int tls_wrap_socket(TlsContext *tc, int fd) {
+    if (!tc || fd < 0) return -1;
+    tc->ssl = SSL_new(tc->ctx);
+    if (!tc->ssl) return -2;
+    if (SSL_set_fd(tc->ssl, fd) != 1) return -3;
+    return 0;
+}
+
+int tls_handshake(TlsContext *tc) {
+    if (!tc || !tc->ssl) return -1;
+    int rc = tc->is_server ? SSL_accept(tc->ssl) : SSL_connect(tc->ssl);
+    if (rc != 1) return -2;
+    tc->handshake_done = true;
+    return 0;
+}
+
+int tls_read(TlsContext *tc, void *buf, size_t len) {
+    if (!tc || !tc->ssl || !buf) return -1;
+    int n = SSL_read(tc->ssl, buf, (int)len);
+    if (n <= 0) {
+        int err = SSL_get_error(tc->ssl, n);
+        if (err == SSL_ERROR_WANT_READ) return 0;  /* 非阻塞 */
+        return -2;
+    }
+    return n;
+}
+
+int tls_write(TlsContext *tc, const void *data, size_t len) {
+    if (!tc || !tc->ssl || !data) return -1;
+    int n = SSL_write(tc->ssl, data, (int)len);
+    if (n <= 0) return -2;
+    return n;
+}
+
+void tls_close(TlsContext *tc) {
+    if (!tc || !tc->ssl) return;
+    SSL_shutdown(tc->ssl);
+}
+
+int dist_conn_enable_tls(DistConnection *conn, bool is_server, const char *cert_path, const char *key_path) {
+    if (!conn || !conn->connected) return -1;
+    TlsContext *tc = tls_ctx_new(is_server);
+    if (!tc) return -2;
+    if (cert_path && key_path) {
+        int rc = tls_ctx_load_cert(tc, cert_path, key_path);
+        if (rc < 0) { tls_ctx_free(tc); return rc; }
+    }
+    int rc = tls_wrap_socket(tc, conn->fd);
+    if (rc < 0) { tls_ctx_free(tc); return rc; }
+    conn->tls = tc;
+    return 0;
+}
+
+int dist_conn_tls_handshake(DistConnection *conn) {
+    if (!conn || !conn->tls) return -1;
+    return tls_handshake(conn->tls);
+}
+
+int tls_generate_selfsigned(const char *cert_path, const char *key_path, int days) {
+    if (!cert_path || !key_path || days <= 0) return -1;
+
+    /* 生成RSA 2048密钥对 */
+    EVP_PKEY *pkey = EVP_RSA_gen(2048);
+    if (!pkey) return -2;
+
+    /* 创建自签名证书 */
+    X509 *x509 = X509_new();
+    if (!x509) { EVP_PKEY_free(pkey); return -3; }
+
+    ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
+    X509_gmtime_adj(X509_get_notBefore(x509), 0);
+    X509_gmtime_adj(X509_get_notAfter(x509), (long)days * 24 * 3600);
+    X509_set_pubkey(x509, pkey);
+
+    X509_NAME *name = X509_get_subject_name(x509);
+    X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
+                               (const unsigned char *)"Pony++ Test", -1, -1, 0);
+    X509_set_issuer_name(x509, name);
+    X509_sign(x509, pkey, EVP_sha256());
+
+    /* 写入文件 */
+    FILE *f = fopen(cert_path, "w");
+    if (!f) { X509_free(x509); EVP_PKEY_free(pkey); return -4; }
+    PEM_write_X509(f, x509);
+    fclose(f);
+
+    f = fopen(key_path, "w");
+    if (!f) { X509_free(x509); EVP_PKEY_free(pkey); return -5; }
+    PEM_write_PrivateKey(f, pkey, NULL, NULL, 0, NULL, NULL);
+    fclose(f);
+
+    X509_free(x509);
+    EVP_PKEY_free(pkey);
+    return 0;
+}
+
+#endif /* PONYPP_USE_TLS */
