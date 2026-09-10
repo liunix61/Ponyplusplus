@@ -1218,3 +1218,130 @@ static void cg_emit_main(Codegen *cg, ASTNode *ast) {
     cg_emit(cg, "    return 0;\n");
     cg_emit(cg, "}\n");
 }
+
+/* ==================== Source Map ==================== */
+
+SourceMap *sourcemap_new(void) {
+    SourceMap *sm = (SourceMap *)calloc(1, sizeof(SourceMap));
+    if (!sm) return NULL;
+    sm->cap = 256;
+    sm->entries = (SourceMapEntry *)calloc(sm->cap, sizeof(SourceMapEntry));
+    if (!sm->entries) { free(sm); return NULL; }
+    return sm;
+}
+
+void sourcemap_free(SourceMap *sm) {
+    if (!sm) return;
+    free(sm->entries);
+    free(sm);
+}
+
+int sourcemap_add(SourceMap *sm, int gen_line, const char *file, int src_line, int src_col) {
+    if (!sm || !file) return -1;
+    if (sm->count >= sm->cap) {
+        size_t nc = sm->cap * 2;
+        SourceMapEntry *ne = (SourceMapEntry *)realloc(sm->entries, nc * sizeof(SourceMapEntry));
+        if (!ne) return -2;
+        memset(ne + sm->cap, 0, (nc - sm->cap) * sizeof(SourceMapEntry));
+        sm->entries = ne;
+        sm->cap = nc;
+    }
+    SourceMapEntry *e = &sm->entries[sm->count++];
+    e->generated_line = gen_line;
+    e->source_line = src_line;
+    e->source_col = src_col;
+    strncpy(e->source_file, file, sizeof(e->source_file) - 1);
+    return 0;
+}
+
+int sourcemap_lookup(const SourceMap *sm, int gen_line, SourceMapEntry *out) {
+    if (!sm || !out) return -1;
+    /* 二分查找最近的<=gen_line的条目 */
+    size_t lo = 0, hi = sm->count;
+    while (lo < hi) {
+        size_t mid = (lo + hi) / 2;
+        if (sm->entries[mid].generated_line <= gen_line)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    if (lo == 0) return -2;
+    *out = sm->entries[lo - 1];
+    return 0;
+}
+
+int sourcemap_save_json(const SourceMap *sm, const char *path) {
+    if (!sm || !path) return -1;
+    FILE *f = fopen(path, "w");
+    if (!f) return -2;
+    /* 简单格式: gen_line\x01file\x01src_line */
+    for (size_t i = 0; i < sm->count; i++) {
+        const SourceMapEntry *e = &sm->entries[i];
+        fprintf(f, "%d%c%s%c%d\n", e->generated_line, 1, e->source_file, 1, e->source_line);
+    }
+    fclose(f);
+    return 0;
+}
+
+SourceMap *sourcemap_load_json(const char *path) {
+    if (!path) return NULL;
+    FILE *f = fopen(path, "r");
+    if (!f) return NULL;
+    SourceMap *sm = sourcemap_new();
+    if (!sm) { fclose(f); return NULL; }
+
+    char line[1024];
+    while (fgets(line, sizeof(line), f)) {
+        int gen_line, src_line;
+        char file[256];
+        /* 解析格式: gen_line|file|src_line */
+        char *p1 = strchr(line, 0x01);  /* STX分隔符 */
+        if (!p1) continue;
+        char *p2 = strchr(p1 + 1, 0x01);
+        if (!p2) continue;
+        *p1 = 0; *p2 = 0;
+        gen_line = atoi(line);
+        strncpy(file, p1 + 1, sizeof(file) - 1);
+        src_line = atoi(p2 + 1);
+        sourcemap_add(sm, gen_line, file, src_line, 0);
+    }
+    fclose(f);
+    return sm;
+}
+
+size_t sourcemap_count(const SourceMap *sm) {
+    return sm ? sm->count : 0;
+}
+
+/* Codegen with source map */
+typedef struct {
+    FILE *out;
+    SourceMap *sm;
+    char source_file[256];
+    int current_line;
+} CodegenInternal;
+
+/* 扩展Codegen结构(如果已有sm字段则复用) */
+/* 简化实现: 通过全局变量关联 */
+static SourceMap *g_current_sm = NULL;
+static char g_current_file[256] = {0};
+static int g_current_gen_line = 0;
+
+Codegen *codegen_new_with_map(FILE *out, SourceMap *sm) {
+    g_current_sm = sm;
+    g_current_gen_line = 0;
+    return codegen_new(out);
+}
+
+void codegen_set_source_file(Codegen *cg, const char *filename) {
+    (void)cg;
+    if (filename) strncpy(g_current_file, filename, sizeof(g_current_file) - 1);
+}
+
+void codegen_emit_line_directive(Codegen *cg, int src_line) {
+    (void)cg;
+    if (g_current_sm && g_current_file[0]) {
+        g_current_gen_line++;
+        sourcemap_add(g_current_sm, g_current_gen_line, g_current_file, src_line, 0);
+    }
+}
