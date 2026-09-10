@@ -1577,3 +1577,238 @@ int64_t pny_math_random_int(int64_t max) {
     if (max <= 0) return 0;
     return (int64_t)(pny_math_random() * (double)max);
 }
+
+
+/* ==================== UUID ==================== */
+
+#include <time.h>
+
+int pny_uuid_v4(char *buf, size_t buf_size) {
+    if (!buf || buf_size < 37) return -1;
+    srand((unsigned)time(NULL) ^ (unsigned)(uintptr_t)buf);
+    uint8_t bytes[16];
+    for (int i = 0; i < 16; i++) bytes[i] = (uint8_t)(rand() & 0xFF);
+    bytes[6] = (bytes[6] & 0x0F) | 0x40; /* version 4 */
+    bytes[8] = (bytes[8] & 0x3F) | 0x80; /* variant */
+    snprintf(buf, 37, "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+             bytes[0],bytes[1],bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],
+             bytes[8],bytes[9],bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15]);
+    return 0;
+}
+
+int pny_uuid_short(char *buf, size_t buf_size) {
+    if (!buf || buf_size < 17) return -1;
+    srand((unsigned)time(NULL) ^ (unsigned)(uintptr_t)buf);
+    uint8_t bytes[8];
+    for (int i = 0; i < 8; i++) bytes[i] = (uint8_t)(rand() & 0xFF);
+    for (int i = 0; i < 8; i++) sprintf(buf + i*2, "%02x", bytes[i]);
+    buf[16] = '\0';
+    return 0;
+}
+
+/* ==================== Base64 ==================== */
+
+static const char b64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+int pny_base64_encode(const void *data, size_t len, char *out, size_t out_size) {
+    if (!data || !out) return -1;
+    size_t need = ((len + 2) / 3) * 4 + 1;
+    if (out_size < need) return -1;
+    
+    const uint8_t *in = (const uint8_t *)data;
+    size_t o = 0;
+    for (size_t i = 0; i < len; i += 3) {
+        uint32_t v = (uint32_t)in[i] << 16;
+        if (i+1 < len) v |= (uint32_t)in[i+1] << 8;
+        if (i+2 < len) v |= (uint32_t)in[i+2];
+        
+        out[o++] = b64_table[(v >> 18) & 0x3F];
+        out[o++] = b64_table[(v >> 12) & 0x3F];
+        out[o++] = (i+1 < len) ? b64_table[(v >> 6) & 0x3F] : '=';
+        out[o++] = (i+2 < len) ? b64_table[v & 0x3F] : '=';
+    }
+    out[o] = '\0';
+    return (int)o;
+}
+
+static int b64_val(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+int pny_base64_decode(const char *input, size_t len, void *out, size_t out_size) {
+    if (!input || !out) return -1;
+    if (out_size < (len / 4) * 3) return -1;
+    
+    uint8_t *o = (uint8_t *)out;
+    size_t oi = 0;
+    for (size_t i = 0; i < len; i += 4) {
+        int v[4];
+        for (int j = 0; j < 4; j++) {
+            v[j] = (i+j < len && input[i+j] != '=') ? b64_val(input[i+j]) : 0;
+            if (v[j] < 0 && input[i+j] != '=') return -1;
+        }
+        uint32_t val = ((uint32_t)v[0] << 18) | ((uint32_t)v[1] << 12) | ((uint32_t)v[2] << 6) | (uint32_t)v[3];
+        o[oi++] = (uint8_t)(val >> 16);
+        if (i+2 < len && input[i+2] != '=') o[oi++] = (uint8_t)(val >> 8);
+        if (i+3 < len && input[i+3] != '=') o[oi++] = (uint8_t)val;
+    }
+    return (int)oi;
+}
+
+/* ==================== Hex ==================== */
+
+static const char hex_table[] = "0123456789abcdef";
+
+int pny_hex_encode(const void *data, size_t len, char *out, size_t out_size) {
+    if (!data || !out) return -1;
+    if (out_size < len * 2 + 1) return -1;
+    
+    const uint8_t *in = (const uint8_t *)data;
+    for (size_t i = 0; i < len; i++) {
+        out[i*2] = hex_table[in[i] >> 4];
+        out[i*2+1] = hex_table[in[i] & 0x0F];
+    }
+    out[len*2] = '\0';
+    return (int)(len * 2);
+}
+
+int pny_hex_decode(const char *input, size_t len, void *out, size_t out_size) {
+    if (!input || !out) return -1;
+    if (len % 2 != 0) return -1;
+    if (out_size < len / 2) return -1;
+    
+    uint8_t *o = (uint8_t *)out;
+    for (size_t i = 0; i < len; i += 2) {
+        int hi = -1, lo = -1;
+        char c1 = input[i], c2 = input[i+1];
+        if (c1 >= '0' && c1 <= '9') hi = c1 - '0';
+        else if (c1 >= 'a' && c1 <= 'f') hi = c1 - 'a' + 10;
+        else if (c1 >= 'A' && c1 <= 'F') hi = c1 - 'A' + 10;
+        else return -1;
+        if (c2 >= '0' && c2 <= '9') lo = c2 - '0';
+        else if (c2 >= 'a' && c2 <= 'f') lo = c2 - 'a' + 10;
+        else if (c2 >= 'A' && c2 <= 'F') lo = c2 - 'A' + 10;
+        else return -1;
+        o[i/2] = (uint8_t)(hi * 16 + lo);
+    }
+    return (int)(len / 2);
+}
+
+/* ==================== CRC32 ==================== */
+
+static uint32_t crc32_table[256];
+static bool crc32_table_init = false;
+
+static void crc32_init_table(void) {
+    for (uint32_t i = 0; i < 256; i++) {
+        uint32_t c = i;
+        for (int j = 0; j < 8; j++)
+            c = (c & 1) ? (0xEDB88320 ^ (c >> 1)) : (c >> 1);
+        crc32_table[i] = c;
+    }
+    crc32_table_init = true;
+}
+
+uint32_t pny_crc32(const void *data, size_t len) {
+    if (!data) return 0;
+    if (!crc32_table_init) crc32_init_table();
+    
+    const uint8_t *p = (const uint8_t *)data;
+    uint32_t crc = 0xFFFFFFFF;
+    for (size_t i = 0; i < len; i++)
+        crc = crc32_table[(crc ^ p[i]) & 0xFF] ^ (crc >> 8);
+    return crc ^ 0xFFFFFFFF;
+}
+
+/* ==================== String Utilities ==================== */
+
+int pny_str_split_c(const char *s, char delim, char **tokens, int max_tokens) {
+    if (!s || !tokens || max_tokens < 1) return -1;
+    int count = 0;
+    const char *start = s;
+    for (const char *p = s; ; p++) {
+        if (*p == delim || *p == '\0') {
+            if (count >= max_tokens) return count;
+            size_t tlen = (size_t)(p - start);
+            tokens[count] = (char *)s_malloc(tlen + 1);
+            if (!tokens[count]) return -1;
+            memcpy(tokens[count], start, tlen);
+            tokens[count][tlen] = '\0';
+            count++;
+            if (*p == '\0') break;
+            start = p + 1;
+        }
+    }
+    return count;
+}
+
+int pny_str_trim_c(const char *s, char *out, size_t out_size) {
+    if (!s || !out) return -1;
+    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
+    size_t len = strlen(s);
+    while (len > 0 && (s[len-1] == ' ' || s[len-1] == '\t' || s[len-1] == '\n' || s[len-1] == '\r')) len--;
+    if (out_size < len + 1) return -1;
+    memcpy(out, s, len);
+    out[len] = '\0';
+    return (int)len;
+}
+
+int pny_str_replace_c(const char *s, const char *from, const char *to, char *out, size_t out_size) {
+    if (!s || !from || !to || !out) return -1;
+    size_t from_len = strlen(from), to_len = strlen(to);
+    int count = 0;
+    size_t oi = 0;
+    const char *p = s;
+    
+    while (*p) {
+        if (from_len > 0 && strncmp(p, from, from_len) == 0) {
+            if (oi + to_len >= out_size) return -1;
+            memcpy(out + oi, to, to_len);
+            oi += to_len;
+            p += from_len;
+            count++;
+        } else {
+            if (oi + 1 >= out_size) return -1;
+            out[oi++] = *p++;
+        }
+    }
+    out[oi] = '\0';
+    return count;
+}
+
+int pny_str_toupper_c(const char *s, char *out, size_t out_size) {
+    if (!s || !out) return -1;
+    size_t len = strlen(s);
+    if (out_size < len + 1) return -1;
+    for (size_t i = 0; i < len; i++)
+        out[i] = (s[i] >= 'a' && s[i] <= 'z') ? (char)(s[i] - 32) : s[i];
+    out[len] = '\0';
+    return (int)len;
+}
+
+int pny_str_tolower_c(const char *s, char *out, size_t out_size) {
+    if (!s || !out) return -1;
+    size_t len = strlen(s);
+    if (out_size < len + 1) return -1;
+    for (size_t i = 0; i < len; i++)
+        out[i] = (s[i] >= 'A' && s[i] <= 'Z') ? (char)(s[i] + 32) : s[i];
+    out[len] = '\0';
+    return (int)len;
+}
+
+bool pny_str_starts_with_c(const char *s, const char *prefix) {
+    if (!s || !prefix) return false;
+    return strncmp(s, prefix, strlen(prefix)) == 0;
+}
+
+bool pny_str_ends_with_c(const char *s, const char *suffix) {
+    if (!s || !suffix) return false;
+    size_t slen = strlen(s), xlen = strlen(suffix);
+    if (xlen > slen) return false;
+    return strcmp(s + slen - xlen, suffix) == 0;
+}

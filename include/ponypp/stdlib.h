@@ -340,6 +340,54 @@ int64_t pny_math_max(int64_t a, int64_t b);
 double pny_math_fmod(double x, double y);
 int64_t pny_math_factorial(int64_t n);
 
+/* ==================== UUID ==================== */
+
+/* 生成 UUID v4 (随机), buf至少37字节 (36+\0) */
+int pny_uuid_v4(char *buf, size_t buf_size);
+
+/* 生成短UUID (8字节hex), buf至少17字节 */
+int pny_uuid_short(char *buf, size_t buf_size);
+
+/* ==================== Base64 ==================== */
+
+/* Base64编码. 返回编码后长度, -1错误. out需要 (len+2)/3*4+1 字节 */
+int pny_base64_encode(const void *data, size_t len, char *out, size_t out_size);
+
+/* Base64解码. 返回解码后长度, -1错误. out需要 (len/4)*3 字节 */
+int pny_base64_decode(const char *input, size_t len, void *out, size_t out_size);
+
+/* ==================== Hex ==================== */
+
+/* 十六进制编码. 返回编码后长度, -1错误. out需要 len*2+1 字节 */
+int pny_hex_encode(const void *data, size_t len, char *out, size_t out_size);
+
+/* 十六进制解码. 返回解码后长度, -1错误. out需要 len/2 字节 */
+int pny_hex_decode(const char *input, size_t len, void *out, size_t out_size);
+
+/* ==================== CRC32 ==================== */
+
+/* CRC32校验 */
+uint32_t pny_crc32(const void *data, size_t len);
+
+/* ==================== String Utilities ==================== */
+
+/* 字符串分割. 返回token数, -1错误. tokens数组由调用方管理 */
+int pny_str_split_c(const char *s, char delim, char **tokens, int max_tokens);
+
+/* 字符串trim (去除首尾空白). 结果写入out */
+int pny_str_trim_c(const char *s, char *out, size_t out_size);
+
+/* 字符串替换. 返回替换次数, -1错误 */
+int pny_str_replace_c(const char *s, const char *from, const char *to, char *out, size_t out_size);
+
+/* 字符串转大写/小写 */
+int pny_str_toupper_c(const char *s, char *out, size_t out_size);
+int pny_str_tolower_c(const char *s, char *out, size_t out_size);
+
+/* 字符串是否以prefix开头/结尾 */
+bool pny_str_starts_with_c(const char *s, const char *prefix);
+bool pny_str_ends_with_c(const char *s, const char *suffix);
+
 #define PNY_MATH_PI  3.14159265358979323846
 #define PNY_MATH_E   2.71828182845904523536
 
