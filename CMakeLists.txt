@@ -64,6 +64,7 @@ set(PONYPP_SRCS
     src/browser.c
     src/debugger.c
     src/version_compat.c
+    src/http.c
 )
 
 # ---- Library (no driver, no main) ----
