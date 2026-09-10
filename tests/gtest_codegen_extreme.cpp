@@ -193,3 +193,104 @@ TEST(CodegenExtreme, ActorWithOnlyNew) {
 TEST(CodegenExtreme, ActorWithOnlyBe) {
     EXPECT_TRUE(compile_source("actor A{be run(){}}"));
 }
+
+TEST(CodegenExtreme, ComplexActorSystem) {
+    EXPECT_TRUE(compile_source(
+        "actor Logger {\n"
+        "  be log(msg: String) { }\n"
+        "}\n"
+        "actor Cache {\n"
+        "  var _data: Map[String, U64]\n"
+        "  new create() { _data = Map[String, U64] }\n"
+        "  be set(key: String, value: U64) { }\n"
+        "  be get(key: String) { }\n"
+        "}\n"
+        "actor Service {\n"
+        "  var _logger: Logger\n"
+        "  var _cache: Cache\n"
+        "  new create(logger: Logger, cache: Cache) {\n"
+        "    _logger = logger\n"
+        "    _cache = cache\n"
+        "  }\n"
+        "  be process(key: String) {\n"
+        "    _cache!get(key)\n"
+        "    _logger!log(\"processing\")\n"
+        "  }\n"
+        "}\n"
+        "actor Main {\n"
+        "  new create() {\n"
+        "    var logger = Logger\n"
+        "    var cache = Cache\n"
+        "    var service = Service(logger, cache)\n"
+        "    service!process(\"key1\")\n"
+        "  }\n"
+        "}"));
+}
+
+TEST(CodegenExtreme, MaxIntLiteral) {
+    EXPECT_TRUE(compile_source(
+        "actor Foo {\n"
+        "  fun max(): U64 { 18446744073709551615 }\n"
+        "}"));
+}
+
+TEST(CodegenExtreme, MultipleInterfaces) {
+    EXPECT_TRUE(compile_source(
+        "interface Printable {\n  fun print(): String\n}\n"
+        "interface Serializable {\n  fun serialize(): String\n  fun deserialize(data: String)\n}\n"
+        "actor Data is Printable, Serializable {\n"
+        "  var _value: U64\n"
+        "  new create(v: U64) { _value = v }\n"
+        "  fun print(): String { \"Data\" }\n"
+        "  fun serialize(): String { \"\" }\n"
+        "  fun deserialize(data: String) { }\n"
+        "}"));
+}
+
+TEST(CodegenExtreme, TraitChain) {
+    EXPECT_TRUE(compile_source(
+        "trait Base {\n  fun base_method(): U64 { 1 }\n}\n"
+        "trait Middle is Base {\n  fun middle_method(): U64 { 2 }\n}\n"
+        "actor Concrete is Middle {\n"
+        "  fun concrete_method(): U64 { 3 }\n"
+        "}"));
+}
+
+TEST(CodegenExtreme, TryElseThenAll) {
+    EXPECT_TRUE(compile_source(
+        "actor Foo {\n"
+        "  fun test(): U64 {\n"
+        "    try\n"
+        "      42\n"
+        "    else\n"
+        "      0\n"
+        "    then\n"
+        "      cleanup()\n"
+        "    end\n"
+        "  }\n"
+        "}"));
+}
+
+TEST(CodegenExtreme, MatchWithMultiplePatterns) {
+    EXPECT_TRUE(compile_source(
+        "actor Foo {\n"
+        "  fun process(x: U64): String {\n"
+        "    match x\n"
+        "    | 0 => \"zero\"\n"
+        "    | 1 => \"one\"\n"
+        "    | 2 => \"two\"\n"
+        "    | 3 => \"three\"\n"
+        "    | 4 => \"four\"\n"
+        "    | 5 => \"five\"\n"
+        "    | else => \"many\"\n"
+        "    end\n"
+        "  }\n"
+        "}"));
+}
+
+TEST(CodegenExtreme, FloatPrecision) {
+    EXPECT_TRUE(compile_source(
+        "actor Foo {\n"
+        "  fun precise(): F64 { 3.14159265358979323846 }\n"
+        "}"));
+}

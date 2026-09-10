@@ -77,11 +77,13 @@ static void cg_set_fields(Codegen *cg, size_t fc, char **fields) {
 }
 
 static void cg_set_fields_with_types(Codegen *cg, size_t fc, char **fields, char **types) {
-    cg_set_fields(cg, fc, fields);
+    /* 先释放旧的 field_types（用旧的 field_count） */
     if (cg->field_types) {
         for (size_t i = 0; i < cg->field_count; i++) free(cg->field_types[i]);
         free(cg->field_types);
+        cg->field_types = NULL;
     }
+    cg_set_fields(cg, fc, fields);
     cg->field_types = types;
 }
 
