@@ -160,6 +160,100 @@ bool pny_map_empty(const PnyMap *m);
 void pny_map_clear(PnyMap *m);
 void pny_map_foreach(PnyMap *m, void (*fn)(void *, void *, void *), void *ctx);
 
+/* ==================== MessagePack (二进制序列化) ==================== */
+/* 轻量级msgpack编码器/解码器 (支持nil/bool/int/float/str/bin/array/map) */
+
+/* 编码: 写入buf, 返回写入字节数或-1 */
+int pny_msgpack_write_nil(uint8_t *buf, size_t buf_len);
+int pny_msgpack_write_bool(uint8_t *buf, size_t buf_len, bool val);
+int pny_msgpack_write_int(uint8_t *buf, size_t buf_len, int64_t val);
+int pny_msgpack_write_uint(uint8_t *buf, size_t buf_len, uint64_t val);
+int pny_msgpack_write_float(uint8_t *buf, size_t buf_len, float val);
+int pny_msgpack_write_double(uint8_t *buf, size_t buf_len, double val);
+int pny_msgpack_write_str(uint8_t *buf, size_t buf_len, const char *str);
+int pny_msgpack_write_bin(uint8_t *buf, size_t buf_len, const void *data, size_t len);
+int pny_msgpack_write_array_header(uint8_t *buf, size_t buf_len, uint32_t count);
+int pny_msgpack_write_map_header(uint8_t *buf, size_t buf_len, uint32_t count);
+
+/* 解码: 从buf读取, 返回读取字节数或负错误码 */
+/* 类型标记 */
+typedef enum {
+    PNY_MSGPACK_NIL = 0,
+    PNY_MSGPACK_BOOL,
+    PNY_MSGPACK_INT,
+    PNY_MSGPACK_UINT,
+    PNY_MSGPACK_FLOAT,
+    PNY_MSGPACK_DOUBLE,
+    PNY_MSGPACK_STR,
+    PNY_MSGPACK_BIN,
+    PNY_MSGPACK_ARRAY,
+    PNY_MSGPACK_MAP
+} PnyMsgpackType;
+
+typedef struct {
+    PnyMsgpackType type;
+    union {
+        bool bool_val;
+        int64_t int_val;
+        uint64_t uint_val;
+        float float_val;
+        double double_val;
+        struct { const uint8_t *ptr; uint32_t len; } str_bin;
+        uint32_t count;  /* array/map */
+    };
+} PnyMsgpackValue;
+
+int pny_msgpack_read(const uint8_t *buf, size_t buf_len, PnyMsgpackValue *out);
+
+/* ==================== Stream (流式I/O) ==================== */
+typedef struct PnyStream PnyStream;
+
+PnyStream *pny_stream_new(void);
+void pny_stream_free(PnyStream *st);
+int pny_stream_write(PnyStream *st, const void *data, size_t len);
+int pny_stream_read(PnyStream *st, void *buf, size_t buf_len);
+size_t pny_stream_available(const PnyStream *st);
+void pny_stream_close(PnyStream *st);  /* 标记写端关闭 */
+bool pny_stream_is_closed(const PnyStream *st);
+
+/* ==================== Error (I/O错误类型) ==================== */
+typedef enum {
+    PNY_ERR_NONE = 0,
+    PNY_ERR_EOF,
+    PNY_ERR_TIMEOUT,
+    PNY_ERR_PERMISSION,
+    PNY_ERR_NOT_FOUND,
+    PNY_ERR_ALREADY_EXISTS,
+    PNY_ERR_INVALID_ARG,
+    PNY_ERR_IO,
+    PNY_ERR_NO_MEMORY,
+    PNY_ERR_UNKNOWN
+} PnyErrorCode;
+
+const char *pny_error_str(PnyErrorCode code);
+
+/* ==================== Mailbox (Actor邮箱) ==================== */
+typedef struct PnyMailbox PnyMailbox;
+
+PnyMailbox *pny_mailbox_new(size_t max_size);
+void pny_mailbox_free(PnyMailbox *mb);
+bool pny_mailbox_put(PnyMailbox *mb, void *msg);
+void *pny_mailbox_take(PnyMailbox *mb);
+size_t pny_mailbox_size(const PnyMailbox *mb);
+bool pny_mailbox_is_empty(const PnyMailbox *mb);
+
+/* ==================== Group (Actor组) ==================== */
+typedef struct PnyGroup PnyGroup;
+
+PnyGroup *pny_group_new(const char *name);
+void pny_group_free(PnyGroup *g);
+int pny_group_add(PnyGroup *g, int actor_id);
+int pny_group_remove(PnyGroup *g, int actor_id);
+size_t pny_group_size(const PnyGroup *g);
+bool pny_group_contains(const PnyGroup *g, int actor_id);
+const char *pny_group_name(const PnyGroup *g);
+int pny_group_members(const PnyGroup *g, int *out_ids, size_t max);
+
 /* ==================== Collections 扩展 ==================== */
 
 /* Set (哈希集合, 基于map实现) */

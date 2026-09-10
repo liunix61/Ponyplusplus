@@ -1527,6 +1527,285 @@ double pny_stats_median(double *data, size_t n) {
     return (data[n / 2 - 1] + data[n / 2]) / 2.0;
 }
 
+/* ==================== MessagePack ==================== */
+int pny_msgpack_write_nil(uint8_t *buf, size_t buf_len) {
+    if (!buf || buf_len < 1) return -1;
+    buf[0] = 0xc0;
+    return 1;
+}
+
+int pny_msgpack_write_bool(uint8_t *buf, size_t buf_len, bool val) {
+    if (!buf || buf_len < 1) return -1;
+    buf[0] = val ? 0xc3 : 0xc2;
+    return 1;
+}
+
+int pny_msgpack_write_uint(uint8_t *buf, size_t buf_len, uint64_t val) {
+    if (!buf) return -1;
+    if (val <= 0x7f) { if (buf_len < 1) return -1; buf[0] = (uint8_t)val; return 1; }
+    if (val <= 0xff) { if (buf_len < 2) return -1; buf[0] = 0xcc; buf[1] = (uint8_t)val; return 2; }
+    if (val <= 0xffff) { if (buf_len < 3) return -1; buf[0] = 0xcd; buf[1] = (uint8_t)(val>>8); buf[2] = (uint8_t)val; return 3; }
+    if (val <= 0xffffffffULL) { if (buf_len < 5) return -1; buf[0] = 0xce; buf[1]=(uint8_t)(val>>24); buf[2]=(uint8_t)(val>>16); buf[3]=(uint8_t)(val>>8); buf[4]=(uint8_t)val; return 5; }
+    if (buf_len < 9) return -1;
+    buf[0] = 0xcf;
+    for (int i = 0; i < 8; i++) buf[1+i] = (uint8_t)(val >> (56 - i*8));
+    return 9;
+}
+
+int pny_msgpack_write_int(uint8_t *buf, size_t buf_len, int64_t val) {
+    if (!buf) return -1;
+    if (val >= 0) return pny_msgpack_write_uint(buf, buf_len, (uint64_t)val);
+    if (val >= -32) { if (buf_len < 1) return -1; buf[0] = (uint8_t)(int8_t)val; return 1; }
+    if (val >= -128) { if (buf_len < 2) return -1; buf[0] = 0xd0; buf[1] = (uint8_t)(int8_t)val; return 2; }
+    if (val >= -32768) { if (buf_len < 3) return -1; buf[0] = 0xd1; buf[1]=(uint8_t)(val>>8); buf[2]=(uint8_t)val; return 3; }
+    if (val >= -2147483648LL) { if (buf_len < 5) return -1; buf[0] = 0xd2; buf[1]=(uint8_t)(val>>24); buf[2]=(uint8_t)(val>>16); buf[3]=(uint8_t)(val>>8); buf[4]=(uint8_t)val; return 5; }
+    if (buf_len < 9) return -1;
+    buf[0] = 0xd3;
+    for (int i = 0; i < 8; i++) buf[1+i] = (uint8_t)(val >> (56 - i*8));
+    return 9;
+}
+
+int pny_msgpack_write_float(uint8_t *buf, size_t buf_len, float val) {
+    if (!buf || buf_len < 5) return -1;
+    buf[0] = 0xca;
+    uint32_t bits; memcpy(&bits, &val, 4);
+    for (int i = 0; i < 4; i++) buf[1+i] = (uint8_t)(bits >> (24 - i*8));
+    return 5;
+}
+
+int pny_msgpack_write_double(uint8_t *buf, size_t buf_len, double val) {
+    if (!buf || buf_len < 9) return -1;
+    buf[0] = 0xcb;
+    uint64_t bits; memcpy(&bits, &val, 8);
+    for (int i = 0; i < 8; i++) buf[1+i] = (uint8_t)(bits >> (56 - i*8));
+    return 9;
+}
+
+int pny_msgpack_write_str(uint8_t *buf, size_t buf_len, const char *str) {
+    if (!buf || !str) return -1;
+    size_t len = strlen(str);
+    if (len <= 31) { if (buf_len < 1+len) return -1; buf[0] = (uint8_t)(0xa0|len); memcpy(buf+1, str, len); return (int)(1+len); }
+    if (len <= 0xff) { if (buf_len < 2+len) return -1; buf[0]=0xd9; buf[1]=(uint8_t)len; memcpy(buf+2, str, len); return (int)(2+len); }
+    if (len <= 0xffff) { if (buf_len < 3+len) return -1; buf[0]=0xda; buf[1]=(uint8_t)(len>>8); buf[2]=(uint8_t)len; memcpy(buf+3, str, len); return (int)(3+len); }
+    if (buf_len < 5+len) return -1;
+    buf[0]=0xdb; buf[1]=(uint8_t)(len>>24); buf[2]=(uint8_t)(len>>16); buf[3]=(uint8_t)(len>>8); buf[4]=(uint8_t)len;
+    memcpy(buf+5, str, len); return (int)(5+len);
+}
+
+int pny_msgpack_write_bin(uint8_t *buf, size_t buf_len, const void *data, size_t len) {
+    if (!buf || (!data && len > 0)) return -1;
+    if (len <= 0xff) { if (buf_len < 2+len) return -1; buf[0]=0xc4; buf[1]=(uint8_t)len; if(len) memcpy(buf+2, data, len); return (int)(2+len); }
+    if (len <= 0xffff) { if (buf_len < 3+len) return -1; buf[0]=0xc5; buf[1]=(uint8_t)(len>>8); buf[2]=(uint8_t)len; if(len) memcpy(buf+3, data, len); return (int)(3+len); }
+    if (buf_len < 5+len) return -1;
+    buf[0]=0xc6; buf[1]=(uint8_t)(len>>24); buf[2]=(uint8_t)(len>>16); buf[3]=(uint8_t)(len>>8); buf[4]=(uint8_t)len;
+    if(len) memcpy(buf+5, data, len); return (int)(5+len);
+}
+
+int pny_msgpack_write_array_header(uint8_t *buf, size_t buf_len, uint32_t count) {
+    if (!buf) return -1;
+    if (count <= 15) { if (buf_len<1) return -1; buf[0]=(uint8_t)(0x90|count); return 1; }
+    if (count <= 0xffff) { if (buf_len<3) return -1; buf[0]=0xdc; buf[1]=(uint8_t)(count>>8); buf[2]=(uint8_t)count; return 3; }
+    if (buf_len<5) return -1;
+    buf[0]=0xdd; buf[1]=(uint8_t)(count>>24); buf[2]=(uint8_t)(count>>16); buf[3]=(uint8_t)(count>>8); buf[4]=(uint8_t)count; return 5;
+}
+
+int pny_msgpack_write_map_header(uint8_t *buf, size_t buf_len, uint32_t count) {
+    if (!buf) return -1;
+    if (count <= 15) { if (buf_len<1) return -1; buf[0]=(uint8_t)(0x80|count); return 1; }
+    if (count <= 0xffff) { if (buf_len<3) return -1; buf[0]=0xde; buf[1]=(uint8_t)(count>>8); buf[2]=(uint8_t)count; return 3; }
+    if (buf_len<5) return -1;
+    buf[0]=0xdf; buf[1]=(uint8_t)(count>>24); buf[2]=(uint8_t)(count>>16); buf[3]=(uint8_t)(count>>8); buf[4]=(uint8_t)count; return 5;
+}
+
+int pny_msgpack_read(const uint8_t *buf, size_t buf_len, PnyMsgpackValue *out) {
+    if (!buf || buf_len < 1 || !out) return -1;
+    uint8_t tag = buf[0];
+    memset(out, 0, sizeof(*out));
+    if (tag <= 0x7f) { out->type = PNY_MSGPACK_UINT; out->uint_val = tag; return 1; }
+    if (tag >= 0xe0) { out->type = PNY_MSGPACK_INT; out->int_val = (int8_t)tag; return 1; }
+    if (tag >= 0xa0 && tag <= 0xbf) { uint32_t len = tag & 0x1f; if (buf_len < 1+len) return -1; out->type = PNY_MSGPACK_STR; out->str_bin.ptr = buf+1; out->str_bin.len = len; return (int)(1+len); }
+    if (tag >= 0x90 && tag <= 0x9f) { out->type = PNY_MSGPACK_ARRAY; out->count = tag & 0x0f; return 1; }
+    if (tag >= 0x80 && tag <= 0x8f) { out->type = PNY_MSGPACK_MAP; out->count = tag & 0x0f; return 1; }
+    switch (tag) {
+        case 0xc0: out->type = PNY_MSGPACK_NIL; return 1;
+        case 0xc2: out->type = PNY_MSGPACK_BOOL; out->bool_val = false; return 1;
+        case 0xc3: out->type = PNY_MSGPACK_BOOL; out->bool_val = true; return 1;
+        case 0xcc: if(buf_len<2) return -1; out->type=PNY_MSGPACK_UINT; out->uint_val=buf[1]; return 2;
+        case 0xcd: if(buf_len<3) return -1; out->type=PNY_MSGPACK_UINT; out->uint_val=((uint64_t)buf[1]<<8)|buf[2]; return 3;
+        case 0xce: if(buf_len<5) return -1; out->type=PNY_MSGPACK_UINT; out->uint_val=((uint64_t)buf[1]<<24)|((uint64_t)buf[2]<<16)|((uint64_t)buf[3]<<8)|buf[4]; return 5;
+        case 0xcf: if(buf_len<9) return -1; out->type=PNY_MSGPACK_UINT; out->uint_val=0; for(int i=0;i<8;i++) out->uint_val=(out->uint_val<<8)|buf[1+i]; return 9;
+        case 0xd0: if(buf_len<2) return -1; out->type=PNY_MSGPACK_INT; out->int_val=(int8_t)buf[1]; return 2;
+        case 0xd1: if(buf_len<3) return -1; out->type=PNY_MSGPACK_INT; out->int_val=(int16_t)(((uint16_t)buf[1]<<8)|buf[2]); return 3;
+        case 0xd2: if(buf_len<5) return -1; out->type=PNY_MSGPACK_INT; out->int_val=(int32_t)(((uint32_t)buf[1]<<24)|((uint32_t)buf[2]<<16)|((uint32_t)buf[3]<<8)|buf[4]); return 5;
+        case 0xd3: if(buf_len<9) return -1; out->type=PNY_MSGPACK_INT; out->int_val=0; for(int i=0;i<8;i++) out->int_val=(out->int_val<<8)|buf[1+i]; return 9;
+        case 0xca: if(buf_len<5) return -1; out->type=PNY_MSGPACK_FLOAT; {uint32_t b=0; for(int i=0;i<4;i++) b=(b<<8)|buf[1+i]; memcpy(&out->float_val,&b,4);} return 5;
+        case 0xcb: if(buf_len<9) return -1; out->type=PNY_MSGPACK_DOUBLE; {uint64_t b=0; for(int i=0;i<8;i++) b=(b<<8)|buf[1+i]; memcpy(&out->double_val,&b,8);} return 9;
+        case 0xd9: { if(buf_len<2) return -1; uint32_t l=buf[1]; if(buf_len<2+l) return -1; out->type=PNY_MSGPACK_STR; out->str_bin.ptr=buf+2; out->str_bin.len=l; return (int)(2+l); }
+        case 0xda: { if(buf_len<3) return -1; uint32_t l=((uint32_t)buf[1]<<8)|buf[2]; if(buf_len<3+l) return -1; out->type=PNY_MSGPACK_STR; out->str_bin.ptr=buf+3; out->str_bin.len=l; return (int)(3+l); }
+        case 0xdb: { if(buf_len<5) return -1; uint32_t l=((uint32_t)buf[1]<<24)|((uint32_t)buf[2]<<16)|((uint32_t)buf[3]<<8)|buf[4]; if(buf_len<5+l) return -1; out->type=PNY_MSGPACK_STR; out->str_bin.ptr=buf+5; out->str_bin.len=l; return (int)(5+l); }
+        case 0xc4: { if(buf_len<2) return -1; uint32_t l=buf[1]; if(buf_len<2+l) return -1; out->type=PNY_MSGPACK_BIN; out->str_bin.ptr=buf+2; out->str_bin.len=l; return (int)(2+l); }
+        case 0xc5: { if(buf_len<3) return -1; uint32_t l=((uint32_t)buf[1]<<8)|buf[2]; if(buf_len<3+l) return -1; out->type=PNY_MSGPACK_BIN; out->str_bin.ptr=buf+3; out->str_bin.len=l; return (int)(3+l); }
+        case 0xdc: if(buf_len<3) return -1; out->type=PNY_MSGPACK_ARRAY; out->count=((uint32_t)buf[1]<<8)|buf[2]; return 3;
+        case 0xdd: if(buf_len<5) return -1; out->type=PNY_MSGPACK_ARRAY; out->count=((uint32_t)buf[1]<<24)|((uint32_t)buf[2]<<16)|((uint32_t)buf[3]<<8)|buf[4]; return 5;
+        case 0xde: if(buf_len<3) return -1; out->type=PNY_MSGPACK_MAP; out->count=((uint32_t)buf[1]<<8)|buf[2]; return 3;
+        case 0xdf: if(buf_len<5) return -1; out->type=PNY_MSGPACK_MAP; out->count=((uint32_t)buf[1]<<24)|((uint32_t)buf[2]<<16)|((uint32_t)buf[3]<<8)|buf[4]; return 5;
+        default: return -2;
+    }
+}
+
+/* ==================== Stream ==================== */
+struct PnyStream { uint8_t *buf; size_t cap, head, tail, count; bool closed; };
+
+PnyStream *pny_stream_new(void) {
+    PnyStream *st = (PnyStream *)calloc(1, sizeof(PnyStream));
+    if (!st) return NULL;
+    st->cap = 4096;
+    st->buf = (uint8_t *)malloc(st->cap);
+    if (!st->buf) { free(st); return NULL; }
+    return st;
+}
+
+void pny_stream_free(PnyStream *st) { if (st) { free(st->buf); free(st); } }
+
+int pny_stream_write(PnyStream *st, const void *data, size_t len) {
+    if (!st || !data || st->closed) return -1;
+    if (st->count + len > st->cap) {
+        size_t nc = st->cap; while (nc < st->count + len) nc *= 2;
+        uint8_t *nb = (uint8_t *)malloc(nc); if (!nb) return -2;
+        for (size_t i = 0; i < st->count; i++) nb[i] = st->buf[(st->head + i) % st->cap];
+        free(st->buf); st->buf = nb; st->cap = nc; st->head = 0; st->tail = st->count;
+    }
+    const uint8_t *src = (const uint8_t *)data;
+    for (size_t i = 0; i < len; i++) { st->buf[st->tail] = src[i]; st->tail = (st->tail + 1) % st->cap; }
+    st->count += len;
+    return (int)len;
+}
+
+int pny_stream_read(PnyStream *st, void *buf, size_t buf_len) {
+    if (!st || !buf) return -1;
+    size_t tr = st->count < buf_len ? st->count : buf_len;
+    uint8_t *dst = (uint8_t *)buf;
+    for (size_t i = 0; i < tr; i++) { dst[i] = st->buf[st->head]; st->head = (st->head + 1) % st->cap; }
+    st->count -= tr;
+    if (tr == 0 && st->closed) return -2;
+    return (int)tr;
+}
+
+size_t pny_stream_available(const PnyStream *st) { return st ? st->count : 0; }
+void pny_stream_close(PnyStream *st) { if (st) st->closed = true; }
+bool pny_stream_is_closed(const PnyStream *st) { return st ? st->closed : true; }
+
+/* ==================== Error ==================== */
+const char *pny_error_str(PnyErrorCode code) {
+    switch (code) {
+        case PNY_ERR_NONE: return "no error";
+        case PNY_ERR_EOF: return "end of file";
+        case PNY_ERR_TIMEOUT: return "timeout";
+        case PNY_ERR_PERMISSION: return "permission denied";
+        case PNY_ERR_NOT_FOUND: return "not found";
+        case PNY_ERR_ALREADY_EXISTS: return "already exists";
+        case PNY_ERR_INVALID_ARG: return "invalid argument";
+        case PNY_ERR_IO: return "I/O error";
+        case PNY_ERR_NO_MEMORY: return "out of memory";
+        default: return "unknown error";
+    }
+}
+
+/* ==================== Mailbox ==================== */
+struct PnyMailbox { void **items; size_t cap, head, tail, count, max; };
+
+PnyMailbox *pny_mailbox_new(size_t max_size) {
+    PnyMailbox *mb = (PnyMailbox *)calloc(1, sizeof(PnyMailbox));
+    if (!mb) return NULL;
+    mb->cap = max_size > 0 ? max_size : 256;
+    mb->items = (void **)calloc(mb->cap, sizeof(void *));
+    if (!mb->items) { free(mb); return NULL; }
+    mb->max = max_size;
+    return mb;
+}
+
+void pny_mailbox_free(PnyMailbox *mb) { if (mb) { free(mb->items); free(mb); } }
+
+bool pny_mailbox_put(PnyMailbox *mb, void *msg) {
+    if (!mb) return false;
+    if (mb->max > 0 && mb->count >= mb->max) return false;
+    if (mb->count >= mb->cap) {
+        size_t nc = mb->cap * 2;
+        void **ni = (void **)calloc(nc, sizeof(void *));
+        if (!ni) return false;
+        for (size_t i = 0; i < mb->count; i++) ni[i] = mb->items[(mb->head + i) % mb->cap];
+        free(mb->items); mb->items = ni; mb->cap = nc; mb->head = 0; mb->tail = mb->count;
+    }
+    mb->items[mb->tail] = msg;
+    mb->tail = (mb->tail + 1) % mb->cap;
+    mb->count++;
+    return true;
+}
+
+void *pny_mailbox_take(PnyMailbox *mb) {
+    if (!mb || mb->count == 0) return NULL;
+    void *msg = mb->items[mb->head];
+    mb->head = (mb->head + 1) % mb->cap;
+    mb->count--;
+    return msg;
+}
+
+size_t pny_mailbox_size(const PnyMailbox *mb) { return mb ? mb->count : 0; }
+bool pny_mailbox_is_empty(const PnyMailbox *mb) { return mb ? mb->count == 0 : true; }
+
+/* ==================== Group ==================== */
+struct PnyGroup { char name[64]; int *ids; size_t count, cap; };
+
+PnyGroup *pny_group_new(const char *name) {
+    PnyGroup *g = (PnyGroup *)calloc(1, sizeof(PnyGroup));
+    if (!g) return NULL;
+    if (name) strncpy(g->name, name, sizeof(g->name) - 1);
+    g->cap = 16;
+    g->ids = (int *)calloc(g->cap, sizeof(int));
+    if (!g->ids) { free(g); return NULL; }
+    return g;
+}
+
+void pny_group_free(PnyGroup *g) { if (g) { free(g->ids); free(g); } }
+
+int pny_group_add(PnyGroup *g, int actor_id) {
+    if (!g) return -1;
+    if (pny_group_contains(g, actor_id)) return -2;
+    if (g->count >= g->cap) {
+        size_t nc = g->cap * 2;
+        int *ni = (int *)realloc(g->ids, nc * sizeof(int));
+        if (!ni) return -3;
+        g->ids = ni; g->cap = nc;
+    }
+    g->ids[g->count++] = actor_id;
+    return 0;
+}
+
+int pny_group_remove(PnyGroup *g, int actor_id) {
+    if (!g) return -1;
+    for (size_t i = 0; i < g->count; i++) {
+        if (g->ids[i] == actor_id) { g->ids[i] = g->ids[g->count - 1]; g->count--; return 0; }
+    }
+    return -2;
+}
+
+size_t pny_group_size(const PnyGroup *g) { return g ? g->count : 0; }
+
+bool pny_group_contains(const PnyGroup *g, int actor_id) {
+    if (!g) return false;
+    for (size_t i = 0; i < g->count; i++) if (g->ids[i] == actor_id) return true;
+    return false;
+}
+
+const char *pny_group_name(const PnyGroup *g) { return g ? g->name : NULL; }
+
+int pny_group_members(const PnyGroup *g, int *out_ids, size_t max) {
+    if (!g || !out_ids) return -1;
+    size_t n = g->count < max ? g->count : max;
+    for (size_t i = 0; i < n; i++) out_ids[i] = g->ids[i];
+    return (int)n;
+}
+
 /* ==================== Test ==================== */
 
 PnyTestSuite *pny_test_suite_new(const char *name) {
