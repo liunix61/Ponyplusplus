@@ -402,6 +402,27 @@ static ASTNode *parse_statement(Parser *p) {
         return node;
     }
 
+
+    /* try/error 语句 */
+    if (is_keyword_token(t, "try")) {
+        advance(p);
+        ASTNode *node = ast_node_new(NODE_EMPTY, line, col);
+        if (node) node->data = s_strdup("try");
+        ASTNode *body = parse_block(p);
+        if (body && node) ast_node_add_child(node, body);
+        if (match_keyword(p, "else")) {
+            advance(p);
+            ASTNode *else_body = parse_block(p);
+            if (else_body && node) ast_node_add_child(node, else_body);
+        }
+        if (match_keyword(p, "then")) {
+            advance(p);
+            ASTNode *then_body = parse_block(p);
+            if (then_body && node) ast_node_add_child(node, then_body);
+        }
+        return node;
+    }
+
     /* match 表达式 */
     if (is_keyword_token(t, "match")) {
         advance(p);
@@ -409,16 +430,38 @@ static ASTNode *parse_statement(Parser *p) {
         if (!node) return NULL;
         ASTNode *expr = parse_expression(p);
         if (expr) ast_node_add_child(node, expr);
-        /* 兼容: match x => { ... } 和 match x { ... } */
-        if (match_keyword(p, "=>")) advance(p);
-        if (match(p, TK_BRACE_L)) advance(p);
-        /* match arms: pattern => body */
-        while (p->pos < p->token_count && cur(p)->type != TK_BRACE_R) {
+        /* match arms: | pattern => body (Pony语法) */
+        while (p->pos < p->token_count) {
+            /* 跳过 | 分隔符 */
+            if (match(p, TK_PIPE)) advance(p);
+            /* 检查 end 关键字结束 */
+            if (match_keyword(p, "end")) {
+                advance(p);
+                break;
+            }
+            /* 检查 } 结束 */
+            if (match(p, TK_BRACE_R)) {
+                advance(p);
+                break;
+            }
+            /* 检查 EOF */
+            if (cur(p)->type == TK_EOF) break;
+            
             ASTNode *arm = ast_node_new(NODE_MATCH_ARM, line, col);
             if (arm) {
-                ASTNode *pat = parse_expression(p);
-                if (pat) ast_node_add_child(arm, pat);
-                if (match_keyword(p, "=>")) advance(p);
+                /* 解析 pattern (else 关键字作为通配符) */
+                if (match_keyword(p, "else")) {
+                    advance(p);
+                    ASTNode *pat = ast_node_new(NODE_IDENT, line, col);
+                    if (pat) pat->data = s_strdup("_");
+                    ast_node_add_child(arm, pat);
+                } else {
+                    ASTNode *pat = parse_expression(p);
+                    if (pat) ast_node_add_child(arm, pat);
+                }
+                /* 期望 => */
+                if (match(p, TK_ARROW_ARR)) advance(p);
+                /* 解析 body */
                 ASTNode *body;
                 if (cur(p)->type == TK_BRACE_L) {
                     body = parse_block(p);
@@ -427,13 +470,9 @@ static ASTNode *parse_statement(Parser *p) {
                 }
                 if (body) ast_node_add_child(arm, body);
                 ast_node_add_child(node, arm);
-            } else {
-                if (match(p, TK_SEMI)) advance(p);
-                continue;
             }
             if (match(p, TK_SEMI)) advance(p);
         }
-        if (match(p, TK_BRACE_R)) advance(p);
         return node;
     }
 
@@ -655,6 +694,37 @@ static ASTNode *parse_expression_primary(Parser *p) {
                         if (match(p, TK_COMMA)) advance(p);
                     }
                     if (match(p, TK_PAREN_R)) advance(p);
+                    /* 链式调用: a.b().c().d() */
+                    while (match(p, TK_DOT)) {
+                        advance(p);
+                        if (p->pos < p->token_count && cur(p)->type == TK_IDENT) {
+                            Token *chain_t = cur(p);
+                            advance(p);
+                            if (match(p, TK_PAREN_L)) {
+                                advance(p);
+                                ASTNode *chain_call = ast_node_new(NODE_CALL, line, col);
+                                if (chain_call && chain_t->value) chain_call->data = s_strdup(chain_t->value);
+                                ast_node_add_child(chain_call, call);
+                                ASTNode *chain_args = ast_node_new(NODE_EMPTY, line, col);
+                                if (chain_args) { chain_args->data = s_strdup("args"); ast_node_add_child(chain_call, chain_args); }
+                                while (p->pos < p->token_count && cur(p)->type != TK_PAREN_R) {
+                                    ASTNode *arg = parse_expression(p);
+                                    if (arg) ast_node_add_child(chain_args, arg);
+                                    if (match(p, TK_COMMA)) advance(p);
+                                }
+                                if (match(p, TK_PAREN_R)) advance(p);
+                                call = chain_call;
+                            } else {
+                                /* 链式字段访问: a.b().c */
+                                ASTNode *field = ast_node_new(NODE_CALL, line, col);
+                                if (field && chain_t->value) field->data = s_strdup(chain_t->value);
+                                ast_node_add_child(field, call);
+                                call = field;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
                     return call;
                 }
                 /* 非调用，恢复为普通标识符 */
