@@ -112,7 +112,8 @@ typedef struct PnyReply {
 
 /* 消息队列项 */
 typedef struct PnyMessage {
-    char *method;
+    char *method;           /* 指向 method_buf 或堆分配 */
+    char method_buf[32];    /* P5优化: 短方法名内联, 消除strdup */
     void *arg;
     size_t arg_size;
     struct PnyMessage *next;
@@ -180,6 +181,10 @@ typedef struct PnyRuntime {
     RuntimeStats stats;
     PnyMessage *dead_letters;
     size_t dead_letter_count;
+    /* Phase 5: 消息池 (free-list复用, 消除per-send malloc) */
+    PnyMessage *msg_pool;
+    size_t msg_pool_count;
+    size_t msg_pool_max;
 } PnyRuntime;
 
 extern PnyRuntime *pny_runtime_global;

@@ -124,10 +124,57 @@ ActorRef *pny_actor_ref(PnyActor *a) {
 
 /* ======================== 消息 ======================== */
 
+
+/* ==================== 消息池 (Phase 5 性能优化) ==================== */
+static void msg_pool_put(PnyMessage *m);
+
+#define MSG_POOL_MAX 4096
+
+static PnyMessage *msg_pool_get(void) {
+    PnyRuntime *r = pny_runtime_global;
+    if (r && r->msg_pool) {
+        PnyMessage *m = r->msg_pool;
+        r->msg_pool = m->next;
+        r->msg_pool_count--;
+        m->next = NULL;
+        return m;
+    }
+    return NULL;
+}
+
+static void msg_pool_put(PnyMessage *m) {
+    if (!m) return;
+    PnyRuntime *r = pny_runtime_global;
+    if (r && r->msg_pool_count < MSG_POOL_MAX) {
+        /* 清理动态字段 */
+        if (m->method && m->method != m->method_buf) { s_free((void*)m->method); }
+        m->method = NULL;
+        if (m->arg) { s_free(m->arg); m->arg = NULL; }
+        m->sender.name = NULL;  /* P5: 借用引用, 不需要free */
+        m->next = r->msg_pool;
+        r->msg_pool = m;
+        r->msg_pool_count++;
+    } else {
+        pny_msg_free(m);
+    }
+}
+
 PnyMessage *pny_msg_new(const char *method, void *arg, size_t arg_size) {
-    PnyMessage *m = (PnyMessage*)s_malloc(sizeof(PnyMessage));
+    PnyMessage *m = msg_pool_get();
+    if (!m) m = (PnyMessage*)s_malloc(sizeof(PnyMessage));
     if (!m) return NULL;
-    m->method = s_strdup(method ? method : "");
+    memset(m, 0, sizeof(PnyMessage));
+    /* P5优化: 短方法名用内联buffer, 避免strdup malloc */
+    {
+        const char *meth = method ? method : "";
+        size_t mlen = strlen(meth);
+        if (mlen < sizeof(m->method_buf)) {
+            memcpy(m->method_buf, meth, mlen + 1);
+            m->method = m->method_buf;
+        } else {
+            m->method = s_strdup(meth);
+        }
+    }
     m->arg = NULL;
     m->arg_size = arg_size;
     m->next = NULL;
@@ -143,7 +190,7 @@ PnyMessage *pny_msg_new(const char *method, void *arg, size_t arg_size) {
 
 void pny_msg_free(PnyMessage *m) {
     if (!m) return;
-    s_free(m->method);
+    if (m->method && m->method != m->method_buf) s_free(m->method);
     s_free(m->arg);
     /* reply 由 pny_actor_call 管理，这里不清理 */
     m->reply = NULL;
@@ -163,7 +210,7 @@ int pny_actor_send(ActorRef *from, ActorRef *to, const char *method, void *arg, 
     PnyMessage *m = pny_msg_new(method, arg, arg_size);
     if (!m) return -4;
     m->sender.id = from ? from->id : -1;
-    m->sender.name = from ? s_strdup(from->name) : NULL;
+    m->sender.name = from ? from->name : NULL;  /* P5优化: 不再strdup, 直接引用 */
     m->sender.actor = from ? from->actor : NULL;
     /* 分配 exactly-once 消息 ID */
     m->msg_id = a->next_msg_id++;
@@ -259,7 +306,7 @@ void pny_scheduler_tick(PnyRuntime *r) {
             if (m->msg_id > 0 && pny_msg_delivered(a, m->msg_id) == 1) {
                 /* 已投递过，跳过 */
                 r->stats.messages_delivered++;
-                pny_msg_free(m);
+                msg_pool_put(m);
                 a = next;
                 continue;
             }
@@ -267,7 +314,7 @@ void pny_scheduler_tick(PnyRuntime *r) {
                 a->behavior(a, m);
             }
             r->stats.messages_delivered++;
-            pny_msg_free(m);
+            msg_pool_put(m);
         }
         a = next;
     }
