@@ -150,6 +150,8 @@ typedef struct PnyActor {
     int64_t gas_limit;          /* -1 = 无限, 0 = 立即让出, >0 = 消耗后让出 */
     int version;                /* 热代码升级: 行为函数版本 */
     void (*new_behavior)(struct PnyActor *self, PnyMessage *msg); /* 热升级目标行为 */
+    struct GCHeap *heap;        /* P0: per-actor GC隔离堆 (NULL=禁用) */
+    size_t gc_alloc_since;      /* 上次回收以来的分配量 (触发阈值用) */
 } PnyActor;
 
 /* 调度器 */
@@ -198,6 +200,30 @@ PnyActor *pny_actor_new(PnyRuntime *r, const char *name, size_t state_size);
 void pny_actor_register(PnyRuntime *r, PnyActor *a);
 void pny_actor_destroy(PnyRuntime *r, ActorRef *ref);
 ActorRef *pny_actor_ref(PnyActor *a);
+
+/* ==================== Per-actor GC (P0: 隔离堆) ==================== */
+
+/* 启用actor的GC隔离堆 (heap_size=0用默认64KB, 必须在actor创建后首次使用前调用)
+ * 返回0成功, -1参数错误, -2已启用 */
+int pny_actor_gc_enable(PnyActor *a, size_t heap_size);
+
+/* 从actor的GC堆分配 (未启用GC时回退malloc, 对齐8字节) */
+void *pny_actor_gc_alloc(PnyActor *a, size_t size);
+
+/* 触发actor的GC回收 (root=actor的state_data, 自动包含state内指针) */
+void pny_actor_gc_collect(PnyActor *a);
+
+/* GC统计 */
+typedef struct {
+    size_t heap_size;       /* 半空间大小 */
+    size_t used;            /* from空间已用 */
+    size_t total_alloc;     /* 累计分配 */
+    size_t total_freed;     /* 累计回收 */
+    int generations;        /* 回收次数 */
+    double pause_ms;        /* 上次回收耗时(ms) */
+} PnyGCStats;
+
+int pny_actor_gc_stats(PnyActor *a, PnyGCStats *out);
 
 /* 消息 */
 PnyMessage *pny_msg_new(const char *method, void *arg, size_t arg_size);

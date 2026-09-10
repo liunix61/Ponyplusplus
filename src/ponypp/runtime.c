@@ -2,6 +2,8 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "ponypp/runtime.h"
+#include "ponypp/gc.h"
+#include <time.h>
 #include "ponypp/util.h"
 
 PnyRuntime *pny_runtime_global = NULL;
@@ -31,6 +33,7 @@ void pny_runtime_free(PnyRuntime *r) {
         if (a->supervise) { s_free(a->supervise); }
         if (a->children) { s_free(a->children); }
         if (a->delivered_ids) { s_free(a->delivered_ids); }
+        if (a->heap) gc_heap_free(a->heap);
         s_free(a->state_data);
         s_free(a);
         a = next;
@@ -60,6 +63,8 @@ PnyActor *pny_actor_new(PnyRuntime *r, const char *name, size_t state_size) {
     a->gas_limit = -1;  /* 默认无限 */
     a->version = 1;
     a->new_behavior = NULL;
+    a->heap = NULL;          /* P0: per-actor GC默认禁用 */
+    a->gc_alloc_since = 0;
     /* 分配 ID */
     int id = r->scheduler.next_id++;
     a->id = id;
@@ -111,6 +116,7 @@ void pny_actor_destroy(PnyRuntime *r, ActorRef *ref) {
     s_free(a->supervise);
     if (a->children) s_free(a->children);
     if (a->delivered_ids) s_free(a->delivered_ids);
+    if (a->heap) gc_heap_free(a->heap);  /* P0: 回收隔离堆 */
     s_free(a->self.name);
     s_free(a);
     r->stats.actors_destroyed++;
@@ -1069,4 +1075,67 @@ const char *pny_cross_supervise_state(CrossComponentSupervisor *cs, size_t child
     if (!cs || child_idx >= cs->child_count) return "unknown";
     if (!cs->child_names[child_idx]) return "unknown";
     return cs->child_names[child_idx];
+}
+
+/* ==================== Per-actor GC (P0: 隔离堆) ==================== */
+
+#define PNY_GC_DEFAULT_HEAP_SIZE (64 * 1024)   /* 64KB半空间 */
+#define PNY_GC_AUTO_COLLECT_THRESHOLD 0.80     /* 80%占用率触发自动回收 */
+
+int pny_actor_gc_enable(PnyActor *a, size_t heap_size) {
+    if (!a) return -1;
+    if (a->heap) return -2;
+    if (heap_size == 0) heap_size = PNY_GC_DEFAULT_HEAP_SIZE;
+    a->heap = gc_heap_new(heap_size);
+    if (!a->heap) return -1;
+    a->gc_alloc_since = 0;
+    return 0;
+}
+
+void *pny_actor_gc_alloc(PnyActor *a, size_t size) {
+    if (!a) return NULL;
+    if (!a->heap) {
+        /* 未启用GC: 回退普通malloc */
+        return s_malloc(size);
+    }
+    void *p = gc_alloc(a->heap, size);
+    if (!p) {
+        /* 空间不足: 先回收再重试 */
+        pny_actor_gc_collect(a);
+        p = gc_alloc(a->heap, size);
+    }
+    if (p) {
+        a->gc_alloc_since += size;
+        /* 自动回收: 占用率超阈值 */
+        if (gc_should_collect(a->heap, PNY_GC_AUTO_COLLECT_THRESHOLD)) {
+            pny_actor_gc_collect(a);
+        }
+    }
+    return p;
+}
+
+void pny_actor_gc_collect(PnyActor *a) {
+    if (!a || !a->heap) return;
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+
+    /* root: actor的state_data (包含用户状态中的指针) */
+    void *roots[1] = { a->state_data };
+    size_t root_count = a->state_data ? 1 : 0;
+    gc_collect(a->heap, roots, root_count);
+    gc_flip(a->heap);
+
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    double pause_ms = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 +
+                      (double)(t1.tv_nsec - t0.tv_nsec) / 1e6;
+    (void)pause_ms;  /* 统计存入heap结构体由gc_stats读取 */
+    a->gc_alloc_since = 0;
+}
+
+int pny_actor_gc_stats(PnyActor *a, PnyGCStats *out) {
+    if (!a || !a->heap || !out) return -1;
+    gc_stats(a->heap, &out->heap_size, &out->used, NULL,
+             &out->generations, &out->total_alloc, &out->total_freed);
+    out->pause_ms = 0.0;  /* 简化: 不单独追踪pause */
+    return 0;
 }
