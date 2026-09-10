@@ -782,6 +782,278 @@ void pny_map_foreach(PnyMap *m, void (*fn)(void *, void *, void *), void *ctx) {
     }
 }
 
+/* ==================== Set (字符串哈希集合) ==================== */
+typedef struct SetEntry {
+    char *key;
+    struct SetEntry *next;
+} SetEntry;
+
+struct PnySet {
+    SetEntry **buckets;
+    size_t bucket_count;
+    size_t size;
+};
+
+static size_t set_hash(const char *key, size_t bucket_count) {
+    size_t h = 5381;
+    while (*key) h = ((h << 5) + h) + (unsigned char)*key++;
+    return h % bucket_count;
+}
+
+PnySet *pny_set_new(void) {
+    PnySet *s = (PnySet *)calloc(1, sizeof(PnySet));
+    if (!s) return NULL;
+    s->bucket_count = 64;
+    s->buckets = (SetEntry **)calloc(s->bucket_count, sizeof(SetEntry *));
+    if (!s->buckets) { free(s); return NULL; }
+    return s;
+}
+
+void pny_set_free(PnySet *s) {
+    if (!s) return;
+    for (size_t i = 0; i < s->bucket_count; i++) {
+        SetEntry *e = s->buckets[i];
+        while (e) { SetEntry *n = e->next; free(e->key); free(e); e = n; }
+    }
+    free(s->buckets);
+    free(s);
+}
+
+bool pny_set_add(PnySet *s, const char *key) {
+    if (!s || !key) return false;
+    size_t idx = set_hash(key, s->bucket_count);
+    for (SetEntry *e = s->buckets[idx]; e; e = e->next) {
+        if (strcmp(e->key, key) == 0) return false;  /* 已存在 */
+    }
+    SetEntry *e = (SetEntry *)malloc(sizeof(SetEntry));
+    if (!e) return false;
+    e->key = strdup(key);
+    e->next = s->buckets[idx];
+    s->buckets[idx] = e;
+    s->size++;
+    return true;
+}
+
+bool pny_set_contains(const PnySet *s, const char *key) {
+    if (!s || !key) return false;
+    size_t idx = set_hash(key, s->bucket_count);
+    for (SetEntry *e = s->buckets[idx]; e; e = e->next) {
+        if (strcmp(e->key, key) == 0) return true;
+    }
+    return false;
+}
+
+bool pny_set_remove(PnySet *s, const char *key) {
+    if (!s || !key) return false;
+    size_t idx = set_hash(key, s->bucket_count);
+    SetEntry **prev = &s->buckets[idx];
+    for (SetEntry *e = *prev; e; prev = &e->next, e = e->next) {
+        if (strcmp(e->key, key) == 0) {
+            *prev = e->next;
+            free(e->key);
+            free(e);
+            s->size--;
+            return true;
+        }
+    }
+    return false;
+}
+
+size_t pny_set_size(const PnySet *s) { return s ? s->size : 0; }
+
+void pny_set_clear(PnySet *s) {
+    if (!s) return;
+    for (size_t i = 0; i < s->bucket_count; i++) {
+        SetEntry *e = s->buckets[i];
+        while (e) { SetEntry *n = e->next; free(e->key); free(e); e = n; }
+        s->buckets[i] = NULL;
+    }
+    s->size = 0;
+}
+
+/* ==================== Queue (FIFO, 环形缓冲区) ==================== */
+struct PnyQueue {
+    void **items;
+    size_t cap;
+    size_t head;
+    size_t tail;
+    size_t count;
+    size_t max;  /* 0=无限制 */
+};
+
+PnyQueue *pny_queue_new(size_t cap) {
+    if (cap == 0) cap = 64;
+    PnyQueue *q = (PnyQueue *)calloc(1, sizeof(PnyQueue));
+    if (!q) return NULL;
+    q->items = (void **)calloc(cap, sizeof(void *));
+    if (!q->items) { free(q); return NULL; }
+    q->cap = cap;
+    q->max = 0;  /* 无限制 */
+    return q;
+}
+
+void pny_queue_free(PnyQueue *q) {
+    if (!q) return;
+    free(q->items);
+    free(q);
+}
+
+static bool queue_grow(PnyQueue *q) {
+    size_t new_cap = q->cap * 2;
+    void **new_items = (void **)calloc(new_cap, sizeof(void *));
+    if (!new_items) return false;
+    /* 重排: head..end, 0..tail */
+    for (size_t i = 0; i < q->count; i++) {
+        new_items[i] = q->items[(q->head + i) % q->cap];
+    }
+    free(q->items);
+    q->items = new_items;
+    q->cap = new_cap;
+    q->head = 0;
+    q->tail = q->count;
+    return true;
+}
+
+bool pny_queue_push(PnyQueue *q, void *data) {
+    if (!q) return false;
+    if (q->max > 0 && q->count >= q->max) return false;
+    if (q->count >= q->cap) {
+        if (!queue_grow(q)) return false;
+    }
+    q->items[q->tail] = data;
+    q->tail = (q->tail + 1) % q->cap;
+    q->count++;
+    return true;
+}
+
+void *pny_queue_pop(PnyQueue *q) {
+    if (!q || q->count == 0) return NULL;
+    void *data = q->items[q->head];
+    q->head = (q->head + 1) % q->cap;
+    q->count--;
+    return data;
+}
+
+void *pny_queue_peek(const PnyQueue *q) {
+    if (!q || q->count == 0) return NULL;
+    return q->items[q->head];
+}
+
+size_t pny_queue_size(const PnyQueue *q) { return q ? q->count : 0; }
+bool pny_queue_is_empty(const PnyQueue *q) { return q ? q->count == 0 : true; }
+bool pny_queue_is_full(const PnyQueue *q) { return q && q->max > 0 && q->count >= q->max; }
+
+/* ==================== Stack (LIFO, 动态数组) ==================== */
+struct PnyStack {
+    void **items;
+    size_t cap;
+    size_t count;
+    size_t max;
+};
+
+PnyStack *pny_stack_new(size_t cap) {
+    if (cap == 0) cap = 32;
+    PnyStack *s = (PnyStack *)calloc(1, sizeof(PnyStack));
+    if (!s) return NULL;
+    s->items = (void **)calloc(cap, sizeof(void *));
+    if (!s->items) { free(s); return NULL; }
+    s->cap = cap;
+    return s;
+}
+
+void pny_stack_free(PnyStack *s) {
+    if (!s) return;
+    free(s->items);
+    free(s);
+}
+
+bool pny_stack_push(PnyStack *s, void *data) {
+    if (!s) return false;
+    if (s->max > 0 && s->count >= s->max) return false;
+    if (s->count >= s->cap) {
+        size_t new_cap = s->cap * 2;
+        void **new_items = (void **)realloc(s->items, new_cap * sizeof(void *));
+        if (!new_items) return false;
+        s->items = new_items;
+        s->cap = new_cap;
+    }
+    s->items[s->count++] = data;
+    return true;
+}
+
+void *pny_stack_pop(PnyStack *s) {
+    if (!s || s->count == 0) return NULL;
+    return s->items[--s->count];
+}
+
+void *pny_stack_peek(const PnyStack *s) {
+    if (!s || s->count == 0) return NULL;
+    return s->items[s->count - 1];
+}
+
+size_t pny_stack_size(const PnyStack *s) { return s ? s->count : 0; }
+bool pny_stack_is_empty(const PnyStack *s) { return s ? s->count == 0 : true; }
+
+/* ==================== Buffer (字节缓冲区) ==================== */
+struct PnyBuffer {
+    uint8_t *data;
+    size_t len;
+    size_t cap;
+};
+
+PnyBuffer *pny_buffer_new(size_t initial_cap) {
+    if (initial_cap == 0) initial_cap = 64;
+    PnyBuffer *b = (PnyBuffer *)calloc(1, sizeof(PnyBuffer));
+    if (!b) return NULL;
+    b->data = (uint8_t *)malloc(initial_cap);
+    if (!b->data) { free(b); return NULL; }
+    b->cap = initial_cap;
+    return b;
+}
+
+void pny_buffer_free(PnyBuffer *b) {
+    if (!b) return;
+    free(b->data);
+    free(b);
+}
+
+static bool buffer_reserve_internal(PnyBuffer *b, size_t need) {
+    if (b->cap >= need) return true;
+    size_t new_cap = b->cap;
+    while (new_cap < need) new_cap *= 2;
+    uint8_t *new_data = (uint8_t *)realloc(b->data, new_cap);
+    if (!new_data) return false;
+    b->data = new_data;
+    b->cap = new_cap;
+    return true;
+}
+
+bool pny_buffer_append(PnyBuffer *b, const void *data, size_t len) {
+    if (!b || (!data && len > 0)) return false;
+    if (!buffer_reserve_internal(b, b->len + len)) return false;
+    if (len > 0) memcpy(b->data + b->len, data, len);
+    b->len += len;
+    return true;
+}
+
+bool pny_buffer_append_byte(PnyBuffer *b, uint8_t byte) {
+    return pny_buffer_append(b, &byte, 1);
+}
+
+bool pny_buffer_append_cstr(PnyBuffer *b, const char *str) {
+    if (!str) return false;
+    return pny_buffer_append(b, str, strlen(str));
+}
+
+const uint8_t *pny_buffer_data(const PnyBuffer *b) { return b ? b->data : NULL; }
+size_t pny_buffer_len(const PnyBuffer *b) { return b ? b->len : 0; }
+void pny_buffer_clear(PnyBuffer *b) { if (b) b->len = 0; }
+
+bool pny_buffer_reserve(PnyBuffer *b, size_t extra) {
+    if (!b) return false;
+    return buffer_reserve_internal(b, b->len + extra);
+}
+
 /* ==================== Concurrent ==================== */
 
 struct PnyChan {
@@ -1023,6 +1295,236 @@ int pny_future_wait(PnyFuture *f, int timeout_ms) {
 
 int pny_future_then(PnyFuture *f, void (*cb)(void *, size_t, void *), void *ctx) {
     return f ? pny_promise_then(f->promise, cb, ctx) : -1;
+}
+
+/* ==================== UDP ==================== */
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <time.h>
+#include <math.h>
+
+struct PnyUdpSocket {
+    int fd;
+};
+
+PnyUdpSocket *pny_udp_open(const char *bind_addr, int port) {
+    PnyUdpSocket *s = (PnyUdpSocket *)calloc(1, sizeof(PnyUdpSocket));
+    if (!s) return NULL;
+    s->fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (s->fd < 0) { free(s); return NULL; }
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t)port);
+    addr.sin_addr.s_addr = bind_addr ? inet_addr(bind_addr) : INADDR_ANY;
+    if (bind(s->fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        close(s->fd); free(s); return NULL;
+    }
+    return s;
+}
+
+void pny_udp_close(PnyUdpSocket *s) {
+    if (!s) return;
+    if (s->fd >= 0) close(s->fd);
+    free(s);
+}
+
+int pny_udp_sendto(PnyUdpSocket *s, const void *data, size_t len,
+                   const char *dest_addr, int dest_port) {
+    if (!s || !data || !dest_addr) return -1;
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t)dest_port);
+    if (inet_pton(AF_INET, dest_addr, &addr.sin_addr) != 1) return -2;
+    ssize_t sent = sendto(s->fd, data, len, 0, (struct sockaddr *)&addr, sizeof(addr));
+    return (int)sent;
+}
+
+int pny_udp_recvfrom(PnyUdpSocket *s, void *buf, size_t buf_len,
+                     char *src_addr, size_t src_addr_len, int *src_port) {
+    if (!s || !buf) return -1;
+    struct sockaddr_in addr = {0};
+    socklen_t addr_len = sizeof(addr);
+    ssize_t n = recvfrom(s->fd, buf, buf_len, 0, (struct sockaddr *)&addr, &addr_len);
+    if (n < 0) return -2;
+    if (src_addr && src_addr_len > 0) {
+        inet_ntop(AF_INET, &addr.sin_addr, src_addr, (socklen_t)src_addr_len);
+    }
+    if (src_port) *src_port = ntohs(addr.sin_port);
+    return (int)n;
+}
+
+int pny_udp_set_timeout(PnyUdpSocket *s, int timeout_ms) {
+    if (!s) return -1;
+    struct timeval tv;
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
+    return setsockopt(s->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+}
+
+/* ==================== DNS ==================== */
+int pny_dns_resolve(const char *hostname, PnyDnsResult *result) {
+    if (!hostname || !result) return -1;
+    memset(result, 0, sizeof(PnyDnsResult));
+    struct addrinfo hints = {0}, *res = NULL, *cur;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    int rc = getaddrinfo(hostname, NULL, &hints, &res);
+    if (rc != 0) return -2;
+    int count = 0;
+    for (cur = res; cur && count < 8; cur = cur->ai_next) {
+        struct sockaddr_in *sin = (struct sockaddr_in *)cur->ai_addr;
+        inet_ntop(AF_INET, &sin->sin_addr, result->addrs[count], 64);
+        count++;
+    }
+    freeaddrinfo(res);
+    result->count = count;
+    return count;
+}
+
+/* ==================== Date ==================== */
+int pny_date_now(PnyDateTime *out) {
+    if (!out) return -1;
+    time_t t = time(NULL);
+    struct tm tm_buf;
+    localtime_r(&t, &tm_buf);
+    out->year = tm_buf.tm_year + 1900;
+    out->month = tm_buf.tm_mon + 1;
+    out->day = tm_buf.tm_mday;
+    out->hour = tm_buf.tm_hour;
+    out->minute = tm_buf.tm_min;
+    out->second = tm_buf.tm_sec;
+    out->weekday = tm_buf.tm_wday;
+    return 0;
+}
+
+int pny_date_from_timestamp(int64_t ts, PnyDateTime *out) {
+    if (!out) return -1;
+    time_t t = (time_t)ts;
+    struct tm tm_buf;
+    localtime_r(&t, &tm_buf);
+    out->year = tm_buf.tm_year + 1900;
+    out->month = tm_buf.tm_mon + 1;
+    out->day = tm_buf.tm_mday;
+    out->hour = tm_buf.tm_hour;
+    out->minute = tm_buf.tm_min;
+    out->second = tm_buf.tm_sec;
+    out->weekday = tm_buf.tm_wday;
+    return 0;
+}
+
+int64_t pny_date_to_timestamp(const PnyDateTime *dt) {
+    if (!dt) return -1;
+    struct tm tm_buf = {0};
+    tm_buf.tm_year = dt->year - 1900;
+    tm_buf.tm_mon = dt->month - 1;
+    tm_buf.tm_mday = dt->day;
+    tm_buf.tm_hour = dt->hour;
+    tm_buf.tm_min = dt->minute;
+    tm_buf.tm_sec = dt->second;
+    tm_buf.tm_isdst = -1;
+    return (int64_t)mktime(&tm_buf);
+}
+
+const char *pny_date_format(const PnyDateTime *dt, const char *fmt, char *buf, size_t buf_len) {
+    if (!dt || !fmt || !buf || buf_len == 0) return NULL;
+    struct tm tm_buf = {0};
+    tm_buf.tm_year = dt->year - 1900;
+    tm_buf.tm_mon = dt->month - 1;
+    tm_buf.tm_mday = dt->day;
+    tm_buf.tm_hour = dt->hour;
+    tm_buf.tm_min = dt->minute;
+    tm_buf.tm_sec = dt->second;
+    strftime(buf, buf_len, fmt, &tm_buf);
+    return buf;
+}
+
+/* ==================== Complex ==================== */
+PnyComplex pny_complex_new(double re, double im) {
+    PnyComplex z = {re, im};
+    return z;
+}
+
+PnyComplex pny_complex_add(PnyComplex a, PnyComplex b) {
+    PnyComplex z = {a.re + b.re, a.im + b.im};
+    return z;
+}
+
+PnyComplex pny_complex_sub(PnyComplex a, PnyComplex b) {
+    PnyComplex z = {a.re - b.re, a.im - b.im};
+    return z;
+}
+
+PnyComplex pny_complex_mul(PnyComplex a, PnyComplex b) {
+    PnyComplex z = {a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re};
+    return z;
+}
+
+PnyComplex pny_complex_div(PnyComplex a, PnyComplex b) {
+    double d = b.re * b.re + b.im * b.im;
+    if (d == 0.0) { PnyComplex z = {0, 0}; return z; }
+    PnyComplex z = {(a.re * b.re + a.im * b.im) / d, (a.im * b.re - a.re * b.im) / d};
+    return z;
+}
+
+double pny_complex_abs(PnyComplex z) { return sqrt(z.re * z.re + z.im * z.im); }
+double pny_complex_arg(PnyComplex z) { return atan2(z.im, z.re); }
+
+PnyComplex pny_complex_conj(PnyComplex z) {
+    PnyComplex r = {z.re, -z.im};
+    return r;
+}
+
+/* ==================== Statistics ==================== */
+double pny_stats_mean(const double *data, size_t n) {
+    if (!data || n == 0) return 0.0;
+    double sum = 0.0;
+    for (size_t i = 0; i < n; i++) sum += data[i];
+    return sum / (double)n;
+}
+
+double pny_stats_variance(const double *data, size_t n) {
+    if (!data || n < 2) return 0.0;
+    double mean = pny_stats_mean(data, n);
+    double sum = 0.0;
+    for (size_t i = 0; i < n; i++) {
+        double d = data[i] - mean;
+        sum += d * d;
+    }
+    return sum / (double)(n - 1);
+}
+
+double pny_stats_stddev(const double *data, size_t n) {
+    return sqrt(pny_stats_variance(data, n));
+}
+
+double pny_stats_min(const double *data, size_t n) {
+    if (!data || n == 0) return 0.0;
+    double m = data[0];
+    for (size_t i = 1; i < n; i++) if (data[i] < m) m = data[i];
+    return m;
+}
+
+double pny_stats_max(const double *data, size_t n) {
+    if (!data || n == 0) return 0.0;
+    double m = data[0];
+    for (size_t i = 1; i < n; i++) if (data[i] > m) m = data[i];
+    return m;
+}
+
+static int cmp_double(const void *a, const void *b) {
+    double da = *(const double *)a, db = *(const double *)b;
+    return (da > db) - (da < db);
+}
+
+double pny_stats_median(double *data, size_t n) {
+    if (!data || n == 0) return 0.0;
+    qsort(data, n, sizeof(double), cmp_double);
+    if (n % 2 == 1) return data[n / 2];
+    return (data[n / 2 - 1] + data[n / 2]) / 2.0;
 }
 
 /* ==================== Test ==================== */

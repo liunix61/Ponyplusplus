@@ -160,6 +160,55 @@ bool pny_map_empty(const PnyMap *m);
 void pny_map_clear(PnyMap *m);
 void pny_map_foreach(PnyMap *m, void (*fn)(void *, void *, void *), void *ctx);
 
+/* ==================== Collections 扩展 ==================== */
+
+/* Set (哈希集合, 基于map实现) */
+typedef struct PnySet PnySet;
+
+PnySet *pny_set_new(void);
+void pny_set_free(PnySet *s);
+bool pny_set_add(PnySet *s, const char *key);       /* true=新增, false=已存在 */
+bool pny_set_contains(const PnySet *s, const char *key);
+bool pny_set_remove(PnySet *s, const char *key);
+size_t pny_set_size(const PnySet *s);
+void pny_set_clear(PnySet *s);
+
+/* Queue (FIFO队列) */
+typedef struct PnyQueue PnyQueue;
+
+PnyQueue *pny_queue_new(size_t cap);  /* 0=无限制 */
+void pny_queue_free(PnyQueue *q);
+bool pny_queue_push(PnyQueue *q, void *data);   /* false=满 */
+void *pny_queue_pop(PnyQueue *q);               /* NULL=空 */
+void *pny_queue_peek(const PnyQueue *q);
+size_t pny_queue_size(const PnyQueue *q);
+bool pny_queue_is_empty(const PnyQueue *q);
+bool pny_queue_is_full(const PnyQueue *q);
+
+/* Stack (LIFO栈) */
+typedef struct PnyStack PnyStack;
+
+PnyStack *pny_stack_new(size_t cap);  /* 0=无限制 */
+void pny_stack_free(PnyStack *s);
+bool pny_stack_push(PnyStack *s, void *data);
+void *pny_stack_pop(PnyStack *s);
+void *pny_stack_peek(const PnyStack *s);
+size_t pny_stack_size(const PnyStack *s);
+bool pny_stack_is_empty(const PnyStack *s);
+
+/* Buffer (字节缓冲区, 动态增长) */
+typedef struct PnyBuffer PnyBuffer;
+
+PnyBuffer *pny_buffer_new(size_t initial_cap);
+void pny_buffer_free(PnyBuffer *b);
+bool pny_buffer_append(PnyBuffer *b, const void *data, size_t len);
+bool pny_buffer_append_byte(PnyBuffer *b, uint8_t byte);
+bool pny_buffer_append_cstr(PnyBuffer *b, const char *str);
+const uint8_t *pny_buffer_data(const PnyBuffer *b);
+size_t pny_buffer_len(const PnyBuffer *b);
+void pny_buffer_clear(PnyBuffer *b);
+bool pny_buffer_reserve(PnyBuffer *b, size_t extra);
+
 /* ==================== Concurrent ==================== */
 
 /* Channel */
@@ -207,6 +256,59 @@ bool pny_future_is_done(const PnyFuture *f);
 void *pny_future_value(const PnyFuture *f, size_t *out_size);
 int pny_future_wait(PnyFuture *f, int timeout_ms);  /* 阻塞等待, 0=done, -1=timeout */
 int pny_future_then(PnyFuture *f, void (*cb)(void *value, size_t size, void *ctx), void *ctx);
+
+/* ==================== UDP ==================== */
+typedef struct PnyUdpSocket PnyUdpSocket;
+
+PnyUdpSocket *pny_udp_open(const char *bind_addr, int port);
+void pny_udp_close(PnyUdpSocket *s);
+int pny_udp_sendto(PnyUdpSocket *s, const void *data, size_t len,
+                   const char *dest_addr, int dest_port);
+int pny_udp_recvfrom(PnyUdpSocket *s, void *buf, size_t buf_len,
+                     char *src_addr, size_t src_addr_len, int *src_port);
+int pny_udp_set_timeout(PnyUdpSocket *s, int timeout_ms);
+
+/* ==================== DNS ==================== */
+typedef struct {
+    char addrs[8][64];  /* 最多8个IP */
+    int count;
+} PnyDnsResult;
+
+int pny_dns_resolve(const char *hostname, PnyDnsResult *result);
+
+/* ==================== Date ==================== */
+typedef struct {
+    int year, month, day;
+    int hour, minute, second;
+    int weekday;  /* 0=Sunday */
+} PnyDateTime;
+
+int pny_date_now(PnyDateTime *out);
+int pny_date_from_timestamp(int64_t ts, PnyDateTime *out);
+int64_t pny_date_to_timestamp(const PnyDateTime *dt);
+const char *pny_date_format(const PnyDateTime *dt, const char *fmt, char *buf, size_t buf_len);
+
+/* ==================== Complex (复数) ==================== */
+typedef struct {
+    double re, im;
+} PnyComplex;
+
+PnyComplex pny_complex_new(double re, double im);
+PnyComplex pny_complex_add(PnyComplex a, PnyComplex b);
+PnyComplex pny_complex_sub(PnyComplex a, PnyComplex b);
+PnyComplex pny_complex_mul(PnyComplex a, PnyComplex b);
+PnyComplex pny_complex_div(PnyComplex a, PnyComplex b);
+double pny_complex_abs(PnyComplex z);
+double pny_complex_arg(PnyComplex z);
+PnyComplex pny_complex_conj(PnyComplex z);
+
+/* ==================== Statistics ==================== */
+double pny_stats_mean(const double *data, size_t n);
+double pny_stats_variance(const double *data, size_t n);
+double pny_stats_stddev(const double *data, size_t n);
+double pny_stats_min(const double *data, size_t n);
+double pny_stats_max(const double *data, size_t n);
+double pny_stats_median(double *data, size_t n);  /* 会修改data(排序) */
 
 /* ==================== Test ==================== */
 
