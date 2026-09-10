@@ -65,6 +65,43 @@ int dist_runtime_send(DistributedRuntime *dr, const char *remote_name,
                        const char *method, const void *arg, size_t arg_size);
 const char *dist_runtime_node_id(DistributedRuntime *dr);
 
+/* ==================== TLS 支持 ==================== */
+/* 编译时检测: 定义 PONYPP_USE_TLS 启用 */
+
+#ifdef PONYPP_USE_TLS
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
+typedef struct {
+    SSL_CTX *ctx;
+    SSL *ssl;
+    bool is_server;
+    bool handshake_done;
+} TlsContext;
+
+/* TLS 上下文管理 */
+TlsContext *tls_ctx_new(bool is_server);
+void tls_ctx_free(TlsContext *tc);
+
+/* 证书加载 */
+int tls_ctx_load_cert(TlsContext *tc, const char *cert_path, const char *key_path);
+int tls_ctx_load_ca(TlsContext *tc, const char *ca_path);
+
+/* 连接包装 */
+int tls_wrap_socket(TlsContext *tc, int fd);
+int tls_handshake(TlsContext *tc);
+int tls_read(TlsContext *tc, void *buf, size_t len);
+int tls_write(TlsContext *tc, const void *data, size_t len);
+void tls_close(TlsContext *tc);
+
+/* 连接级TLS */
+int dist_conn_enable_tls(DistConnection *conn, bool is_server, const char *cert_path, const char *key_path);
+int dist_conn_tls_handshake(DistConnection *conn);
+
+/* 自签名证书生成(测试用) */
+int tls_generate_selfsigned(const char *cert_path, const char *key_path, int days);
+#endif /* PONYPP_USE_TLS */
+
 #ifdef __cplusplus
 }
 #endif
