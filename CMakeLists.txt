@@ -65,7 +65,39 @@ set(PONYPP_SRCS
     src/debugger.c
     src/version_compat.c
     src/http.c
+    src/crypto_openssl.c
+    src/crypto_mbedtls.c
+    src/crypto_stub.c
 )
+
+# ---- Crypto backend detection ----
+# Priority: mbedTLS (MCU SDK) > OpenSSL (Linux/desktop) > stub (no crypto)
+# mbedTLS: typically provided by ESP-IDF/STM32Cube, set MBEDTLS_ROOT to point to it
+option(USE_MBEDTLS "Use mbedTLS crypto backend (MCU)" OFF)
+option(USE_OPENSSL "Use OpenSSL crypto backend (Linux)" ON)
+
+if(USE_MBEDTLS)
+    find_path(MBEDTLS_INCLUDE_DIR mbedtls/sha256.h
+        HINTS ${MBEDTLS_ROOT}/include /usr/include)
+    find_library(MBEDTLS_CRYPTO_LIB mbedtls
+        HINTS ${MBEDTLS_ROOT}/lib /usr/lib)
+    if(MBEDTLS_INCLUDE_DIR AND MBEDTLS_CRYPTO_LIB)
+        message(STATUS "Crypto backend: mbedTLS")
+        add_compile_definitions(PONY_CRYPTO_MBEDTLS)
+    else()
+        message(FATAL_ERROR "mbedTLS requested but not found. Set MBEDTLS_ROOT.")
+    endif()
+elseif(USE_OPENSSL)
+    find_package(OpenSSL QUIET)
+    if(OpenSSL_FOUND)
+        message(STATUS "Crypto backend: OpenSSL ${OPENSSL_VERSION}")
+        add_compile_definitions(PONY_CRYPTO_OPENSSL)
+    else()
+        message(STATUS "Crypto backend: stub (OpenSSL not found)")
+    endif()
+else()
+    message(STATUS "Crypto backend: stub (crypto disabled)")
+endif()
 
 # ---- Library (no driver, no main) ----
 add_library(ponypp_lib STATIC ${PONYPP_SRCS})
@@ -73,6 +105,14 @@ target_include_directories(ponypp_lib PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
+
+# Link crypto backend
+if(USE_MBEDTLS AND MBEDTLS_CRYPTO_LIB)
+    target_link_libraries(ponypp_lib PUBLIC ${MBEDTLS_CRYPTO_LIB})
+    target_include_directories(ponypp_lib PUBLIC ${MBEDTLS_INCLUDE_DIR})
+elseif(USE_OPENSSL AND OpenSSL_FOUND)
+    target_link_libraries(ponypp_lib PUBLIC OpenSSL::Crypto)
+endif()
 
 # ---- Compiler driver ----
 add_executable(ponyppc src/ponyppc.c)
@@ -97,7 +137,7 @@ if(BUILD_TESTING)
 
     set(GTEST_EXECUTABLES gtest_lexer gtest_parser gtest_types gtest_typecheck
                           gtest_capabilities gtest_wasm gtest_wit gtest_codegen
-                          gtest_codegen_extra gtest_codegen_cov gtest_extra gtest_coverage gtest_tc_extra gtest_more gtest_e2e gtest_util gtest_util2 gtest_runtime gtest_phase2 gtest_stdlib gtest_stdlib_phase3 gtest_stdlib_phase3_ext gtest_tool gtest_gc gtest_wamr gtest_browser gtest_debugger gtest_version_compat gtest_security gtest_http gtest_capabilities_full)
+                          gtest_codegen_extra gtest_codegen_cov gtest_extra gtest_coverage gtest_tc_extra gtest_more gtest_e2e gtest_util gtest_util2 gtest_runtime gtest_phase2 gtest_stdlib gtest_stdlib_phase3 gtest_stdlib_phase3_ext gtest_tool gtest_gc gtest_wamr gtest_browser gtest_debugger gtest_version_compat gtest_security gtest_http gtest_capabilities_full gtest_crypto)
 
     foreach(tname IN LISTS GTEST_EXECUTABLES)
         add_executable(${tname} tests/${tname}.cpp)
