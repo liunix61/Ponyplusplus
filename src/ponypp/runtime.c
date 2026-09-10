@@ -41,6 +41,7 @@ void pny_runtime_free(PnyRuntime *r) {
     PnyMessage *dl = r->dead_letters;
     while (dl) { PnyMessage *n = dl->next; pny_msg_free(dl); dl = n; }
     s_free(r->scheduler.registry);
+    if (pny_runtime_global == r) pny_runtime_global = NULL;
     s_free(r);
 }
 

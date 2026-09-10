@@ -160,12 +160,13 @@ PnyString *pny_str_new(const char *s) {
     size_t len = s ? strlen(s) : 0;
     PnyString *ps = (PnyString *)malloc(sizeof(PnyString));
     if (!ps) return NULL;
-    ps->data = (char *)malloc(len + 1);
+    size_t cap = len + 4;
+    ps->data = (char *)malloc(cap + 1);  /* 分配cap+1, 匹配cap字段 */
     if (!ps->data && len > 0) { free(ps); return NULL; }
     if (s) memcpy(ps->data, s, len + 1);
     else ps->data[0] = '\0';
     ps->len = len;
-    ps->cap = len + 4;
+    ps->cap = cap;
     return ps;
 }
 

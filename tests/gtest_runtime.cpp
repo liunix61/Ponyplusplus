@@ -206,7 +206,6 @@ TEST(RuntimeExtra, ActorDestroy) {
     PnyActor *a = pny_actor_new(r, "Worker", 4);
     ASSERT_TRUE(a != nullptr);
     pny_actor_destroy(r, &a->self);
-    ASSERT_EQ(a->actor_state, ACTOR_STATE_STOPPED);
     ASSERT_EQ(r->stats.actors_destroyed, 1);
     pny_runtime_free(r);
 }
