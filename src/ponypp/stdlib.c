@@ -782,6 +782,171 @@ void pny_map_foreach(PnyMap *m, void (*fn)(void *, void *, void *), void *ctx) {
     }
 }
 
+/* ==================== Protobuf ==================== */
+struct PnyProtoBuf { uint8_t *data; size_t len, cap; };
+
+static int pb_grow(PnyProtoBuf *pb, size_t need) {
+    if (pb->len + need <= pb->cap) return 0;
+    size_t nc = pb->cap ? pb->cap : 64;
+    while (nc < pb->len + need) nc *= 2;
+    uint8_t *nd = (uint8_t *)realloc(pb->data, nc);
+    if (!nd) return -1;
+    pb->data = nd; pb->cap = nc;
+    return 0;
+}
+
+PnyProtoBuf *pny_proto_new(void) {
+    PnyProtoBuf *pb = (PnyProtoBuf *)calloc(1, sizeof(PnyProtoBuf));
+    if (!pb) return NULL;
+    pb->cap = 64;
+    pb->data = (uint8_t *)malloc(pb->cap);
+    if (!pb->data) { free(pb); return NULL; }
+    return pb;
+}
+
+void pny_proto_free(PnyProtoBuf *pb) { if (pb) { free(pb->data); free(pb); } }
+size_t pny_proto_len(const PnyProtoBuf *pb) { return pb ? pb->len : 0; }
+const uint8_t *pny_proto_data(const PnyProtoBuf *pb) { return pb ? pb->data : NULL; }
+
+int pny_proto_write_varint(PnyProtoBuf *pb, uint64_t val) {
+    if (!pb) return -1;
+    if (pb_grow(pb, 10) < 0) return -1;
+    do {
+        uint8_t byte = val & 0x7f;
+        val >>= 7;
+        if (val) byte |= 0x80;
+        pb->data[pb->len++] = byte;
+    } while (val);
+    return 0;
+}
+
+int pny_proto_write_tag(PnyProtoBuf *pb, uint32_t field_num, uint8_t wire_type) {
+    return pny_proto_write_varint(pb, ((uint64_t)field_num << 3) | wire_type);
+}
+
+int pny_proto_write_int32(PnyProtoBuf *pb, uint32_t field_num, int32_t val) {
+    pny_proto_write_tag(pb, field_num, PROTO_WIRE_VARINT);
+    return pny_proto_write_varint(pb, (uint64_t)(int64_t)val);
+}
+
+int pny_proto_write_int64(PnyProtoBuf *pb, uint32_t field_num, int64_t val) {
+    pny_proto_write_tag(pb, field_num, PROTO_WIRE_VARINT);
+    return pny_proto_write_varint(pb, (uint64_t)val);
+}
+
+int pny_proto_write_uint32(PnyProtoBuf *pb, uint32_t field_num, uint32_t val) {
+    pny_proto_write_tag(pb, field_num, PROTO_WIRE_VARINT);
+    return pny_proto_write_varint(pb, val);
+}
+
+int pny_proto_write_uint64(PnyProtoBuf *pb, uint32_t field_num, uint64_t val) {
+    pny_proto_write_tag(pb, field_num, PROTO_WIRE_VARINT);
+    return pny_proto_write_varint(pb, val);
+}
+
+int pny_proto_write_bool(PnyProtoBuf *pb, uint32_t field_num, bool val) {
+    pny_proto_write_tag(pb, field_num, PROTO_WIRE_VARINT);
+    return pny_proto_write_varint(pb, val ? 1 : 0);
+}
+
+int pny_proto_write_float(PnyProtoBuf *pb, uint32_t field_num, float val) {
+    pny_proto_write_tag(pb, field_num, PROTO_WIRE_FIXED32);
+    if (pb_grow(pb, 4) < 0) return -1;
+    uint32_t bits; memcpy(&bits, &val, 4);
+    for (int i = 0; i < 4; i++) pb->data[pb->len++] = (uint8_t)(bits >> (i * 8));
+    return 0;
+}
+
+int pny_proto_write_double(PnyProtoBuf *pb, uint32_t field_num, double val) {
+    pny_proto_write_tag(pb, field_num, PROTO_WIRE_FIXED64);
+    if (pb_grow(pb, 8) < 0) return -1;
+    uint64_t bits; memcpy(&bits, &val, 8);
+    for (int i = 0; i < 8; i++) pb->data[pb->len++] = (uint8_t)(bits >> (i * 8));
+    return 0;
+}
+
+int pny_proto_write_string(PnyProtoBuf *pb, uint32_t field_num, const char *str) {
+    if (!str) return -1;
+    size_t len = strlen(str);
+    pny_proto_write_tag(pb, field_num, PROTO_WIRE_LEN_DELIM);
+    pny_proto_write_varint(pb, len);
+    if (pb_grow(pb, len) < 0) return -1;
+    memcpy(pb->data + pb->len, str, len);
+    pb->len += len;
+    return 0;
+}
+
+int pny_proto_write_bytes(PnyProtoBuf *pb, uint32_t field_num, const void *data, size_t len) {
+    if (!data && len > 0) return -1;
+    pny_proto_write_tag(pb, field_num, PROTO_WIRE_LEN_DELIM);
+    pny_proto_write_varint(pb, len);
+    if (pb_grow(pb, len) < 0) return -1;
+    if (len > 0) memcpy(pb->data + pb->len, data, len);
+    pb->len += len;
+    return 0;
+}
+
+int pny_proto_write_message(PnyProtoBuf *pb, uint32_t field_num, const uint8_t *msg, size_t len) {
+    return pny_proto_write_bytes(pb, field_num, msg, len);
+}
+
+int pny_proto_read_varint(const uint8_t *buf, size_t buf_len, uint64_t *out) {
+    if (!buf || !out || buf_len < 1) return -1;
+    uint64_t val = 0;
+    int shift = 0;
+    for (size_t i = 0; i < buf_len && i < 10; i++) {
+        val |= (uint64_t)(buf[i] & 0x7f) << shift;
+        if (!(buf[i] & 0x80)) { *out = val; return (int)(i + 1); }
+        shift += 7;
+    }
+    return -1;
+}
+
+int pny_proto_read_field(const uint8_t *buf, size_t buf_len, PnyProtoField *out) {
+    if (!buf || !out || buf_len < 1) return -1;
+    uint64_t tag;
+    int n = pny_proto_read_varint(buf, buf_len, &tag);
+    if (n < 0) return -1;
+    out->field_num = (uint32_t)(tag >> 3);
+    out->wire_type = (uint8_t)(tag & 0x07);
+    const uint8_t *p = buf + n;
+    size_t remaining = buf_len - n;
+
+    switch (out->wire_type) {
+        case PROTO_WIRE_VARINT: {
+            int m = pny_proto_read_varint(p, remaining, &out->varint_val);
+            if (m < 0) return -1;
+            return n + m;
+        }
+        case PROTO_WIRE_FIXED64: {
+            if (remaining < 8) return -1;
+            uint64_t bits = 0;
+            for (int i = 0; i < 8; i++) bits |= (uint64_t)p[i] << (i * 8);
+            memcpy(&out->double_val, &bits, 8);
+            return n + 8;
+        }
+        case PROTO_WIRE_LEN_DELIM: {
+            uint64_t len;
+            int m = pny_proto_read_varint(p, remaining, &len);
+            if (m < 0) return -1;
+            if (remaining < (size_t)m + len) return -1;
+            out->bytes_val.ptr = p + m;
+            out->bytes_val.len = (size_t)len;
+            return n + m + (int)len;
+        }
+        case PROTO_WIRE_FIXED32: {
+            if (remaining < 4) return -1;
+            uint32_t bits = 0;
+            for (int i = 0; i < 4; i++) bits |= (uint32_t)p[i] << (i * 8);
+            float f; memcpy(&f, &bits, 4);
+            out->double_val = f;
+            return n + 4;
+        }
+        default:
+            return -2;
+    }
+}
+
 /* ==================== Set (字符串哈希集合) ==================== */
 typedef struct SetEntry {
     char *key;

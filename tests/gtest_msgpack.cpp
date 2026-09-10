@@ -200,3 +200,147 @@ TEST(Error, Strings) {
     EXPECT_STREQ(pny_error_str(PNY_ERR_TIMEOUT), "timeout");
     EXPECT_NE(pny_error_str(PNY_ERR_UNKNOWN), nullptr);
 }
+/* ==================== Protobuf ==================== */
+
+TEST(Protobuf, WriteReadVarint) {
+    uint8_t buf[16];
+    /* 写入varint */
+    PnyProtoBuf *pb = pny_proto_new();
+    ASSERT_NE(pb, nullptr);
+    pny_proto_write_varint(pb, 300);
+    EXPECT_EQ(pny_proto_len(pb), 2u);  /* 300需要2字节 */
+
+    /* 读取 */
+    uint64_t val;
+    int n = pny_proto_read_varint(pny_proto_data(pb), pny_proto_len(pb), &val);
+    EXPECT_EQ(n, 2);
+    EXPECT_EQ(val, 300u);
+    pny_proto_free(pb);
+}
+
+TEST(Protobuf, WriteReadInt32) {
+    PnyProtoBuf *pb = pny_proto_new();
+    pny_proto_write_int32(pb, 1, 42);
+    pny_proto_write_int32(pb, 2, -1);
+
+    /* 读取字段1 */
+    PnyProtoField f;
+    int n = pny_proto_read_field(pny_proto_data(pb), pny_proto_len(pb), &f);
+    EXPECT_GT(n, 0);
+    EXPECT_EQ(f.field_num, 1u);
+    EXPECT_EQ(f.wire_type, PROTO_WIRE_VARINT);
+    EXPECT_EQ(f.varint_val, 42u);
+
+    /* 读取字段2 */
+    n = pny_proto_read_field(pny_proto_data(pb) + n, pny_proto_len(pb) - n, &f);
+    EXPECT_GT(n, 0);
+    EXPECT_EQ(f.field_num, 2u);
+    pny_proto_free(pb);
+}
+
+TEST(Protobuf, WriteReadString) {
+    PnyProtoBuf *pb = pny_proto_new();
+    const char *msg = "Hello, Protobuf!";
+    pny_proto_write_string(pb, 3, msg);
+
+    PnyProtoField f;
+    int n = pny_proto_read_field(pny_proto_data(pb), pny_proto_len(pb), &f);
+    EXPECT_GT(n, 0);
+    EXPECT_EQ(f.field_num, 3u);
+    EXPECT_EQ(f.wire_type, PROTO_WIRE_LEN_DELIM);
+    EXPECT_EQ(f.bytes_val.len, strlen(msg));
+    EXPECT_EQ(memcmp(f.bytes_val.ptr, msg, f.bytes_val.len), 0);
+    pny_proto_free(pb);
+}
+
+TEST(Protobuf, WriteReadBool) {
+    PnyProtoBuf *pb = pny_proto_new();
+    pny_proto_write_bool(pb, 1, true);
+    pny_proto_write_bool(pb, 2, false);
+
+    PnyProtoField f;
+    int n = pny_proto_read_field(pny_proto_data(pb), pny_proto_len(pb), &f);
+    EXPECT_EQ(f.varint_val, 1u);
+    n = pny_proto_read_field(pny_proto_data(pb) + n, pny_proto_len(pb) - n, &f);
+    EXPECT_EQ(f.varint_val, 0u);
+    pny_proto_free(pb);
+}
+
+TEST(Protobuf, WriteReadDouble) {
+    PnyProtoBuf *pb = pny_proto_new();
+    double val = 3.14159265358979;
+    pny_proto_write_double(pb, 5, val);
+
+    PnyProtoField f;
+    int n = pny_proto_read_field(pny_proto_data(pb), pny_proto_len(pb), &f);
+    EXPECT_GT(n, 0);
+    EXPECT_EQ(f.field_num, 5u);
+    EXPECT_EQ(f.wire_type, PROTO_WIRE_FIXED64);
+    EXPECT_DOUBLE_EQ(f.double_val, val);
+    pny_proto_free(pb);
+}
+
+TEST(Protobuf, WriteReadBytes) {
+    PnyProtoBuf *pb = pny_proto_new();
+    uint8_t data[] = {0xDE, 0xAD, 0xBE, 0xEF};
+    pny_proto_write_bytes(pb, 7, data, 4);
+
+    PnyProtoField f;
+    int n = pny_proto_read_field(pny_proto_data(pb), pny_proto_len(pb), &f);
+    EXPECT_GT(n, 0);
+    EXPECT_EQ(f.field_num, 7u);
+    EXPECT_EQ(f.bytes_val.len, 4u);
+    EXPECT_EQ(memcmp(f.bytes_val.ptr, data, 4), 0);
+    pny_proto_free(pb);
+}
+
+TEST(Protobuf, MultipleFields) {
+    PnyProtoBuf *pb = pny_proto_new();
+    pny_proto_write_uint32(pb, 1, 100);
+    pny_proto_write_string(pb, 2, "test");
+    pny_proto_write_bool(pb, 3, true);
+
+    /* 顺序读取3个字段 */
+    PnyProtoField f;
+    size_t offset = 0;
+    int n = pny_proto_read_field(pny_proto_data(pb) + offset, pny_proto_len(pb) - offset, &f);
+    EXPECT_EQ(f.field_num, 1u);
+    EXPECT_EQ(f.varint_val, 100u);
+    offset += n;
+
+    n = pny_proto_read_field(pny_proto_data(pb) + offset, pny_proto_len(pb) - offset, &f);
+    EXPECT_EQ(f.field_num, 2u);
+    EXPECT_EQ(f.bytes_val.len, 4u);
+    offset += n;
+
+    n = pny_proto_read_field(pny_proto_data(pb) + offset, pny_proto_len(pb) - offset, &f);
+    EXPECT_EQ(f.field_num, 3u);
+    EXPECT_EQ(f.varint_val, 1u);
+    pny_proto_free(pb);
+}
+
+TEST(Protobuf, EmbeddedMessage) {
+    /* 构造嵌套消息: {1: {1: 42, 2: "hi"}} */
+    PnyProtoBuf *inner = pny_proto_new();
+    pny_proto_write_int32(inner, 1, 42);
+    pny_proto_write_string(inner, 2, "hi");
+
+    PnyProtoBuf *outer = pny_proto_new();
+    pny_proto_write_message(outer, 10, pny_proto_data(inner), pny_proto_len(inner));
+
+    PnyProtoField f;
+    int n = pny_proto_read_field(pny_proto_data(outer), pny_proto_len(outer), &f);
+    EXPECT_GT(n, 0);
+    EXPECT_EQ(f.field_num, 10u);
+    EXPECT_EQ(f.wire_type, PROTO_WIRE_LEN_DELIM);
+    EXPECT_EQ(f.bytes_val.len, pny_proto_len(inner));
+
+    /* 解析内层消息 */
+    PnyProtoField inner_f;
+    int m = pny_proto_read_field(f.bytes_val.ptr, f.bytes_val.len, &inner_f);
+    EXPECT_EQ(inner_f.field_num, 1u);
+    EXPECT_EQ(inner_f.varint_val, 42u);
+
+    pny_proto_free(inner);
+    pny_proto_free(outer);
+}

@@ -160,6 +160,43 @@ bool pny_map_empty(const PnyMap *m);
 void pny_map_clear(PnyMap *m);
 void pny_map_foreach(PnyMap *m, void (*fn)(void *, void *, void *), void *ctx);
 
+/* ==================== Protobuf 序列化 ==================== */
+typedef struct PnyProtoBuf PnyProtoBuf;
+
+PnyProtoBuf *pny_proto_new(void);
+void pny_proto_free(PnyProtoBuf *pb);
+size_t pny_proto_len(const PnyProtoBuf *pb);
+const uint8_t *pny_proto_data(const PnyProtoBuf *pb);
+
+int pny_proto_write_varint(PnyProtoBuf *pb, uint64_t val);
+int pny_proto_write_tag(PnyProtoBuf *pb, uint32_t field_num, uint8_t wire_type);
+int pny_proto_write_int32(PnyProtoBuf *pb, uint32_t field_num, int32_t val);
+int pny_proto_write_int64(PnyProtoBuf *pb, uint32_t field_num, int64_t val);
+int pny_proto_write_uint32(PnyProtoBuf *pb, uint32_t field_num, uint32_t val);
+int pny_proto_write_uint64(PnyProtoBuf *pb, uint32_t field_num, uint64_t val);
+int pny_proto_write_bool(PnyProtoBuf *pb, uint32_t field_num, bool val);
+int pny_proto_write_float(PnyProtoBuf *pb, uint32_t field_num, float val);
+int pny_proto_write_double(PnyProtoBuf *pb, uint32_t field_num, double val);
+int pny_proto_write_string(PnyProtoBuf *pb, uint32_t field_num, const char *str);
+int pny_proto_write_bytes(PnyProtoBuf *pb, uint32_t field_num, const void *data, size_t len);
+int pny_proto_write_message(PnyProtoBuf *pb, uint32_t field_num, const uint8_t *msg, size_t len);
+
+typedef struct {
+    uint32_t field_num;
+    uint8_t wire_type;
+    uint64_t varint_val;
+    double double_val;
+    struct { const uint8_t *ptr; size_t len; } bytes_val;
+} PnyProtoField;
+
+int pny_proto_read_varint(const uint8_t *buf, size_t buf_len, uint64_t *out);
+int pny_proto_read_field(const uint8_t *buf, size_t buf_len, PnyProtoField *out);
+
+#define PROTO_WIRE_VARINT 0
+#define PROTO_WIRE_FIXED64 1
+#define PROTO_WIRE_LEN_DELIM 2
+#define PROTO_WIRE_FIXED32 5
+
 /* ==================== MessagePack (二进制序列化) ==================== */
 /* 轻量级msgpack编码器/解码器 (支持nil/bool/int/float/str/bin/array/map) */
 
