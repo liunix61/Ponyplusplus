@@ -428,3 +428,174 @@ int tls_generate_selfsigned(const char *cert_path, const char *key_path, int day
 }
 
 #endif /* PONYPP_USE_TLS */
+
+/* ==================== 分布式监督树 ==================== */
+
+#include <sys/time.h>
+
+static uint64_t dsup_now_ms(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
+
+DistSupervisor *dist_supervisor_new(const char *id, DistSuperviseStrategy strategy, int max_restarts) {
+    DistSupervisor *sup = (DistSupervisor *)calloc(1, sizeof(DistSupervisor));
+    if (!sup) return NULL;
+    if (id) strncpy(sup->supervisor_id, id, sizeof(sup->supervisor_id) - 1);
+    sup->strategy = strategy;
+    sup->max_restarts = max_restarts > 0 ? max_restarts : 3;
+    sup->cap = 8;
+    sup->actors = (DistSupervisedActor *)calloc(sup->cap, sizeof(DistSupervisedActor));
+    if (!sup->actors) { free(sup); return NULL; }
+    return sup;
+}
+
+void dist_supervisor_free(DistSupervisor *sup) {
+    if (!sup) return;
+    free(sup->actors);
+    free(sup);
+}
+
+int dist_supervisor_register(DistSupervisor *sup, const char *name,
+                              const char *host, int port, int remote_actor_id) {
+    if (!sup || !name || !host) return -1;
+    /* 检查重复 */
+    for (size_t i = 0; i < sup->count; i++) {
+        if (strcmp(sup->actors[i].name, name) == 0) return -2;
+    }
+    /* 扩容 */
+    if (sup->count >= sup->cap) {
+        size_t nc = sup->cap * 2;
+        DistSupervisedActor *na = (DistSupervisedActor *)realloc(
+            sup->actors, nc * sizeof(DistSupervisedActor));
+        if (!na) return -3;
+        memset(na + sup->cap, 0, (nc - sup->cap) * sizeof(DistSupervisedActor));
+        sup->actors = na;
+        sup->cap = nc;
+    }
+    DistSupervisedActor *a = &sup->actors[sup->count++];
+    memset(a, 0, sizeof(*a));
+    strncpy(a->name, name, sizeof(a->name) - 1);
+    strncpy(a->host, host, sizeof(a->host) - 1);
+    a->port = port;
+    a->remote_actor_id = remote_actor_id;
+    a->state = DIST_ACTOR_RUNNING;
+    a->max_restarts = sup->max_restarts;
+    a->last_heartbeat_ms = dsup_now_ms();
+    return 0;
+}
+
+int dist_supervisor_heartbeat(DistSupervisor *sup, const char *name) {
+    if (!sup || !name) return -1;
+    for (size_t i = 0; i < sup->count; i++) {
+        if (strcmp(sup->actors[i].name, name) == 0) {
+            sup->actors[i].last_heartbeat_ms = dsup_now_ms();
+            if (sup->actors[i].state == DIST_ACTOR_RESTARTING)
+                sup->actors[i].state = DIST_ACTOR_RUNNING;
+            return 0;
+        }
+    }
+    return -2;
+}
+
+int dist_supervisor_notify_crash(DistSupervisor *sup, const char *name) {
+    if (!sup || !name) return -1;
+
+    /* 找到崩溃的actor */
+    size_t crash_idx = (size_t)-1;
+    for (size_t i = 0; i < sup->count; i++) {
+        if (strcmp(sup->actors[i].name, name) == 0) {
+            crash_idx = i;
+            break;
+        }
+    }
+    if (crash_idx == (size_t)-1) return -2;
+
+    DistSupervisedActor *crashed = &sup->actors[crash_idx];
+    crashed->state = DIST_ACTOR_CRASHED;
+    crashed->restart_count++;
+
+    /* 检查是否超过重启限制 */
+    if (crashed->restart_count > crashed->max_restarts) {
+        /* 超限: 保持CRASHED状态, 不再重启 */
+        return 1;  /* 表示超限 */
+    }
+
+    sup->global_restarts++;
+
+    /* 应用监督策略 */
+    switch (sup->strategy) {
+        case DIST_SUPERVISE_ONE_FOR_ONE:
+            /* 只重启崩溃的 */
+            crashed->state = DIST_ACTOR_RESTARTING;
+            break;
+
+        case DIST_SUPERVISE_ONE_FOR_ALL:
+            /* 重启全部 */
+            for (size_t i = 0; i < sup->count; i++) {
+                sup->actors[i].state = DIST_ACTOR_RESTARTING;
+                if (i != crash_idx) sup->actors[i].restart_count++;
+            }
+            break;
+
+        case DIST_SUPERVISE_REST_FOR_ONE:
+            /* 重启崩溃的+后续所有 */
+            for (size_t i = crash_idx; i < sup->count; i++) {
+                sup->actors[i].state = DIST_ACTOR_RESTARTING;
+                if (i != crash_idx) sup->actors[i].restart_count++;
+            }
+            break;
+    }
+    return 0;
+}
+
+DistActorState dist_supervisor_actor_state(DistSupervisor *sup, const char *name) {
+    if (!sup || !name) return DIST_ACTOR_STOPPED;
+    for (size_t i = 0; i < sup->count; i++) {
+        if (strcmp(sup->actors[i].name, name) == 0)
+            return sup->actors[i].state;
+    }
+    return DIST_ACTOR_STOPPED;
+}
+
+size_t dist_supervisor_count(DistSupervisor *sup) {
+    return sup ? sup->count : 0;
+}
+
+int dist_supervisor_restart_count(DistSupervisor *sup, const char *name) {
+    if (!sup || !name) return -1;
+    for (size_t i = 0; i < sup->count; i++) {
+        if (strcmp(sup->actors[i].name, name) == 0)
+            return sup->actors[i].restart_count;
+    }
+    return -1;
+}
+
+int dist_supervisor_check_timeouts(DistSupervisor *sup, uint64_t timeout_ms) {
+    if (!sup) return -1;
+    uint64_t now = dsup_now_ms();
+    int timed_out = 0;
+    for (size_t i = 0; i < sup->count; i++) {
+        if (sup->actors[i].state == DIST_ACTOR_RUNNING) {
+            if (now - sup->actors[i].last_heartbeat_ms > timeout_ms) {
+                sup->actors[i].state = DIST_ACTOR_CRASHED;
+                timed_out++;
+            }
+        }
+    }
+    return timed_out;
+}
+
+int dist_supervisor_pending_restarts(DistSupervisor *sup, char names[][64], int max) {
+    if (!sup || !names || max <= 0) return -1;
+    int count = 0;
+    for (size_t i = 0; i < sup->count && count < max; i++) {
+        if (sup->actors[i].state == DIST_ACTOR_RESTARTING) {
+            strncpy(names[count], sup->actors[i].name, 63);
+            names[count][63] = ' ';
+            count++;
+        }
+    }
+    return count;
+}
