@@ -155,9 +155,17 @@ static void msg_pool_put(PnyMessage *m) {
     if (r && r->msg_pool_count < MSG_POOL_MAX) {
         /* 清理动态字段 */
         if (m->method && m->method != m->method_buf) { s_free((void*)m->method); }
+        if (m->arg) { s_free(m->arg); }
+        /* P5: 清零所有字段, 使pny_msg_new可跳过memset */
         m->method = NULL;
-        if (m->arg) { s_free(m->arg); m->arg = NULL; }
-        m->sender.name = NULL;  /* P5: 借用引用, 不需要free */
+        m->arg = NULL;
+        m->arg_size = 0;
+        m->sender.id = -1;
+        m->sender.name = NULL;
+        m->sender.actor = NULL;
+        m->reply = NULL;
+        m->msg_id = 0;
+        m->cap_mark = 0;
         m->next = r->msg_pool;
         r->msg_pool = m;
         r->msg_pool_count++;
@@ -168,9 +176,13 @@ static void msg_pool_put(PnyMessage *m) {
 
 PnyMessage *pny_msg_new(const char *method, void *arg, size_t arg_size) {
     PnyMessage *m = msg_pool_get();
-    if (!m) m = (PnyMessage*)s_malloc(sizeof(PnyMessage));
-    if (!m) return NULL;
-    memset(m, 0, sizeof(PnyMessage));
+    if (m) {
+        /* P5: 池化消息已由msg_pool_put清理, 跳过memset */
+    } else {
+        m = (PnyMessage*)s_malloc(sizeof(PnyMessage));
+        if (!m) return NULL;
+        memset(m, 0, sizeof(PnyMessage));
+    }
     /* P5优化: 短方法名用内联buffer, 避免strdup malloc */
     {
         const char *meth = method ? method : "";
@@ -211,15 +223,41 @@ int pny_actor_send(ActorRef *from, ActorRef *to, const char *method, void *arg, 
     if (a->actor_state != ACTOR_STATE_RUNNING &&
         a->actor_state != ACTOR_STATE_INIT) return -2;
     if (a->message_count >= a->max_messages) return -3;
-    /* 背压检查 */
-    BackpressureState bp = pny_backpressure_check(a);
-    if (bp == BACKPRESSURE_FULL) return -6; /* 队列满，通知发送方 */
-    PnyMessage *m = pny_msg_new(method, arg, arg_size);
-    if (!m) return -4;
+    /* P5: 快速路径 - 内联消息分配, 消除函数调用开销 */
+    PnyMessage *m;
+    {
+        PnyRuntime *rt = pny_runtime_global;
+        if (rt && rt->msg_pool) {
+            m = rt->msg_pool;
+            rt->msg_pool = m->next;
+            rt->msg_pool_count--;
+        } else {
+            m = (PnyMessage*)s_malloc(sizeof(PnyMessage));
+            if (!m) return -4;
+            memset(m, 0, sizeof(PnyMessage));
+        }
+        /* 内联方法名复制 (短名, strlen用SIMD) */
+        const char *meth = method ? method : "";
+        size_t mlen = strlen(meth);
+        if (mlen < sizeof(m->method_buf)) {
+            memcpy(m->method_buf, meth, mlen + 1);
+            m->method = m->method_buf;
+        } else {
+            m->method = s_strdup(meth);
+        }
+        m->arg = NULL;
+        m->arg_size = arg_size;
+        m->next = NULL;
+        m->reply = NULL;
+        m->cap_mark = 0;
+        if (arg && arg_size > 0) {
+            m->arg = s_malloc(arg_size);
+            if (m->arg) memcpy(m->arg, arg, arg_size);
+        }
+    }
     m->sender.id = from ? from->id : -1;
-    m->sender.name = from ? from->name : NULL;  /* P5优化: 不再strdup, 直接引用 */
+    m->sender.name = from ? from->name : NULL;
     m->sender.actor = from ? from->actor : NULL;
-    /* 分配 exactly-once 消息 ID */
     m->msg_id = a->next_msg_id++;
     /* Phase 5: O(1) 尾部追加 */
     if (a->messages_tail) {
