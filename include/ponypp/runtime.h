@@ -337,6 +337,17 @@ int pny_cross_supervise_register(CrossComponentSupervisor *cs, ActorRef *child, 
 int pny_cross_supervise_notify_crash(CrossComponentSupervisor *cs, size_t child_idx);
 const char *pny_cross_supervise_state(CrossComponentSupervisor *cs, size_t child_idx);
 
+/* 消息签名(HMAC-SHA256) */
+int pny_msg_sign(PnyMessage *msg, const uint8_t *key, size_t key_len);
+bool pny_msg_verify(const PnyMessage *msg, const uint8_t *key, size_t key_len);
+
+/* 包签名(Ed25519简化版 - HMAC替代) */
+int pny_package_sign(const uint8_t *data, size_t len, const uint8_t *key, size_t key_len, uint8_t *sig_out);
+bool pny_package_verify(const uint8_t *data, size_t len, const uint8_t *key, size_t key_len, const uint8_t *sig);
+
+/* 消息背压配置 */
+void pny_set_backpressure_limits(uint32_t max_msgs, uint32_t max_bytes);
+
 #ifdef __cplusplus
 }
 #endif
