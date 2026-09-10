@@ -154,7 +154,7 @@ if(BUILD_TESTING)
 
     set(GTEST_EXECUTABLES gtest_lexer gtest_parser gtest_types gtest_typecheck
                           gtest_capabilities gtest_wasm gtest_wit gtest_codegen
-                          gtest_codegen_extra gtest_codegen_cov gtest_extra gtest_coverage gtest_tc_extra gtest_more gtest_e2e gtest_util gtest_util2 gtest_runtime gtest_phase2 gtest_stdlib gtest_stdlib_phase3 gtest_stdlib_phase3_ext gtest_tool gtest_gc gtest_wamr gtest_browser gtest_debugger gtest_version_compat gtest_security gtest_http gtest_capabilities_full gtest_crypto gtest_regex gtest_gc_actor gtest_collections gtest_msgpack gtest_coverage_boost gtest_mpmc gtest_dsupervis gtest_dwarf gtest_lexer_full)
+                          gtest_codegen_extra gtest_codegen_cov gtest_extra gtest_coverage gtest_tc_extra gtest_more gtest_e2e gtest_util gtest_util2 gtest_runtime gtest_phase2 gtest_stdlib gtest_stdlib_phase3 gtest_stdlib_phase3_ext gtest_tool gtest_gc gtest_wamr gtest_browser gtest_debugger gtest_version_compat gtest_security gtest_http gtest_capabilities_full gtest_crypto gtest_regex gtest_gc_actor gtest_collections gtest_msgpack gtest_coverage_boost gtest_mpmc gtest_dsupervis gtest_dwarf gtest_lexer_full gtest_parser_full)
 
     foreach(tname IN LISTS GTEST_EXECUTABLES)
         add_executable(${tname} tests/${tname}.cpp)
