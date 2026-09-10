@@ -19,13 +19,44 @@ typedef struct PnyMsgHeader {
     uint16_t method_id;
 } PnyMsgHeader;
 
-/* 能力标记 */
+/* 能力标记 (完整6种引用能力) */
 typedef enum {
-    PNY_CAP_ISO  = 0x01,  /* 消费语义 */
-    PNY_CAP_VAL  = 0x02,  /* 值复制 */
-    PNY_CAP_TAG  = 0x03,  /* 句柄 */
-    PNY_CAP_ERR  = 0xFF   /* 不可发送类型 */
+    PNY_CAP_ISO  = 0x01,  /* 唯一可变引用 — 发送后变box(消费语义), Sendable */
+    PNY_CAP_TRN  = 0x02,  /* 转移引用 — 不可发送, 仅同Actor内传递 */
+    PNY_CAP_REF  = 0x03,  /* 本地可变引用 — 不可发送 */
+    PNY_CAP_VAL  = 0x04,  /* 全局不可变 — 可直接发送(值复制), Sendable */
+    PNY_CAP_BOX  = 0x05,  /* 本地只读 — 不可发送, 仅同Actor内读取 */
+    PNY_CAP_TAG  = 0x06,  /* 仅标识 — 可发送(引用句柄), Sendable */
+    PNY_CAP_ERR  = 0xFF   /* 不可发送类型(错误) */
 } PnyCapMark;
+
+/* 判断能力是否可跨Actor发送 (Sendable) */
+static inline bool pny_cap_is_sendable(PnyCapMark cap) {
+    return cap == PNY_CAP_ISO || cap == PNY_CAP_VAL || cap == PNY_CAP_TAG;
+}
+
+/* 能力发送后的转换: iso→box(消费), val→val(复制), tag→tag(句柄), 其他→ERR */
+static inline PnyCapMark pny_cap_after_send(PnyCapMark cap) {
+    switch (cap) {
+        case PNY_CAP_ISO: return PNY_CAP_BOX;  /* 消费语义 */
+        case PNY_CAP_VAL: return PNY_CAP_VAL;  /* 值复制 */
+        case PNY_CAP_TAG: return PNY_CAP_TAG;  /* 句柄 */
+        default: return PNY_CAP_ERR;            /* 不可发送 */
+    }
+}
+
+/* 能力名称 (调试用) */
+static inline const char *pny_cap_name(PnyCapMark cap) {
+    switch (cap) {
+        case PNY_CAP_ISO: return "iso";
+        case PNY_CAP_TRN: return "trn";
+        case PNY_CAP_REF: return "ref";
+        case PNY_CAP_VAL: return "val";
+        case PNY_CAP_BOX: return "box";
+        case PNY_CAP_TAG: return "tag";
+        default: return "err";
+    }
+}
 
 /* 背压状态 */
 typedef enum {
@@ -47,6 +78,7 @@ typedef enum {
     ACTOR_STATE_RUNNING,
     ACTOR_STATE_STOPPING,
     ACTOR_STATE_STOPPED,
+    ACTOR_STATE_CRASHED,      /* 已崩溃(待监督树处理) */
     ACTOR_STATE_RESTARTING
 } ActorState;
 
@@ -55,6 +87,7 @@ typedef enum {
     SUPERVISE_ONE_FOR_ONE,
     SUPERVISE_ONE_FOR_ALL,
     SUPERVISE_REST_FOR_ONE,   /* 重启崩溃的子 Actor 及其后注册的所有兄弟 */
+    SUPERVISE_SIMPLE_ONE_FOR_ONE, /* 动态添加同类子Actor, 崩溃仅重启该实例 */
     SUPERVISE_RESTART,        /* 兼容旧名 = rest_for_one */
     SUPERVISE_NONE
 } SuperviseStrategy;

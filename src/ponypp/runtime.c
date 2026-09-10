@@ -153,6 +153,7 @@ void pny_msg_free(PnyMessage *m) {
 int pny_actor_send(ActorRef *from, ActorRef *to, const char *method, void *arg, size_t arg_size) {
     if (!to || !to->actor) return -1;
     PnyActor *a = to->actor;
+    if (a->actor_state == ACTOR_STATE_CRASHED) return -7;
     if (a->actor_state != ACTOR_STATE_RUNNING &&
         a->actor_state != ACTOR_STATE_INIT) return -2;
     if (a->message_count >= a->max_messages) return -3;
@@ -382,6 +383,9 @@ void pny_supervisor_handle_crash(PnyRuntime *r, ActorRef *crashed) {
                     if (found && c) c->actor_state = ACTOR_STATE_RESTARTING;
                 }
             }
+            break;
+        case SUPERVISE_SIMPLE_ONE_FOR_ONE:
+            a->actor_state = ACTOR_STATE_RESTARTING;
             break;
         case SUPERVISE_NONE:
             a->actor_state = ACTOR_STATE_STOPPED;
