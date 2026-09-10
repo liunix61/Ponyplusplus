@@ -923,6 +923,107 @@ int64_t pny_atomic_cas(PnyAtomicInt64 *a, int64_t expected, int64_t desired) {
     return old;
 }
 
+/* ==================== Promise/Future ==================== */
+struct PnyPromise {
+    bool done;
+    void *value;
+    size_t value_size;
+    void (*callback)(void *value, size_t size, void *ctx);
+    void *cb_ctx;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+};
+
+PnyPromise *pny_promise_new(void) {
+    PnyPromise *p = (PnyPromise *)calloc(1, sizeof(PnyPromise));
+    if (!p) return NULL;
+    pthread_mutex_init(&p->mutex, NULL);
+    pthread_cond_init(&p->cond, NULL);
+    return p;
+}
+
+void pny_promise_free(PnyPromise *p) {
+    if (!p) return;
+    pthread_mutex_destroy(&p->mutex);
+    pthread_cond_destroy(&p->cond);
+    if (p->value) free(p->value);
+    free(p);
+}
+
+int pny_promise_fulfill(PnyPromise *p, void *value, size_t size) {
+    if (!p || p->done) return -1;
+    pthread_mutex_lock(&p->mutex);
+    if (size > 0 && value) {
+        p->value = malloc(size);
+        if (p->value) { memcpy(p->value, value, size); p->value_size = size; }
+    }
+    p->done = true;
+    pthread_cond_broadcast(&p->cond);
+    pthread_mutex_unlock(&p->mutex);
+    if (p->callback) p->callback(p->value, p->value_size, p->cb_ctx);
+    return 0;
+}
+
+bool pny_promise_is_done(const PnyPromise *p) { return p ? p->done : false; }
+
+void *pny_promise_value(const PnyPromise *p, size_t *out_size) {
+    if (!p || !p->done) return NULL;
+    if (out_size) *out_size = p->value_size;
+    return p->value;
+}
+
+int pny_promise_then(PnyPromise *p, void (*cb)(void *, size_t, void *), void *ctx) {
+    if (!p || !cb) return -1;
+    if (p->done) { cb(p->value, p->value_size, ctx); return 0; }
+    p->callback = cb; p->cb_ctx = ctx;
+    return 0;
+}
+
+/* Future */
+struct PnyFuture {
+    PnyPromise *promise;  /* 借用引用 */
+};
+
+PnyFuture *pny_future_from_promise(PnyPromise *p) {
+    if (!p) return NULL;
+    PnyFuture *f = (PnyFuture *)calloc(1, sizeof(PnyFuture));
+    if (f) f->promise = p;
+    return f;
+}
+
+void pny_future_free(PnyFuture *f) { free(f); }  /* 不free promise */
+
+bool pny_future_is_done(const PnyFuture *f) { return f ? pny_promise_is_done(f->promise) : false; }
+
+void *pny_future_value(const PnyFuture *f, size_t *out_size) {
+    return f ? pny_promise_value(f->promise, out_size) : NULL;
+}
+
+int pny_future_wait(PnyFuture *f, int timeout_ms) {
+    if (!f || !f->promise) return -1;
+    PnyPromise *p = f->promise;
+    pthread_mutex_lock(&p->mutex);
+    if (!p->done) {
+        if (timeout_ms < 0) {
+            pthread_cond_wait(&p->cond, &p->mutex);
+        } else {
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += timeout_ms / 1000;
+            ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+            if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
+            pthread_cond_timedwait(&p->cond, &p->mutex, &ts);
+        }
+    }
+    int ret = p->done ? 0 : -1;
+    pthread_mutex_unlock(&p->mutex);
+    return ret;
+}
+
+int pny_future_then(PnyFuture *f, void (*cb)(void *, size_t, void *), void *ctx) {
+    return f ? pny_promise_then(f->promise, cb, ctx) : -1;
+}
+
 /* ==================== Test ==================== */
 
 PnyTestSuite *pny_test_suite_new(const char *name) {

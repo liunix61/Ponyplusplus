@@ -479,3 +479,76 @@ TEST(StdlibTest, AssertFailOutput) {
     pny_assert_eq_int(1, 2, (AssertCtx){__LINE__, __FILE__, "1!=2"});
     pny_assert_not_null(nullptr, (AssertCtx){__LINE__, __FILE__, "nonnull"});
 }
+
+/* ==================== P1: Promise/Future ==================== */
+
+TEST(PromiseFuture, CreateDestroy) {
+    PnyPromise *p = pny_promise_new();
+    ASSERT_NE(p, nullptr);
+    EXPECT_FALSE(pny_promise_is_done(p));
+    pny_promise_free(p);
+}
+
+TEST(PromiseFuture, Fulfill) {
+    PnyPromise *p = pny_promise_new();
+    int val = 42;
+    EXPECT_EQ(pny_promise_fulfill(p, &val, sizeof(val)), 0);
+    EXPECT_TRUE(pny_promise_is_done(p));
+    EXPECT_EQ(pny_promise_fulfill(p, &val, sizeof(val)), -1); /* already fulfilled */
+    pny_promise_free(p);
+}
+
+TEST(PromiseFuture, GetValue) {
+    PnyPromise *p = pny_promise_new();
+    const char *msg = "hello";
+    pny_promise_fulfill(p, (void*)msg, 6);
+    size_t sz;
+    const char *result = (const char *)pny_promise_value(p, &sz);
+    ASSERT_NE(result, nullptr);
+    EXPECT_STREQ(result, "hello");
+    EXPECT_EQ(sz, 6u);
+    pny_promise_free(p);
+}
+
+TEST(PromiseFuture, FutureFromPromise) {
+    PnyPromise *p = pny_promise_new();
+    PnyFuture *f = pny_future_from_promise(p);
+    ASSERT_NE(f, nullptr);
+    EXPECT_FALSE(pny_future_is_done(f));
+    int val = 99;
+    pny_promise_fulfill(p, &val, sizeof(val));
+    EXPECT_TRUE(pny_future_is_done(f));
+    int *result = (int *)pny_future_value(f, nullptr);
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(*result, 99);
+    pny_future_free(f);
+    pny_promise_free(p);
+}
+
+TEST(PromiseFuture, FutureWaitTimeout) {
+    PnyPromise *p = pny_promise_new();
+    PnyFuture *f = pny_future_from_promise(p);
+    /* Not fulfilled - should timeout */
+    EXPECT_EQ(pny_future_wait(f, 10), -1);
+    /* Fulfill then wait - should succeed */
+    int val = 1;
+    pny_promise_fulfill(p, &val, sizeof(val));
+    EXPECT_EQ(pny_future_wait(f, 10), 0);
+    pny_future_free(f);
+    pny_promise_free(p);
+}
+
+TEST(PromiseFuture, ThenCallback) {
+    PnyPromise *p = pny_promise_new();
+    /* Register callback before fulfill */
+    int cb_result = 0;
+    struct Ctx { int *result; } ctx = { &cb_result };
+    pny_promise_then(p, [](void *value, size_t sz, void *c) {
+        struct Ctx *ctx = (struct Ctx *)c;
+        if (value && sz == sizeof(int)) *(ctx->result) = *(int *)value;
+    }, &ctx);
+    int val = 77;
+    pny_promise_fulfill(p, &val, sizeof(val));
+    EXPECT_EQ(cb_result, 77);
+    pny_promise_free(p);
+}

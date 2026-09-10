@@ -188,6 +188,26 @@ int64_t pny_atomic_load(const PnyAtomicInt64 *a);
 int64_t pny_atomic_add(PnyAtomicInt64 *a, int64_t delta);
 int64_t pny_atomic_cas(PnyAtomicInt64 *a, int64_t expected, int64_t desired);
 
+/* Promise/Future */
+typedef struct PnyPromise PnyPromise;
+
+PnyPromise *pny_promise_new(void);
+void pny_promise_free(PnyPromise *p);
+int pny_promise_fulfill(PnyPromise *p, void *value, size_t size);  /* 0 ok, -1 already fulfilled */
+bool pny_promise_is_done(const PnyPromise *p);
+void *pny_promise_value(const PnyPromise *p, size_t *out_size);    /* NULL if not done */
+int pny_promise_then(PnyPromise *p, void (*cb)(void *value, size_t size, void *ctx), void *ctx);
+
+/* Future: Promise的只读视图 */
+typedef struct PnyFuture PnyFuture;
+
+PnyFuture *pny_future_from_promise(PnyPromise *p);  /* 借用引用, 不拥有 */
+void pny_future_free(PnyFuture *f);
+bool pny_future_is_done(const PnyFuture *f);
+void *pny_future_value(const PnyFuture *f, size_t *out_size);
+int pny_future_wait(PnyFuture *f, int timeout_ms);  /* 阻塞等待, 0=done, -1=timeout */
+int pny_future_then(PnyFuture *f, void (*cb)(void *value, size_t size, void *ctx), void *ctx);
+
 /* ==================== Test ==================== */
 
 typedef enum { TEST_PASS = 0, TEST_FAIL = 1, TEST_SKIP = 2 } TestResult;
