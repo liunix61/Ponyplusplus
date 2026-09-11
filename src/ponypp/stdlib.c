@@ -652,7 +652,17 @@ static size_t map_hash_default(const void *key, size_t sz) {
 
 static int map_key_cmp_default(const void *a, const void *b) {
     if (a == b) return 0;
+    /* 注意: 此比较仅对指针 key 有效; 若 key_size>0 应使用 memcmp */
     return (a > b) ? 1 : -1;
+}
+
+/* 按值比较 key (当 key_size > 0 时使用) */
+static size_t map_key_size = 0;  /* 线程局部替代: 通过 map 传入 */
+
+static int map_key_cmp_bytes(const void *a, const void *b, size_t key_size) {
+    if (a == b) return 0;
+    if (!a || !b) return (a > b) ? 1 : -1;
+    return memcmp(a, b, key_size);
 }
 
 PnyMap *pny_map_new(size_t cap, size_t key_size, size_t val_size) {
@@ -695,9 +705,16 @@ int pny_map_put(PnyMap *m, void *key, void *val) {
     size_t idx = h % m->cap;
     PnyMapNode *n = m->buckets[idx];
     while (n) {
-        if (m->key_cmp(n->key, key) == 0) {
-            free(n->val);
-            n->val = val;
+        int match;
+        if (m->key_size > 0) {
+            match = (n->key && key && memcmp(n->key, key, m->key_size) == 0);
+        } else {
+            match = (m->key_cmp(n->key, key) == 0);
+        }
+        if (match) {
+            if (m->val_free) m->val_free(n->val);
+            else if (m->val_size > 0) free(n->val);
+            n->val = val ? (m->val_size > 0 ? memcpy(malloc(m->val_size), val, m->val_size) : (void*)val) : NULL;
             return 0;
         }
         n = n->next;
@@ -720,7 +737,11 @@ void *pny_map_get(PnyMap *m, const void *key) {
     size_t idx = m->hash(key, m->key_size) % m->cap;
     PnyMapNode *n = m->buckets[idx];
     while (n) {
-        if (m->key_cmp(n->key, key) == 0) return n->val;
+        if (m->key_size > 0) {
+            if (n->key && key && memcmp(n->key, key, m->key_size) == 0) return n->val;
+        } else {
+            if (m->key_cmp(n->key, key) == 0) return n->val;
+        }
         n = n->next;
     }
     return NULL;
@@ -732,7 +753,13 @@ int pny_map_remove(PnyMap *m, const void *key) {
     PnyMapNode *n = m->buckets[idx];
     PnyMapNode *prev = NULL;
     while (n) {
-        if (m->key_cmp(n->key, key) == 0) {
+        int match;
+        if (m->key_size > 0) {
+            match = (n->key && key && memcmp(n->key, key, m->key_size) == 0);
+        } else {
+            match = (m->key_cmp(n->key, key) == 0);
+        }
+        if (match) {
             if (prev) prev->next = n->next;
             else m->buckets[idx] = n->next;
             if (m->key_free) m->key_free(n->key);
