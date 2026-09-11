@@ -175,16 +175,20 @@ TEST(ToolBuild, WasmOutput) {
 /* ==================== Run ==================== */
 
 TEST(ToolRun, HelloPony) {
-    const char *path = "/tmp/ponypp_tool_run.pny";
+    unlink("/tmp/ponypp_run_bin"); /* clean stale binary */
+    char tmpl[] = "/tmp/ponypp_tool_run_XXXXXX";
+    int fd = mkstemp(tmpl);
+    ASSERT_GE(fd, 0);
+    close(fd);
     const char *src =
         "actor main {\n"
         "  new create() => { print(\"Hello\") }\n"
         "}\n";
-    int r = s_file_write(path, src, strlen(src));
+    int r = s_file_write(tmpl, src, strlen(src));
     ASSERT_EQ(r, 0);
-    int ret = tool_run(path, "native", "0");
+    int ret = tool_run(tmpl, "native", "0");
     ASSERT_EQ(ret, 0);
-    remove(path);
+    remove(tmpl);
 }
 
 /* ==================== Test ==================== */

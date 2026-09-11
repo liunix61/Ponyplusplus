@@ -152,7 +152,12 @@ static int tool_codegen_only(const char *input, const char *output) {
 int tool_run(const char *input, const char *target, const char *olevel) {
     if (!input) { fprintf(stderr, "[run] 缺少输入文件\n"); return -1; }
 
-    const char *tmpbin = "/tmp/ponypp_run_bin";
+    char tmpbin[] = "/tmp/ponypp_run_XXXXXX";
+    int tfd = mkstemp(tmpbin);
+    if (tfd < 0) { fprintf(stderr, "[run] 无法创建临时文件\n"); return -1; }
+    close(tfd);
+    unlink(tmpbin); /* tool_build will create it */
+
     int r = tool_build(input, tmpbin, target, NULL, olevel, false);
     if (r != 0) return -1;
 
