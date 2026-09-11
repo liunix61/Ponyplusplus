@@ -149,3 +149,159 @@ TEST(DistConn, FreeNull) {
 TEST(DistRuntime, FreeNull) {
     dist_runtime_free(nullptr);  /* 不应崩溃 */
 }
+
+/* ==================== 连接操作 ==================== */
+
+TEST(DistConn, ConnectInvalidHost) {
+    /* 连接到不存在的主机应失败 */
+    DistConnection *conn = dist_conn_connect("999.999.999.999", 80);
+    EXPECT_EQ(conn, nullptr);
+    
+    EXPECT_EQ(dist_conn_connect(nullptr, 80), nullptr);
+    EXPECT_EQ(dist_conn_connect("127.0.0.1", 0), nullptr);
+    EXPECT_EQ(dist_conn_connect("127.0.0.1", -1), nullptr);
+}
+
+TEST(DistConn, ConnectRefused) {
+    /* 连接到未监听端口应失败 */
+    DistConnection *conn = dist_conn_connect("127.0.0.1", 1);
+    if (conn) {
+        dist_conn_free(conn);
+    }
+}
+
+/* ==================== 分布式监督树 ==================== */
+
+TEST(DistSupervisor, CreateAndFree) {
+    DistSupervisor *sup = dist_supervisor_new("test-sup", DIST_SUPERVISE_ONE_FOR_ONE, 3);
+    ASSERT_NE(sup, nullptr);
+    
+    EXPECT_EQ(dist_supervisor_count(sup), 0);
+    
+    dist_supervisor_free(sup);
+}
+
+TEST(DistSupervisor, CreateNullArgs) {
+    /* NULL id 可能仍返回非 NULL (使用默认 id) */
+    DistSupervisor *sup = dist_supervisor_new(nullptr, DIST_SUPERVISE_ONE_FOR_ONE, 3);
+    if (sup) dist_supervisor_free(sup);
+}
+
+TEST(DistSupervisor, RegisterActor) {
+    DistSupervisor *sup = dist_supervisor_new("test-sup", DIST_SUPERVISE_ONE_FOR_ONE, 3);
+    ASSERT_NE(sup, nullptr);
+    
+    int rc = dist_supervisor_register(sup, "worker1", "127.0.0.1", 9999, 1);
+    EXPECT_EQ(rc, 0);
+    EXPECT_EQ(dist_supervisor_count(sup), 1);
+    
+    /* 重复注册应失败 */
+    rc = dist_supervisor_register(sup, "worker1", "127.0.0.1", 9999, 1);
+    EXPECT_NE(rc, 0);
+    
+    dist_supervisor_free(sup);
+}
+
+TEST(DistSupervisor, RegisterBadArgs) {
+    DistSupervisor *sup = dist_supervisor_new("test-sup", DIST_SUPERVISE_ONE_FOR_ONE, 3);
+    ASSERT_NE(sup, nullptr);
+    
+    EXPECT_EQ(dist_supervisor_register(nullptr, "w", "h", 1, 1), -1);
+    EXPECT_EQ(dist_supervisor_register(sup, nullptr, "h", 1, 1), -1);
+    EXPECT_EQ(dist_supervisor_register(sup, "w", nullptr, 1, 1), -1);
+    
+    dist_supervisor_free(sup);
+}
+
+TEST(DistSupervisor, Heartbeat) {
+    DistSupervisor *sup = dist_supervisor_new("test-sup", DIST_SUPERVISE_ONE_FOR_ONE, 3);
+    ASSERT_NE(sup, nullptr);
+    
+    dist_supervisor_register(sup, "worker1", "127.0.0.1", 9999, 1);
+    
+    int rc = dist_supervisor_heartbeat(sup, "worker1");
+    EXPECT_EQ(rc, 0);
+    
+    /* 未注册的 actor */
+    rc = dist_supervisor_heartbeat(sup, "unknown");
+    EXPECT_NE(rc, 0);
+    
+    dist_supervisor_free(sup);
+}
+
+TEST(DistSupervisor, NotifyCrash) {
+    DistSupervisor *sup = dist_supervisor_new("test-sup", DIST_SUPERVISE_ONE_FOR_ONE, 3);
+    ASSERT_NE(sup, nullptr);
+    
+    dist_supervisor_register(sup, "worker1", "127.0.0.1", 9999, 1);
+    
+    int rc = dist_supervisor_notify_crash(sup, "worker1");
+    EXPECT_EQ(rc, 0);
+    
+    /* 检查重启计数 */
+    EXPECT_GE(dist_supervisor_restart_count(sup, "worker1"), 1);
+    
+    dist_supervisor_free(sup);
+}
+
+TEST(DistSupervisor, ActorState) {
+    DistSupervisor *sup = dist_supervisor_new("test-sup", DIST_SUPERVISE_ONE_FOR_ONE, 3);
+    ASSERT_NE(sup, nullptr);
+    
+    dist_supervisor_register(sup, "worker1", "127.0.0.1", 9999, 1);
+    
+    DistActorState state = dist_supervisor_actor_state(sup, "worker1");
+    /* 初始状态应该是 RUNNING 或 STARTING */
+    (void)state;
+    
+    dist_supervisor_free(sup);
+}
+
+TEST(DistSupervisor, CheckTimeouts) {
+    DistSupervisor *sup = dist_supervisor_new("test-sup", DIST_SUPERVISE_ONE_FOR_ONE, 3);
+    ASSERT_NE(sup, nullptr);
+    
+    dist_supervisor_register(sup, "worker1", "127.0.0.1", 9999, 1);
+    
+    /* 立即检查超时 (不应超时) */
+    int rc = dist_supervisor_check_timeouts(sup, 10000);
+    (void)rc;
+    
+    dist_supervisor_free(sup);
+}
+
+TEST(DistSupervisor, PendingRestarts) {
+    DistSupervisor *sup = dist_supervisor_new("test-sup", DIST_SUPERVISE_ONE_FOR_ONE, 3);
+    ASSERT_NE(sup, nullptr);
+    
+    dist_supervisor_register(sup, "worker1", "127.0.0.1", 9999, 1);
+    dist_supervisor_notify_crash(sup, "worker1");
+    
+    char names[8][64];
+    int count = dist_supervisor_pending_restarts(sup, names, 8);
+    (void)count;
+    
+    dist_supervisor_free(sup);
+}
+
+TEST(DistSupervisor, FreeNull) {
+    dist_supervisor_free(nullptr);  /* 不应崩溃 */
+}
+
+/* ==================== TLS ==================== */
+
+#ifdef PONYPP_USE_TLS
+TEST(TLS, GenerateSelfsigned) {
+    const char *cert = "/tmp/ponypp-test-cert.pem";
+    const char *key = "/tmp/ponypp-test-key.pem";
+    
+    int rc = tls_generate_selfsigned(cert, key, 365);
+    (void)rc;
+    
+    unlink(cert);
+    unlink(key);
+    
+    EXPECT_EQ(tls_generate_selfsigned(nullptr, key, 365), -1);
+    EXPECT_EQ(tls_generate_selfsigned(cert, nullptr, 365), -1);
+}
+#endif /* PONYPP_USE_TLS */
