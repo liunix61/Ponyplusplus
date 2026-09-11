@@ -2887,3 +2887,272 @@ bool pny_str_ends_with_c(const char *s, const char *suffix) {
     if (xlen > slen) return false;
     return strcmp(s + slen - xlen, suffix) == 0;
 }
+
+/* ==================== 内存操作 ==================== */
+
+void *pny_mem_alloc(size_t size) {
+    return malloc(size);
+}
+
+void *pny_mem_calloc(size_t nmemb, size_t size) {
+    return calloc(nmemb, size);
+}
+
+void *pny_mem_realloc(void *ptr, size_t size) {
+    return realloc(ptr, size);
+}
+
+void pny_mem_free(void *ptr) {
+    free(ptr);
+}
+
+void *pny_mem_copy(void *dest, const void *src, size_t n) {
+    return memcpy(dest, src, n);
+}
+
+void *pny_mem_move(void *dest, const void *src, size_t n) {
+    return memmove(dest, src, n);
+}
+
+void *pny_mem_set(void *s, int c, size_t n) {
+    return memset(s, c, n);
+}
+
+int pny_mem_cmp(const void *s1, const void *s2, size_t n) {
+    return memcmp(s1, s2, n);
+}
+
+/* ==================== 字符处理 ==================== */
+
+bool pny_char_is_alpha(char c) {
+    return isalpha((unsigned char)c) != 0;
+}
+
+bool pny_char_is_digit(char c) {
+    return isdigit((unsigned char)c) != 0;
+}
+
+bool pny_char_is_alnum(char c) {
+    return isalnum((unsigned char)c) != 0;
+}
+
+bool pny_char_is_upper(char c) {
+    return isupper((unsigned char)c) != 0;
+}
+
+bool pny_char_is_lower(char c) {
+    return islower((unsigned char)c) != 0;
+}
+
+bool pny_char_is_space(char c) {
+    return isspace((unsigned char)c) != 0;
+}
+
+char pny_char_to_upper(char c) {
+    return (char)toupper((unsigned char)c);
+}
+
+char pny_char_to_lower(char c) {
+    return (char)tolower((unsigned char)c);
+}
+
+/* ==================== 数值转换 ==================== */
+
+int64_t pny_parse_int(const char *str) {
+    if (!str) return 0;
+    return strtoll(str, NULL, 10);
+}
+
+double pny_parse_float(const char *str) {
+    if (!str) return 0.0;
+    return strtod(str, NULL);
+}
+
+char *pny_int_to_string(int64_t val) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%lld", (long long)val);
+    return strdup(buf);
+}
+
+char *pny_float_to_string(double val) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%g", val);
+    return strdup(buf);
+}
+
+/* ==================== 环境/进程 ==================== */
+
+const char *pny_env_get(const char *name) {
+    return getenv(name);
+}
+
+int pny_env_set(const char *name, const char *value) {
+    return setenv(name, value, 1) == 0 ? 0 : -1;
+}
+
+void pny_exit(int code) {
+    exit(code);
+}
+
+void pny_sleep_ms(uint32_t ms) {
+    struct timespec ts = {ms / 1000, (long)(ms % 1000) * 1000000L};
+    nanosleep(&ts, NULL);
+}
+
+int32_t pny_getpid(void) {
+    return (int32_t)getpid();
+}
+
+const char *pny_getcwd(void) {
+    static char buf[4096];
+    return getcwd(buf, sizeof(buf));
+}
+
+/* ==================== 断言/调试 ==================== */
+
+void pny_assert(bool cond, const char *msg) {
+    if (!cond) {
+        fprintf(stderr, "PONYPP ASSERT: %s\n", msg ? msg : "assertion failed");
+        abort();
+    }
+}
+
+void pny_panic(const char *msg) {
+    fprintf(stderr, "PONYPP PANIC: %s\n", msg ? msg : "panic");
+    abort();
+}
+
+/* ==================== 排序 ==================== */
+
+static int cmp_int_asc(const void *a, const void *b) {
+    int64_t x = *(const int64_t *)a, y = *(const int64_t *)b;
+    return (x > y) - (x < y);
+}
+
+static int cmp_float_asc(const void *a, const void *b) {
+    double x = *(const double *)a, y = *(const double *)b;
+    return (x > y) - (x < y);
+}
+
+static int cmp_str_asc(const void *a, const void *b) {
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+void pny_sort_int(int64_t *arr, size_t n) {
+    if (arr && n > 1) qsort(arr, n, sizeof(int64_t), cmp_int_asc);
+}
+
+void pny_sort_float(double *arr, size_t n) {
+    if (arr && n > 1) qsort(arr, n, sizeof(double), cmp_float_asc);
+}
+
+void pny_sort_str(const char **arr, size_t n) {
+    if (arr && n > 1) qsort(arr, n, sizeof(const char *), cmp_str_asc);
+}
+
+int64_t pny_binary_search_int(const int64_t *arr, size_t n, int64_t target) {
+    if (!arr || n == 0) return -1;
+    size_t lo = 0, hi = n - 1;
+    while (lo <= hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (arr[mid] == target) return (int64_t)mid;
+        if (arr[mid] < target) lo = mid + 1;
+        else { if (mid == 0) break; hi = mid - 1; }
+    }
+    return -1;
+}
+
+/* ==================== 随机数 ==================== */
+
+static bool g_seeded = false;
+
+void pny_random_seed(uint32_t seed) {
+    srand(seed);
+    g_seeded = true;
+}
+
+double pny_random_float(void) {
+    if (!g_seeded) { srand((uint32_t)time(NULL)); g_seeded = true; }
+    return (double)rand() / (double)RAND_MAX;
+}
+
+int64_t pny_random_range(int64_t min, int64_t max) {
+    if (min >= max) return min;
+    if (!g_seeded) { srand((uint32_t)time(NULL)); g_seeded = true; }
+    return min + (int64_t)(rand() % (int)(max - min));
+}
+
+/* ==================== 时间 ==================== */
+
+int64_t pny_time_now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+int64_t pny_time_now_us(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (int64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
+
+/* ==================== 字符串扩展 ==================== */
+
+int64_t pny_str_find(const PnyString *s, const char *sub) {
+    if (!s || !sub) return -1;
+    const char *pos = strstr(s->data, sub);
+    return pos ? (int64_t)(pos - s->data) : -1;
+}
+
+PnyString *pny_str_repeat(const PnyString *s, int count) {
+    if (!s || count <= 0) return NULL;
+    size_t len = s->len * (size_t)count;
+    char *buf = malloc(len + 1);
+    if (!buf) return NULL;
+    for (int i = 0; i < count; i++)
+        memcpy(buf + (size_t)i * s->len, s->data, s->len);
+    buf[len] = '\0';
+    PnyString *result = malloc(sizeof(PnyString));
+    if (!result) { free(buf); return NULL; }
+    result->data = buf;
+    result->len = len;
+    result->cap = len;
+    return result;
+}
+
+PnyString *pny_str_pad_left(const PnyString *s, size_t width, char pad) {
+    if (!s) return NULL;
+    if (s->len >= width) return pny_str_dup(s);
+    size_t pad_len = width - s->len;
+    char *buf = malloc(width + 1);
+    if (!buf) return NULL;
+    memset(buf, pad, pad_len);
+    memcpy(buf + pad_len, s->data, s->len);
+    buf[width] = '\0';
+    PnyString *result = malloc(sizeof(PnyString));
+    if (!result) { free(buf); return NULL; }
+    result->data = buf;
+    result->len = width;
+    result->cap = width;
+    return result;
+}
+
+PnyString *pny_str_reverse(const PnyString *s) {
+    if (!s) return NULL;
+    char *buf = malloc(s->len + 1);
+    if (!buf) return NULL;
+    for (size_t i = 0; i < s->len; i++)
+        buf[i] = s->data[s->len - 1 - i];
+    buf[s->len] = '\0';
+    PnyString *result = malloc(sizeof(PnyString));
+    if (!result) { free(buf); return NULL; }
+    result->data = buf;
+    result->len = s->len;
+    result->cap = s->len;
+    return result;
+}
+
+char pny_str_char_at(const PnyString *s, size_t index) {
+    if (!s || index >= s->len) return '\0';
+    return s->data[index];
+}

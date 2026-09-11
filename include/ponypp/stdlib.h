@@ -649,3 +649,63 @@ bool pny_str_ends_with_c(const char *s, const char *suffix);
 #endif
 
 #endif /* PNY_STDLIB_H */
+
+/* ==================== 内存操作 ==================== */
+void *pny_mem_alloc(size_t size);
+void *pny_mem_calloc(size_t nmemb, size_t size);
+void *pny_mem_realloc(void *ptr, size_t size);
+void pny_mem_free(void *ptr);
+void *pny_mem_copy(void *dest, const void *src, size_t n);
+void *pny_mem_move(void *dest, const void *src, size_t n);
+void *pny_mem_set(void *s, int c, size_t n);
+int pny_mem_cmp(const void *s1, const void *s2, size_t n);
+
+/* ==================== 字符处理 ==================== */
+bool pny_char_is_alpha(char c);
+bool pny_char_is_digit(char c);
+bool pny_char_is_alnum(char c);
+bool pny_char_is_upper(char c);
+bool pny_char_is_lower(char c);
+bool pny_char_is_space(char c);
+char pny_char_to_upper(char c);
+char pny_char_to_lower(char c);
+
+/* ==================== 数值转换 ==================== */
+int64_t pny_parse_int(const char *str);
+double pny_parse_float(const char *str);
+char *pny_int_to_string(int64_t val);
+char *pny_float_to_string(double val);
+
+/* ==================== 环境/进程 ==================== */
+const char *pny_env_get(const char *name);
+int pny_env_set(const char *name, const char *value);
+void pny_exit(int code);
+void pny_sleep_ms(uint32_t ms);
+int32_t pny_getpid(void);
+const char *pny_getcwd(void);
+
+/* ==================== 断言/调试 ==================== */
+void pny_assert(bool cond, const char *msg);
+void pny_panic(const char *msg);
+
+/* ==================== 排序 ==================== */
+void pny_sort_int(int64_t *arr, size_t n);
+void pny_sort_float(double *arr, size_t n);
+void pny_sort_str(const char **arr, size_t n);
+int64_t pny_binary_search_int(const int64_t *arr, size_t n, int64_t target);
+
+/* ==================== 随机数 ==================== */
+void pny_random_seed(uint32_t seed);
+double pny_random_float(void);
+int64_t pny_random_range(int64_t min, int64_t max);
+
+/* ==================== 时间 ==================== */
+int64_t pny_time_now_ms(void);
+int64_t pny_time_now_us(void);
+
+/* ==================== 字符串扩展 ==================== */
+int64_t pny_str_find(const PnyString *s, const char *sub);
+PnyString *pny_str_repeat(const PnyString *s, int count);
+PnyString *pny_str_pad_left(const PnyString *s, size_t width, char pad);
+PnyString *pny_str_reverse(const PnyString *s);
+char pny_str_char_at(const PnyString *s, size_t index);
