@@ -262,7 +262,7 @@ TEST(Typecheck, ComplexProgram) {
     typecheck_free_result(&result);
 }
 
-TEST(Typecheck, MultipleActors) {
+TEST(Typecheck, MultipleActorsV2) {
     TypeCheckResult result = {0};
     EXPECT_TRUE(typecheck_source(
         "actor A\n"
@@ -413,3 +413,143 @@ TEST(Typecheck, NestedActors) {
     ));
     typecheck_free_result(&result);
 }
+
+/* ==================== 错误路径覆盖 ==================== */
+
+TEST(Typecheck, UnknownIdentifier) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    let x = unknown_var\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, ThisFieldAccess) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  var _count: U32 = 0\n"
+        "  new create(env: Env) =>\n"
+        "    this._count = 1\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, UnknownFieldAccess) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    this.unknown_field = 1\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, BuiltinFuncs) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    print(\"hello\")\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, MathFuncs) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    let pi = math_pi()\n"
+        "    let root = math_sqrt(4.0)\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, LogFuncs) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    log_info(\"started\")\n"
+        "    log_error(\"error\")\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, IntTypes) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Main\n"
+        "  var a: U8 = 0\n"
+        "  var b: U16 = 0\n"
+        "  var c: U32 = 0\n"
+        "  var d: U64 = 0\n"
+        "  var e: I8 = 0\n"
+        "  var f: I16 = 0\n"
+        "  var g: I32 = 0\n"
+        "  var h: I64 = 0\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, FloatTypes) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Main\n"
+        "  var a: F32 = 0.0\n"
+        "  var b: F64 = 0.0\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, BoolType) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Main\n"
+        "  var flag: Bool = false\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, StringType) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Main\n"
+        "  var name: String = \"test\"\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, ArrayType) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  var arr: Array[U32] = Array[U32]\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
