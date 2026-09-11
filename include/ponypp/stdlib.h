@@ -650,6 +650,10 @@ bool pny_str_ends_with_c(const char *s, const char *suffix);
 
 #endif /* PNY_STDLIB_H */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* ==================== 内存操作 ==================== */
 void *pny_mem_alloc(size_t size);
 void *pny_mem_calloc(size_t nmemb, size_t size);
@@ -709,3 +713,7 @@ PnyString *pny_str_repeat(const PnyString *s, int count);
 PnyString *pny_str_pad_left(const PnyString *s, size_t width, char pad);
 PnyString *pny_str_reverse(const PnyString *s);
 char pny_str_char_at(const PnyString *s, size_t index);
+
+#ifdef __cplusplus
+}
+#endif
