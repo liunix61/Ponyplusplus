@@ -329,5 +329,5 @@ void typecheck_free_result(TypeCheckResult *result) {
         free(result->errors);
         result->errors = NULL;
     }
-    free(result);
+    /* 不 free result 本身: 支持栈分配的 TypeCheckResult */
 }
