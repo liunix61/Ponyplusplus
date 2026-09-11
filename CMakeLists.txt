@@ -49,6 +49,15 @@ endif()
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic -Wno-unused-function -march=native")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
+# Wasm GC backend (requires wasmtime C API)
+option(PONYPP_USE_WASM_GC "Enable Wasm GC backend via wasmtime" OFF)
+if(PONYPP_USE_WASM_GC)
+    set(WASMTIME_DIR ${CMAKE_SOURCE_DIR}/external/wasmtime-v27.0.0-aarch64-linux-c-api)
+    add_compile_definitions(PONYPP_USE_WASM_GC)
+    include_directories(${WASMTIME_DIR}/include)
+    link_directories(${WASMTIME_DIR}/lib)
+endif()
+
 # ---- Sources ----
 set(PONYPP_SRCS
     src/ast.c
@@ -61,7 +70,7 @@ set(PONYPP_SRCS
     src/util.c
     src/wasm.c
     src/wit.c
-    src/ponypp/runtime.c src/ponypp/mpmc.c src/dwarf.c src/incremental.c src/ponypp/scheduler_ext.c
+    src/ponypp/runtime.c src/ponypp/mpmc.c src/dwarf.c src/incremental.c src/ponypp/scheduler_ext.c src/wasm_gc.c
     src/ponypp/gc.c
     src/ponypp/wamr.c
     src/ponypp/stdlib.c
@@ -131,6 +140,11 @@ if(USE_TLS)
     target_link_libraries(ponypp_lib PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
+# Link Wasm GC backend
+if(PONYPP_USE_WASM_GC)
+    target_link_libraries(ponypp_lib PUBLIC wasmtime)
+endif()
+
 # ---- Compiler driver ----
 add_executable(ponyppc src/ponyppc.c)
 target_link_libraries(ponyppc PRIVATE ponypp_lib m dl)
@@ -154,7 +168,7 @@ if(BUILD_TESTING)
 
     set(GTEST_EXECUTABLES gtest_lexer gtest_parser gtest_types gtest_typecheck
                           gtest_wasm gtest_wit gtest_codegen
-                          gtest_codegen_extra gtest_codegen_cov gtest_extra gtest_coverage gtest_tc_extra gtest_more gtest_e2e gtest_util gtest_util2 gtest_runtime gtest_phase2 gtest_stdlib gtest_stdlib_phase3 gtest_stdlib_phase3_ext gtest_tool gtest_gc gtest_wamr gtest_browser gtest_debugger gtest_version_compat gtest_security gtest_http gtest_capabilities_full gtest_crypto gtest_regex gtest_gc_actor gtest_collections gtest_msgpack gtest_coverage_boost gtest_mpmc gtest_dsupervis gtest_dwarf gtest_lexer_full gtest_parser_full gtest_http_integration gtest_codegen_paths gtest_parser_edge gtest_codegen_complex gtest_caps_full gtest_codegen_advanced gtest_debugger_full gtest_codegen_extreme gtest_codegen_fullpath gtest_parser_extreme gtest_coverage_final gtest_incremental gtest_dist_runtime gtest_stdlib_utils gtest_stdlib_full gtest_codegen_coverage gtest_typecheck_full gtest_ffi_full gtest_dap_handlers gtest_stdlib_chan gtest_scheduler_ext gtest_stdlib_lang)
+                          gtest_codegen_extra gtest_codegen_cov gtest_extra gtest_coverage gtest_tc_extra gtest_more gtest_e2e gtest_util gtest_util2 gtest_runtime gtest_phase2 gtest_stdlib gtest_stdlib_phase3 gtest_stdlib_phase3_ext gtest_tool gtest_gc gtest_wamr gtest_browser gtest_debugger gtest_version_compat gtest_security gtest_http gtest_capabilities_full gtest_crypto gtest_regex gtest_gc_actor gtest_collections gtest_msgpack gtest_coverage_boost gtest_mpmc gtest_dsupervis gtest_dwarf gtest_lexer_full gtest_parser_full gtest_http_integration gtest_codegen_paths gtest_parser_edge gtest_codegen_complex gtest_caps_full gtest_codegen_advanced gtest_debugger_full gtest_codegen_extreme gtest_codegen_fullpath gtest_parser_extreme gtest_coverage_final gtest_incremental gtest_dist_runtime gtest_stdlib_utils gtest_stdlib_full gtest_codegen_coverage gtest_typecheck_full gtest_ffi_full gtest_dap_handlers gtest_stdlib_chan gtest_scheduler_ext gtest_stdlib_lang gtest_caps_coverage gtest_wasm_gc)
 
     foreach(tname IN LISTS GTEST_EXECUTABLES)
         add_executable(${tname} tests/${tname}.cpp)
