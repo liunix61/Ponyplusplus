@@ -234,4 +234,98 @@ size_t pny_pkcs7_pad_len(size_t data_len, size_t block_len) {
     return block_len - (data_len % block_len);
 }
 
+/* ==================== Ed25519 签名 ==================== */
+
+int pny_ed25519_keygen(uint8_t pub[PNY_ED25519_KEY_LEN], 
+                        uint8_t priv[PNY_ED25519_KEY_LEN]) {
+    if (!pub || !priv) return PNY_CRYPTO_BAD_ARG;
+    
+    EVP_PKEY *pkey = NULL;
+    EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, NULL);
+    if (!pctx) return PNY_CRYPTO_ERR;
+    
+    int ret = PNY_CRYPTO_ERR;
+    if (EVP_PKEY_keygen_init(pctx) == 1 && 
+        EVP_PKEY_keygen(pctx, &pkey) == 1) {
+        size_t pub_len = PNY_ED25519_KEY_LEN;
+        size_t priv_len = PNY_ED25519_KEY_LEN;
+        if (EVP_PKEY_get_raw_public_key(pkey, pub, &pub_len) == 1 &&
+            EVP_PKEY_get_raw_private_key(pkey, priv, &priv_len) == 1) {
+            ret = PNY_CRYPTO_OK;
+        }
+    }
+    
+    EVP_PKEY_free(pkey);
+    EVP_PKEY_CTX_free(pctx);
+    return ret;
+}
+
+int pny_ed25519_sign(const uint8_t priv[PNY_ED25519_KEY_LEN],
+                      const void *msg, size_t msg_len,
+                      uint8_t sig[PNY_ED25519_SIG_LEN]) {
+    if (!priv || !msg || !sig) return PNY_CRYPTO_BAD_ARG;
+    
+    EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, NULL,
+                                                    priv, PNY_ED25519_KEY_LEN);
+    if (!pkey) return PNY_CRYPTO_ERR;
+    
+    EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+    if (!mdctx) {
+        EVP_PKEY_free(pkey);
+        return PNY_CRYPTO_ERR;
+    }
+    
+    int ret = PNY_CRYPTO_ERR;
+    size_t sig_len = PNY_ED25519_SIG_LEN;
+    
+    if (EVP_DigestSignInit(mdctx, NULL, NULL, NULL, pkey) == 1 &&
+        EVP_DigestSign(mdctx, sig, &sig_len, msg, msg_len) == 1) {
+        ret = PNY_CRYPTO_OK;
+    }
+    
+    EVP_MD_CTX_free(mdctx);
+    EVP_PKEY_free(pkey);
+    return ret;
+}
+
+int pny_ed25519_verify(const uint8_t pub[PNY_ED25519_KEY_LEN],
+                        const void *msg, size_t msg_len,
+                        const uint8_t sig[PNY_ED25519_SIG_LEN]) {
+    if (!pub || !msg || !sig) return PNY_CRYPTO_BAD_ARG;
+    
+    EVP_PKEY *pkey = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, NULL,
+                                                   pub, PNY_ED25519_KEY_LEN);
+    if (!pkey) return PNY_CRYPTO_ERR;
+    
+    EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+    if (!mdctx) {
+        EVP_PKEY_free(pkey);
+        return PNY_CRYPTO_ERR;
+    }
+    
+    int ret = PNY_CRYPTO_VERIFY_FAIL;
+    
+    if (EVP_DigestVerifyInit(mdctx, NULL, NULL, NULL, pkey) == 1) {
+        ret = (EVP_DigestVerify(mdctx, sig, PNY_ED25519_SIG_LEN,
+                                 msg, msg_len) == 1) ? PNY_CRYPTO_OK : 
+                                                       PNY_CRYPTO_VERIFY_FAIL;
+    }
+    
+    EVP_MD_CTX_free(mdctx);
+    EVP_PKEY_free(pkey);
+    return ret;
+}
+
+int pny_pkg_sign(const uint8_t priv[PNY_ED25519_KEY_LEN],
+                  const void *pkg_data, size_t pkg_len,
+                  uint8_t sig[PNY_ED25519_SIG_LEN]) {
+    return pny_ed25519_sign(priv, pkg_data, pkg_len, sig);
+}
+
+int pny_pkg_verify(const uint8_t pub[PNY_ED25519_KEY_LEN],
+                    const void *pkg_data, size_t pkg_len,
+                    const uint8_t sig[PNY_ED25519_SIG_LEN]) {
+    return pny_ed25519_verify(pub, pkg_data, pkg_len, sig);
+}
+
 #endif /* PONY_CRYPTO_OPENSSL */

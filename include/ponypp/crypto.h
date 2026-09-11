@@ -26,6 +26,7 @@ extern "C" {
 #define PNY_CRYPTO_NO_LIB   -2   /* 无加密库可用 */
 #define PNY_CRYPTO_BAD_ARG  -3   /* 参数错误 */
 #define PNY_CRYPTO_BUF_SMALL -4  /* 输出缓冲区不足 */
+#define PNY_CRYPTO_VERIFY_FAIL -5 /* 签名验证失败 */
 
 /* SHA-256: 32字节摘要 */
 #define PNY_SHA256_DIGEST_LEN 32
@@ -94,6 +95,36 @@ int pny_aes_gcm_decrypt(const uint8_t *key, size_t key_len,
 int pny_random_bytes(uint8_t *buf, size_t len);
 
 /* ==================== 工具 ==================== */
+
+
+/* ==================== Ed25519 签名 ==================== */
+
+#define PNY_ED25519_KEY_LEN    32
+#define PNY_ED25519_SIG_LEN    64
+
+/* 生成 Ed25519 密钥对 */
+int pny_ed25519_keygen(uint8_t pub[PNY_ED25519_KEY_LEN], 
+                        uint8_t priv[PNY_ED25519_KEY_LEN]);
+
+/* Ed25519 签名 */
+int pny_ed25519_sign(const uint8_t priv[PNY_ED25519_KEY_LEN],
+                      const void *msg, size_t msg_len,
+                      uint8_t sig[PNY_ED25519_SIG_LEN]);
+
+/* Ed25519 验证 */
+int pny_ed25519_verify(const uint8_t pub[PNY_ED25519_KEY_LEN],
+                        const void *msg, size_t msg_len,
+                        const uint8_t sig[PNY_ED25519_SIG_LEN]);
+
+/* 包签名: 签名包内容 */
+int pny_pkg_sign(const uint8_t priv[PNY_ED25519_KEY_LEN],
+                  const void *pkg_data, size_t pkg_len,
+                  uint8_t sig[PNY_ED25519_SIG_LEN]);
+
+/* 包验证: 验证包签名 */
+int pny_pkg_verify(const uint8_t pub[PNY_ED25519_KEY_LEN],
+                    const void *pkg_data, size_t pkg_len,
+                    const uint8_t sig[PNY_ED25519_SIG_LEN]);
 
 /* PKCS#7 填充 (AES-CBC 需要) */
 size_t pny_pkcs7_pad_len(size_t data_len, size_t block_len);

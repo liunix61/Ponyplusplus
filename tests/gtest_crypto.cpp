@@ -184,3 +184,93 @@ TEST(Crypto, NullSafety) {
     EXPECT_EQ(pny_hmac_sha256(nullptr, 0, "x", 1, out), PNY_CRYPTO_BAD_ARG);
     EXPECT_EQ(pny_aes_cbc_encrypt(nullptr, 16, out, out, 16, out, nullptr), PNY_CRYPTO_BAD_ARG);
 }
+
+/* ==================== Ed25519 签名 ==================== */
+
+TEST(Crypto, Ed25519Keygen) {
+    uint8_t pub[32], priv[32];
+    ASSERT_EQ(pny_ed25519_keygen(pub, priv), PNY_CRYPTO_OK);
+    /* 公钥和私钥不应相同 */
+    EXPECT_NE(memcmp(pub, priv, 32), 0);
+}
+
+TEST(Crypto, Ed25519KeygenBadArgs) {
+    uint8_t pub[32], priv[32];
+    EXPECT_EQ(pny_ed25519_keygen(nullptr, priv), PNY_CRYPTO_BAD_ARG);
+    EXPECT_EQ(pny_ed25519_keygen(pub, nullptr), PNY_CRYPTO_BAD_ARG);
+}
+
+TEST(Crypto, Ed25519SignVerify) {
+    uint8_t pub[32], priv[32], sig[64];
+    const char *msg = "Hello Pony++ Ed25519!";
+    
+    ASSERT_EQ(pny_ed25519_keygen(pub, priv), PNY_CRYPTO_OK);
+    ASSERT_EQ(pny_ed25519_sign(priv, msg, strlen(msg), sig), PNY_CRYPTO_OK);
+    EXPECT_EQ(pny_ed25519_verify(pub, msg, strlen(msg), sig), PNY_CRYPTO_OK);
+}
+
+TEST(Crypto, Ed25519SignVerifyBadArgs) {
+    uint8_t pub[32], priv[32], sig[64];
+    const char *msg = "test";
+    
+    EXPECT_EQ(pny_ed25519_sign(nullptr, msg, 4, sig), PNY_CRYPTO_BAD_ARG);
+    EXPECT_EQ(pny_ed25519_sign(priv, nullptr, 4, sig), PNY_CRYPTO_BAD_ARG);
+    EXPECT_EQ(pny_ed25519_sign(priv, msg, 4, nullptr), PNY_CRYPTO_BAD_ARG);
+    EXPECT_EQ(pny_ed25519_verify(nullptr, msg, 4, sig), PNY_CRYPTO_BAD_ARG);
+    EXPECT_EQ(pny_ed25519_verify(pub, nullptr, 4, sig), PNY_CRYPTO_BAD_ARG);
+    EXPECT_EQ(pny_ed25519_verify(pub, msg, 4, nullptr), PNY_CRYPTO_BAD_ARG);
+}
+
+TEST(Crypto, Ed25519VerifyWrongMessage) {
+    uint8_t pub[32], priv[32], sig[64];
+    const char *msg = "original message";
+    
+    ASSERT_EQ(pny_ed25519_keygen(pub, priv), PNY_CRYPTO_OK);
+    ASSERT_EQ(pny_ed25519_sign(priv, msg, strlen(msg), sig), PNY_CRYPTO_OK);
+    
+    /* 用错误消息验证应失败 */
+    EXPECT_EQ(pny_ed25519_verify(pub, "wrong", 5, sig), PNY_CRYPTO_VERIFY_FAIL);
+}
+
+TEST(Crypto, Ed25519VerifyWrongKey) {
+    uint8_t pub1[32], priv1[32], pub2[32], priv2[32], sig[64];
+    const char *msg = "test message";
+    
+    ASSERT_EQ(pny_ed25519_keygen(pub1, priv1), PNY_CRYPTO_OK);
+    ASSERT_EQ(pny_ed25519_keygen(pub2, priv2), PNY_CRYPTO_OK);
+    ASSERT_EQ(pny_ed25519_sign(priv1, msg, strlen(msg), sig), PNY_CRYPTO_OK);
+    
+    /* 用错误公钥验证应失败 */
+    EXPECT_EQ(pny_ed25519_verify(pub2, msg, strlen(msg), sig), PNY_CRYPTO_VERIFY_FAIL);
+}
+
+TEST(Crypto, Ed25519SignVerifyEmptyMessage) {
+    uint8_t pub[32], priv[32], sig[64];
+    
+    ASSERT_EQ(pny_ed25519_keygen(pub, priv), PNY_CRYPTO_OK);
+    ASSERT_EQ(pny_ed25519_sign(priv, "", 0, sig), PNY_CRYPTO_OK);
+    EXPECT_EQ(pny_ed25519_verify(pub, "", 0, sig), PNY_CRYPTO_OK);
+}
+
+/* ==================== 包签名 ==================== */
+
+TEST(Crypto, PkgSignVerify) {
+    uint8_t pub[32], priv[32], sig[64];
+    const char *pkg = "package data content";
+    
+    ASSERT_EQ(pny_ed25519_keygen(pub, priv), PNY_CRYPTO_OK);
+    ASSERT_EQ(pny_pkg_sign(priv, pkg, strlen(pkg), sig), PNY_CRYPTO_OK);
+    EXPECT_EQ(pny_pkg_verify(pub, pkg, strlen(pkg), sig), PNY_CRYPTO_OK);
+}
+
+TEST(Crypto, PkgVerifyCorrupted) {
+    uint8_t pub[32], priv[32], sig[64];
+    const char *pkg = "package data";
+    
+    ASSERT_EQ(pny_ed25519_keygen(pub, priv), PNY_CRYPTO_OK);
+    ASSERT_EQ(pny_pkg_sign(priv, pkg, strlen(pkg), sig), PNY_CRYPTO_OK);
+    
+    /* 篡改签名应失败 */
+    sig[0] ^= 0xFF;
+    EXPECT_EQ(pny_pkg_verify(pub, pkg, strlen(pkg), sig), PNY_CRYPTO_VERIFY_FAIL);
+}
