@@ -281,3 +281,135 @@ TEST(Typecheck, MultipleActors) {
     ));
     typecheck_free_result(&result);
 }
+
+/* ==================== Import 处理 ==================== */
+
+TEST(Typecheck, ImportStd) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "use \"std\"\n"
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, ImportStdIO) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "use \"std/io\"\n"
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    env.out.print(\"hello\")\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, ImportStdCollections) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "use \"std/collections\"\n"
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, ImportStdConcurrent) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "use \"std/concurrent\"\n"
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, ImportMultiple) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "use \"std/io\"\n"
+        "use \"std/collections\"\n"
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+/* ==================== 错误场景 ==================== */
+
+TEST(Typecheck, ErrorMaxLimit) {
+    /* 生成大量错误测试 MAX_ERRORS 限制 */
+    TypeCheckResult result = {0};
+    bool ok = typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    let a: Unknown1 = 1\n"
+        "    let b: Unknown2 = 2\n"
+        "    let c: Unknown3 = 3\n"
+        "    let d: Unknown4 = 4\n"
+        "    let e: Unknown5 = 5\n"
+        "    let f: Unknown6 = 6\n"
+        "    let g: Unknown7 = 7\n"
+        "    let h: Unknown8 = 8\n"
+        "    let i: Unknown9 = 9\n"
+        "    let j: Unknown10 = 10\n"
+        "    let k: Unknown11 = 11\n"
+        "    let l: Unknown12 = 12\n"
+        "    let m: Unknown13 = 13\n"
+        "    let n: Unknown14 = 14\n"
+        "    let o: Unknown15 = 15\n"
+        "    let p: Unknown16 = 16\n"
+        "    let q: Unknown17 = 17\n"
+        "    let r: Unknown18 = 18\n"
+        "    let s: Unknown19 = 19\n"
+        "    let t: Unknown20 = 20\n",
+        &result
+    );
+    /* 应该有错误但不崩溃 */
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, EmptyActor) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Empty\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, ActorNoNew) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor NoNew\n"
+        "  be do_something() =>\n"
+        "    None\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, NestedActors) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Outer\n"
+        "  be create_inner() =>\n"
+        "    let inner = Inner\n"
+        "\n"
+        "actor Inner\n"
+        "  be do_work() =>\n"
+        "    None\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
