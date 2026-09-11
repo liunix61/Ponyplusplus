@@ -553,3 +553,318 @@ TEST(Typecheck, ArrayType) {
     typecheck_free_result(&result);
 }
 
+
+/* ==================== 覆盖率提升: 内置函数 ==================== */
+
+TEST(Typecheck, BuiltinPrintln) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    println(\"hello\")\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, BuiltinParseJson) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    parse_json(\"{}\")\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, BuiltinLogDebug) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    log_debug(\"dbg\")\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, BuiltinLogWarn) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    log_warn(\"warn\")\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, BuiltinTimeNow) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    time_now()\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, BuiltinTimeElapsed) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    time_elapsed()\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, BuiltinMathSinCos) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    math_sin(1.0)\n"
+        "    math_cos(1.0)\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+/* ==================== 覆盖率提升: import 模块 ==================== */
+
+TEST(Typecheck, ImportStdJson) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "use \"std/json\"\n"
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, ImportStdTime) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "use \"std/time\"\n"
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, ImportStdLog) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "use \"std/log\"\n"
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, ImportUnknownModule) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "use \"unknown/module\"\n"
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+/* ==================== 覆盖率提升: 数字类型注解 ==================== */
+
+TEST(Typecheck, AllIntTypes) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Main\n"
+        "  var a: U8 = 0\n"
+        "  var b: U16 = 0\n"
+        "  var c: U32 = 0\n"
+        "  var d: U64 = 0\n"
+        "  var e: I8 = 0\n"
+        "  var f: I16 = 0\n"
+        "  var g: I32 = 0\n"
+        "  var h: I64 = 0\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, AllFloatTypes) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Main\n"
+        "  var a: F32 = 0.0\n"
+        "  var b: F64 = 0.0\n"
+        "  new create(env: Env) =>\n"
+        "    None\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+/* ==================== 覆盖率提升: 表达式检查 ==================== */
+
+TEST(Typecheck, AssignExpr) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  var _x: U32 = 0\n"
+        "  new create(env: Env) =>\n"
+        "    this._x = 42\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, PrintTooManyArgs) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    print(\"a\", \"b\", \"c\")\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, StringLiteralExpr) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    let s = \"hello\"\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, IntLiteralExpr) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    let n = 42\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, FloatLiteralExpr) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    let f = 3.14\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, BoolLiteralExpr) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    let b = true\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+/* ==================== 覆盖率提升: 方法检查 ==================== */
+
+TEST(Typecheck, MethodWithParams) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    None\n"
+        "  be do_work(x: U32, y: String) =>\n"
+        "    None\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, MethodWithReturn) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    None\n"
+        "  fun get_value(): U32 =>\n"
+        "    42\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, MultipleConstructors) {
+    TypeCheckResult result = {0};
+    EXPECT_TRUE(typecheck_source(
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    None\n"
+        "  new from_int(n: U32) =>\n"
+        "    None\n",
+        &result
+    ));
+    typecheck_free_result(&result);
+}
+
+/* ==================== 覆盖率提升: this.field ==================== */
+
+TEST(Typecheck, ThisFieldRead) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  var _count: U32 = 0\n"
+        "  new create(env: Env) =>\n"
+        "    let c = this._count\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+TEST(Typecheck, ThisFieldWrite) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "actor Main\n"
+        "  var _name: String = \"test\"\n"
+        "  new create(env: Env) =>\n"
+        "    this._name = \"updated\"\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
+
+/* ==================== 覆盖率提升: 标准库类型使用 ==================== */
+
+TEST(Typecheck, UseStdTypes) {
+    TypeCheckResult result = {0};
+    typecheck_source(
+        "use \"std\"\n"
+        "actor Main\n"
+        "  new create(env: Env) =>\n"
+        "    let ch = Channel\n"
+        "    let f = Future\n",
+        &result
+    );
+    typecheck_free_result(&result);
+}
