@@ -435,11 +435,11 @@ static int wasm_exec_func(const unsigned char *body, size_t body_len,
                 break;
             }
 
-            case 0x28: /* i32.load */
-            case 0x29: /* i32.load8_s */
-            case 0x2A: /* i32.load8_u */
-            case 0x2B: /* i32.load16_s */
-            case 0x2C: /* i32.load16_u */ {
+            case 0x28: /* i32.load (spec) */
+            case 0x2C: /* i32.load8_s (spec) */
+            case 0x2D: /* i32.load8_u (spec) */
+            case 0x2E: /* i32.load16_s (spec) */
+            case 0x2F: /* i32.load16_u (spec) */ {
                 int32_t align, offset;
                 if (leb128_read(body, body_len, &pos, &align) < 0) return -1;
                 if (leb128_read(body, body_len, &pos, &offset) < 0) return -1;
@@ -448,29 +448,29 @@ static int wasm_exec_func(const unsigned char *body, size_t body_len,
                 int32_t val = 0;
                 if (addr >= 0 && addr + 4 <= mem_size && memory) {
                     if (op == 0x28) memcpy(&val, memory + addr, 4);
-                    else if (op == 0x29) val = (int32_t)(int8_t)memory[addr];
-                    else if (op == 0x2A) val = (uint8_t)memory[addr];
-                    else if (op == 0x2B) { int16_t v; memcpy(&v, memory+addr,2); val=v; }
-                    else if (op == 0x2C) { uint16_t v; memcpy(&v, memory+addr,2); val=v; }
+                    else if (op == 0x2C) val = (int32_t)(int8_t)memory[addr];
+                    else if (op == 0x2D) val = (uint8_t)memory[addr];
+                    else if (op == 0x2E) { int16_t v; memcpy(&v, memory+addr,2); val=v; }
+                    else if (op == 0x2F) { uint16_t v; memcpy(&v, memory+addr,2); val=v; }
                 }
                 if (sp < 256) stack[sp++] = val;
                 break;
             }
 
-            case 0x36: /* i32.store */
-            case 0x38: /* i32.store8 */
-            case 0x39: /* i32.store16 */ {
+            case 0x36: /* i32.store (spec) */
+            case 0x3A: /* i32.store8 (spec) */
+            case 0x3B: /* i32.store16 (spec) */ {
                 int32_t align, offset;
                 if (leb128_read(body, body_len, &pos, &align) < 0) return -1;
                 if (leb128_read(body, body_len, &pos, &offset) < 0) return -1;
                 if (sp < 2) return -1;
                 int32_t val = stack[--sp];
                 int32_t addr = stack[--sp] + offset;
-                int write_size = (op == 0x36) ? 4 : (op == 0x38) ? 1 : 2;
+                int write_size = (op == 0x36) ? 4 : (op == 0x3A) ? 1 : 2;
                 if (addr >= 0 && addr + write_size <= mem_size && memory) {
                     if (op == 0x36) memcpy(memory + addr, &val, 4);
-                    else if (op == 0x38) memory[addr] = (uint8_t)val;
-                    else if (op == 0x39) { uint16_t v = (uint16_t)val; memcpy(memory+addr,&v,2); }
+                    else if (op == 0x3A) memory[addr] = (uint8_t)val;
+                    else if (op == 0x3B) { uint16_t v = (uint16_t)val; memcpy(memory+addr,&v,2); }
                 }
                 break;
             }
@@ -490,7 +490,12 @@ static int wasm_exec_func(const unsigned char *body, size_t body_len,
                 break;
             }
 
-            case 0x45: /* i32.eqz */
+            case 0x45: { /* i32.eqz — 一元运算 */
+                if (sp < 1) return -1;
+                int32_t a = stack[--sp];
+                if (sp < 256) stack[sp++] = (a == 0) ? 1 : 0;
+                break;
+            }
             case 0x46: /* i32.eq */
             case 0x47: /* i32.ne */
             case 0x48: /* i32.lt_s */
@@ -506,7 +511,6 @@ static int wasm_exec_func(const unsigned char *body, size_t body_len,
                 int32_t a = stack[--sp];
                 int32_t r = 0;
                 switch (op) {
-                    case 0x45: r = (a == 0) ? 1 : 0; break;
                     case 0x46: r = (a == b) ? 1 : 0; break;
                     case 0x47: r = (a != b) ? 1 : 0; break;
                     case 0x48: r = (a < b) ? 1 : 0; break;
