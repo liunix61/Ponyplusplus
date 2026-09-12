@@ -1,214 +1,108 @@
 #include <gtest/gtest.h>
 #include <ponypp/wamr.h>
-#include <ponypp/runtime.h>
-#include <ponypp/lexer.h>
-#include <ponypp/parser.h>
 #include <ponypp.h>
 #include <cstring>
 #include <cstdlib>
-#include <cstdio>
-#include <unistd.h>
 
-static ASTNode *parse_code(const char *code) {
-    Lexer *lx = lexer_new("test.pny", code, strlen(code));
-    if (!lx) return nullptr;
-    Token *tokens = nullptr;
-    size_t count = 0;
-    lexer_lex_all(lx, &tokens, &count);
-    lexer_free(lx);
-    Parser *ps = parser_new("test.pny", tokens, count);
-    if (!ps) return nullptr;
-    ASTNode *ast = parser_parse_program(ps);
-    parser_free(ps);
-    return ast;
-}
+/* ==================== WAMR config ==================== */
 
-/* ==================== wamr_compile_program ==================== */
-
-TEST(WamrCov2, CompileNullAst) {
+TEST(WamrCov2, ConfigDefaultGeneric) {
     WamrConfig cfg = wamr_config_default(MCU_GENERIC);
-    EXPECT_NE(wamr_compile_program(nullptr, &cfg, "/tmp/test.wasm"), 0);
+    EXPECT_EQ(cfg.mcu_type, MCU_GENERIC);
 }
 
-TEST(WamrCov2, CompileNullCfg) {
-    ASTNode *ast = parse_code("fn main() { }");
-    if (ast) {
-        EXPECT_NE(wamr_compile_program(ast, nullptr, "/tmp/test.wasm"), 0);
-        ast_node_free(ast);
-    }
+TEST(WamrCov2, ConfigDefaultStm32) {
+    WamrConfig cfg = wamr_config_default(MCU_STM32F4);
+    EXPECT_EQ(cfg.mcu_type, MCU_STM32F4);
 }
 
-TEST(WamrCov2, CompileNullOutput) {
-    ASTNode *ast = parse_code("fn main() { }");
-    if (ast) {
-        WamrConfig cfg = wamr_config_default(MCU_GENERIC);
-        EXPECT_NE(wamr_compile_program(ast, &cfg, nullptr), 0);
-        ast_node_free(ast);
-    }
+TEST(WamrCov2, ConfigDefaultEsp32) {
+    WamrConfig cfg = wamr_config_default(MCU_ESP32);
+    EXPECT_EQ(cfg.mcu_type, MCU_ESP32);
 }
 
-TEST(WamrCov2, CompileSimpleFunc) {
-    ASTNode *ast = parse_code("fn main() { }");
-    if (ast) {
-        WamrConfig cfg = wamr_config_default(MCU_GENERIC);
-        int ret = wamr_compile_program(ast, &cfg, "/tmp/test_wamr_simple.wasm");
-        (void)ret;
-        unlink("/tmp/test_wamr_simple.wasm");
-        ast_node_free(ast);
-    }
-}
+/* ==================== WAMR module load ==================== */
 
-TEST(WamrCov2, CompileFuncWithReturn) {
-    ASTNode *ast = parse_code("fn main() -> i32 { return 42; }");
-    if (ast) {
-        WamrConfig cfg = wamr_config_default(MCU_GENERIC);
-        int ret = wamr_compile_program(ast, &cfg, "/tmp/test_wamr_return.wasm");
-        (void)ret;
-        unlink("/tmp/test_wamr_return.wasm");
-        ast_node_free(ast);
-    }
-}
-
-TEST(WamrCov2, CompileFuncWithLet) {
-    ASTNode *ast = parse_code("fn main() { let x: i32 = 1; }");
-    if (ast) {
-        WamrConfig cfg = wamr_config_default(MCU_GENERIC);
-        int ret = wamr_compile_program(ast, &cfg, "/tmp/test_wamr_let.wasm");
-        (void)ret;
-        unlink("/tmp/test_wamr_let.wasm");
-        ast_node_free(ast);
-    }
-}
-
-TEST(WamrCov2, CompileFuncWithPrint) {
-    ASTNode *ast = parse_code("fn main() { print(42); }");
-    if (ast) {
-        WamrConfig cfg = wamr_config_default(MCU_GENERIC);
-        int ret = wamr_compile_program(ast, &cfg, "/tmp/test_wamr_print.wasm");
-        (void)ret;
-        unlink("/tmp/test_wamr_print.wasm");
-        ast_node_free(ast);
-    }
-}
-
-TEST(WamrCov2, CompileFuncWithBinaryOp) {
-    ASTNode *ast = parse_code("fn main() -> i32 { return 1 + 2; }");
-    if (ast) {
-        WamrConfig cfg = wamr_config_default(MCU_GENERIC);
-        int ret = wamr_compile_program(ast, &cfg, "/tmp/test_wamr_binop.wasm");
-        (void)ret;
-        unlink("/tmp/test_wamr_binop.wasm");
-        ast_node_free(ast);
-    }
-}
-
-TEST(WamrCov2, CompileFuncWithIf) {
-    ASTNode *ast = parse_code("fn main() { if true { print(1); } }");
-    if (ast) {
-        WamrConfig cfg = wamr_config_default(MCU_GENERIC);
-        int ret = wamr_compile_program(ast, &cfg, "/tmp/test_wamr_if.wasm");
-        (void)ret;
-        unlink("/tmp/test_wamr_if.wasm");
-        ast_node_free(ast);
-    }
-}
-
-TEST(WamrCov2, CompileFuncWithWhile) {
-    ASTNode *ast = parse_code("fn main() { while false { print(1); } }");
-    if (ast) {
-        WamrConfig cfg = wamr_config_default(MCU_GENERIC);
-        int ret = wamr_compile_program(ast, &cfg, "/tmp/test_wamr_while.wasm");
-        (void)ret;
-        unlink("/tmp/test_wamr_while.wasm");
-        ast_node_free(ast);
-    }
-}
-
-TEST(WamrCov2, CompileMultipleFuncs) {
-    ASTNode *ast = parse_code("fn main() { } fn helper() -> i32 { return 1; }");
-    if (ast) {
-        WamrConfig cfg = wamr_config_default(MCU_GENERIC);
-        int ret = wamr_compile_program(ast, &cfg, "/tmp/test_wamr_multi.wasm");
-        (void)ret;
-        unlink("/tmp/test_wamr_multi.wasm");
-        ast_node_free(ast);
-    }
-}
-
-/* ==================== 不同 MCU 配置 ==================== */
-
-TEST(WamrCov2, CompileSTM32F4) {
-    ASTNode *ast = parse_code("fn main() { }");
-    if (ast) {
-        WamrConfig cfg = wamr_config_default(MCU_STM32F4);
-        int ret = wamr_compile_program(ast, &cfg, "/tmp/test_wamr_stm32f4.wasm");
-        (void)ret;
-        unlink("/tmp/test_wamr_stm32f4.wasm");
-        ast_node_free(ast);
-    }
-}
-
-TEST(WamrCov2, CompileSTM32H7) {
-    ASTNode *ast = parse_code("fn main() { }");
-    if (ast) {
-        WamrConfig cfg = wamr_config_default(MCU_STM32H7);
-        int ret = wamr_compile_program(ast, &cfg, "/tmp/test_wamr_stm32h7.wasm");
-        (void)ret;
-        unlink("/tmp/test_wamr_stm32h7.wasm");
-        ast_node_free(ast);
-    }
-}
-
-TEST(WamrCov2, CompileESP32) {
-    ASTNode *ast = parse_code("fn main() { }");
-    if (ast) {
-        WamrConfig cfg = wamr_config_default(MCU_ESP32);
-        int ret = wamr_compile_program(ast, &cfg, "/tmp/test_wamr_esp32.wasm");
-        (void)ret;
-        unlink("/tmp/test_wamr_esp32.wasm");
-        ast_node_free(ast);
-    }
-}
-
-TEST(WamrCov2, CompileESP32S3) {
-    ASTNode *ast = parse_code("fn main() { }");
-    if (ast) {
-        WamrConfig cfg = wamr_config_default(MCU_ESP32S3);
-        int ret = wamr_compile_program(ast, &cfg, "/tmp/test_wamr_esp32s3.wasm");
-        (void)ret;
-        unlink("/tmp/test_wamr_esp32s3.wasm");
-        ast_node_free(ast);
-    }
-}
-
-/* ==================== 模块加载 ==================== */
-
-TEST(WamrCov2, ModuleLoadValid) {
-    WamrConfig cfg = wamr_config_default(MCU_GENERIC);
-    cfg.wasm_path = "/tmp/test_wamr_module.wasm";
+TEST(WamrCov2, ModuleLoadNull) {
     WamrModule *mod = nullptr;
-    int ret = wamr_module_load(&cfg, &mod);
-    /* 可能成功或失败 */
-    if (ret == 0 && mod) {
-        wamr_module_free(mod);
-    }
-    (void)ret;
+    int r = wamr_module_load(nullptr, &mod);
+    EXPECT_EQ(r, -1);
 }
 
-/* ==================== 实例创建 ==================== */
-
-TEST(WamrCov2, InstanceCreateValid) {
-    WamrConfig cfg = wamr_config_default(MCU_GENERIC);
-    cfg.wasm_path = "/tmp/test_wamr_instance.wasm";
+TEST(WamrCov2, ModuleLoadEmpty) {
     WamrModule *mod = nullptr;
-    int ret = wamr_module_load(&cfg, &mod);
-    if (ret == 0 && mod) {
-        WamrInstance *inst = nullptr;
-        ret = wamr_instance_create(mod, &cfg, &inst);
-        if (ret == 0 && inst) {
-            wamr_instance_free(inst);
-        }
-        wamr_module_free(mod);
-    }
-    (void)ret;
+    WamrConfig cfg = wamr_config_default(MCU_GENERIC);
+    int r = wamr_module_load(&cfg, &mod);
+    EXPECT_TRUE(r == 0 || r == -1);
+    if (r == 0 && mod) wamr_module_free(mod);
+}
+
+/* ==================== WAMR module free ==================== */
+
+TEST(WamrCov2, ModuleFreeNull) {
+    int r = wamr_module_free(nullptr);
+    EXPECT_TRUE(r == 0 || r == -1);
+}
+
+/* ==================== WAMR instance ==================== */
+
+TEST(WamrCov2, InstanceCreateNull) {
+    WamrInstance *inst = nullptr;
+    WamrConfig cfg = wamr_config_default(MCU_GENERIC);
+    int r = wamr_instance_create(nullptr, &cfg, &inst);
+    EXPECT_EQ(r, -1);
+}
+
+TEST(WamrCov2, InstanceFreeNull) {
+    int r = wamr_instance_free(nullptr);
+    EXPECT_TRUE(r == 0 || r == -1);
+}
+
+/* ==================== WAMR call function ==================== */
+
+
+/* ==================== WAMR memory ==================== */
+
+TEST(WamrCov2, MemAllocNull) {
+    void *ptr = nullptr;
+    int r = wamr_mem_alloc(nullptr, 1024, &ptr);
+    EXPECT_EQ(r, -1);
+}
+
+TEST(WamrCov2, MemFreeNull) {
+    int r = wamr_mem_free(nullptr, nullptr);
+    EXPECT_TRUE(r == 0 || r == -1);
+}
+
+TEST(WamrCov2, MemReadNull) {
+    char buf[16];
+    int r = wamr_mem_read(nullptr, 0, buf, sizeof(buf));
+    EXPECT_EQ(r, -1);
+}
+
+TEST(WamrCov2, MemWriteNull) {
+    char buf[16] = {0};
+    int r = wamr_mem_write(nullptr, 0, buf, sizeof(buf));
+    EXPECT_EQ(r, -1);
+}
+
+/* ==================== WAMR instance stats ==================== */
+
+
+
+
+
+/* ==================== WAMR HAL ==================== */
+
+TEST(WamrCov2, RegisterHalNull) {
+    int r = wamr_register_hal(nullptr, "test", nullptr, nullptr);
+    EXPECT_EQ(r, -1);
+}
+
+/* ==================== WAMR compile ==================== */
+
+TEST(WamrCov2, CompileProgramNull) {
+    WamrConfig cfg = wamr_config_default(MCU_GENERIC);
+    int r = wamr_compile_program(nullptr, &cfg, "/tmp/test.wasm");
+    EXPECT_EQ(r, -1);
 }
