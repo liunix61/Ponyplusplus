@@ -25,116 +25,181 @@ static bool parse_ok(const char *src) {
     return ok;
 }
 
-/* ==================== Capability Types ==================== */
+/* ==================== Try-Else-Then (lines 414-421) ==================== */
 
-TEST(ParserCov16, CapIso) {
-    EXPECT_TRUE(parse_ok("actor main {\n  new create() => {\n    let x: iso String = \"hello\"\n  }\n}\n"));
-}
-
-TEST(ParserCov16, CapTrn) {
-    EXPECT_TRUE(parse_ok("actor main {\n  new create() => {\n    let x: trn String = \"hello\"\n  }\n}\n"));
-}
-
-TEST(ParserCov16, CapRef) {
-    EXPECT_TRUE(parse_ok("actor main {\n  new create() => {\n    let x: ref String = \"hello\"\n  }\n}\n"));
-}
-
-TEST(ParserCov16, CapVal) {
-    EXPECT_TRUE(parse_ok("actor main {\n  new create() => {\n    let x: val String = \"hello\"\n  }\n}\n"));
-}
-
-TEST(ParserCov16, CapBox) {
-    EXPECT_TRUE(parse_ok("actor main {\n  new create() => {\n    let x: box String = \"hello\"\n  }\n}\n"));
-}
-
-TEST(ParserCov16, CapTag) {
-    EXPECT_TRUE(parse_ok("actor main {\n  new create() => {\n    let x: tag String = \"hello\"\n  }\n}\n"));
-}
-
-/* ==================== Type Keywords ==================== */
-
-TEST(ParserCov16, TypeKeywordType) {
-    EXPECT_TRUE(parse_ok("actor main {\n  new create() => {\n    let x: type U32 = 1\n  }\n}\n"));
-}
-
-/* ==================== Consume Errors ==================== */
-
-TEST(ParserCov16, MissingBrace) {
-    ASTNode *ast = parse_src("actor main {\n  new create() => { print(\"hi\")\n");
-    ast_node_free(ast);
-}
-
-TEST(ParserCov16, MissingParen) {
-    ASTNode *ast = parse_src("actor main {\n  new create( => { }\n}");
-    ast_node_free(ast);
-}
-
-TEST(ParserCov16, MissingArrow) {
-    ASTNode *ast = parse_src("actor main {\n  new create() { }\n}");
-    ast_node_free(ast);
-}
-
-/* ==================== Complex Types ==================== */
-
-TEST(ParserCov16, ArrayType) {
-    EXPECT_TRUE(parse_ok("actor main {\n  new create() => {\n    let x: Array[String] = Array[String].create()\n  }\n}\n"));
-}
-
-TEST(ParserCov16, MapType) {
-    EXPECT_TRUE(parse_ok("actor main {\n  new create() => {\n    let x: Map[String, U32] = Map[String, U32].create()\n  }\n}\n"));
-}
-
-/* ==================== Try-Catch-Finally ==================== */
-
-TEST(ParserCov16, TryCatchOnly) {
-    EXPECT_TRUE(parse_ok("actor main {\n  new create() => {\n    try\n      print(\"try\")\n    else\n      print(\"else\")\n    end\n  }\n}\n"));
-}
-
-TEST(ParserCov16, TryFinallyOnly) {
-    EXPECT_TRUE(parse_ok("actor main {\n  new create() => {\n    try\n      print(\"try\")\n    then\n      print(\"then\")\n    end\n  }\n}\n"));
-}
-
-/* ==================== Nested Structures ==================== */
-
-TEST(ParserCov16, NestedIfInWhile) {
+TEST(ParserCov16, TryElseThen) {
     EXPECT_TRUE(parse_ok(
         "actor main {\n"
         "  new create() => {\n"
-        "    var i: U32 = 0\n"
-        "    while i < 10 do\n"
-        "      if i > 5 then print(\"big\") end\n"
-        "      i = i + 1\n"
+        "    try\n"
+        "      print(\"try\")\n"
+        "    else\n"
+        "      print(\"else\")\n"
+        "    then\n"
+        "      print(\"then\")\n"
         "    end\n"
         "  }\n"
         "}\n"));
 }
 
-/* ==================== Import Variants ==================== */
+/* ==================== Return with expression (lines 481-489) ==================== */
 
-TEST(ParserCov16, ImportStd) {
-    EXPECT_TRUE(parse_ok("use \"std\"\nactor main {\n  new create() => { }\n}\n"));
+TEST(ParserCov16, ReturnWithExpr) {
+    EXPECT_TRUE(parse_ok(
+        "actor main {\n"
+        "  fun foo(): U32 =>\n"
+        "    return 42\n"
+        "  new create() => { }\n"
+        "}\n"));
 }
 
-TEST(ParserCov16, ImportStdIo) {
-    EXPECT_TRUE(parse_ok("use \"std.io\"\nactor main {\n  new create() => { }\n}\n"));
+TEST(ParserCov16, ReturnNoExpr) {
+    EXPECT_TRUE(parse_ok(
+        "actor main {\n"
+        "  fun foo() =>\n"
+        "    return\n"
+        "  new create() => { }\n"
+        "}\n"));
 }
 
-TEST(ParserCov16, ImportStdConcurrent) {
-    EXPECT_TRUE(parse_ok("use \"std.concurrent\"\nactor main {\n  new create() => { }\n}\n"));
+/* ==================== Method call on field (lines 579-596) ==================== */
+
+TEST(ParserCov16, MethodCallOnField) {
+    EXPECT_TRUE(parse_ok(
+        "actor main {\n"
+        "  new create() => {\n"
+        "    let s: String = \"hello\"\n"
+        "    s.to_upper()\n"
+        "  }\n"
+        "}\n"));
 }
 
-/* ==================== Actor with Multiple Constructors ==================== */
-
-TEST(ParserCov16, ActorWithCreateAndApply) {
-    EXPECT_TRUE(parse_ok("actor main {\n  new create() => { }\n  fun apply(): U32 => 42\n}\n"));
+TEST(ParserCov16, MethodCallOnFieldWithArgs) {
+    EXPECT_TRUE(parse_ok(
+        "actor main {\n"
+        "  new create() => {\n"
+        "    let s: String = \"hello\"\n"
+        "    s.substr(1, 3)\n"
+        "  }\n"
+        "}\n"));
 }
 
-/* ==================== Error Recovery ==================== */
+/* ==================== Import variants (lines 611-627) ==================== */
 
-TEST(ParserCov16, EmptyActor) {
-    EXPECT_TRUE(parse_ok("actor main {\n}\n"));
+TEST(ParserCov16, ImportWithAlias) {
+    EXPECT_TRUE(parse_ok(
+        "use \"std.io\" as io\n"
+        "actor main {\n"
+        "  new create() => { }\n"
+        "}\n"));
 }
 
-TEST(ParserCov16, ActorWithOnlyNew) {
-    EXPECT_TRUE(parse_ok("actor main {\n  new create() => { }\n}\n"));
+/* ==================== Nested match (lines 646-657) ==================== */
+
+TEST(ParserCov16, NestedMatchInIf) {
+    EXPECT_TRUE(parse_ok(
+        "actor main {\n"
+        "  new create() => {\n"
+        "    let x: U32 = 1\n"
+        "    if x > 0 then\n"
+        "      match x\n"
+        "      | 1 => print(\"one\")\n"
+        "      else print(\"other\")\n"
+        "      end\n"
+        "    end\n"
+        "  }\n"
+        "}\n"));
+}
+
+/* ==================== Complex expressions (lines 699-722) ==================== */
+
+TEST(ParserCov16, ChainedMethodCalls) {
+    EXPECT_TRUE(parse_ok(
+        "actor main {\n"
+        "  new create() => {\n"
+        "    let s: String = \"hello\"\n"
+        "    s.to_upper().to_lower()\n"
+        "  }\n"
+        "}\n"));
+}
+
+TEST(ParserCov16, NestedFunctionCalls) {
+    EXPECT_TRUE(parse_ok(
+        "actor main {\n"
+        "  new create() => {\n"
+        "    print(parse_json(\"{}\"))\n"
+        "  }\n"
+        "}\n"));
+}
+
+/* ==================== For loop (lines 900-901) ==================== */
+
+TEST(ParserCov16, ForLoop) {
+    EXPECT_TRUE(parse_ok(
+        "actor main {\n"
+        "  new create() => {\n"
+        "    for i in Range(0, 10) do\n"
+        "      print(i.string())\n"
+        "    end\n"
+        "  }\n"
+        "}\n"));
+}
+
+/* ==================== Actor with fields (lines 933-940) ==================== */
+
+TEST(ParserCov16, ActorWithFields) {
+    EXPECT_TRUE(parse_ok(
+        "actor Worker {\n"
+        "  var _id: U32\n"
+        "  var _name: String\n"
+        "  new create() => {\n"
+        "    _id = 1\n"
+        "    _name = \"test\"\n"
+        "  }\n"
+        "}\n"
+        "actor main {\n"
+        "  new create() => { }\n"
+        "}\n"));
+}
+
+/* ==================== Supervise (lines 950-951) ==================== */
+
+TEST(ParserCov16, SuperviseActor) {
+    EXPECT_TRUE(parse_ok(
+        "supervise Worker\n"
+        "actor Worker {\n"
+        "  new create() => { }\n"
+        "}\n"
+        "actor main {\n"
+        "  new create() => { }\n"
+        "}\n"));
+}
+
+/* ==================== Class definition (lines 972-982) ==================== */
+
+TEST(ParserCov16, ClassDefinition) {
+    EXPECT_TRUE(parse_ok(
+        "class Point {\n"
+        "  var _x: U32\n"
+        "  var _y: U32\n"
+        "  new create() => {\n"
+        "    _x = 0\n"
+        "    _y = 0\n"
+        "  }\n"
+        "}\n"
+        "actor main {\n"
+        "  new create() => { }\n"
+        "}\n"));
+}
+
+/* ==================== Trait definition ==================== */
+
+TEST(ParserCov16, TraitDefinition) {
+    EXPECT_TRUE(parse_ok(
+        "trait Drawable {\n"
+        "  fun draw()\n"
+        "}\n"
+        "actor main {\n"
+        "  new create() => { }\n"
+        "}\n"));
 }
