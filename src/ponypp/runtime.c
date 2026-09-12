@@ -89,8 +89,10 @@ PnyActor *pny_actor_new(PnyRuntime *r, const char *name, size_t state_size) {
 
 void pny_actor_register(PnyRuntime *r, PnyActor *a) {
     if (!r || !a) return;
-    /* 已在新版本中由 pny_actor_new 处理，这里保持兼容 */
-    if (!a->next) {
+    /* 幂等保护: 已在注册表中则不重复入链 (首个 actor next==NULL, 直接入链会形成自环) */
+    size_t idx = (a->id > 0) ? (size_t)a->id - 1 : (size_t)-1;
+    if (idx < r->scheduler.max_actors && r->scheduler.registry[idx] == a) return;
+    if (!a->next && r->scheduler.actors != a) {
         a->next = r->scheduler.actors;
         a->prev = NULL;
         if (r->scheduler.actors) r->scheduler.actors->prev = a;
