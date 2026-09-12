@@ -1104,6 +1104,24 @@ static ASTNode *parse_supervise(Parser *p) {
 }
 
 /* 解析整个程序 */
+/* 解析点号模块路径: a.b.c -> "a.b.c" (调用方需保证 cur 是 TK_IDENT) */
+static char *parse_dotted_module(Parser *p) {
+    Token *m = advance(p);
+    char *name = s_strdup(m->value);
+    while (match(p, TK_DOT)) {
+        advance(p);
+        if (!match(p, TK_IDENT)) break;
+        Token *seg = advance(p);
+        size_t len = strlen(name) + 1 + strlen(seg->value) + 1;
+        char *joined = (char *)malloc(len);
+        if (!joined) break;
+        snprintf(joined, len, "%s.%s", name, seg->value);
+        free(name);
+        name = joined;
+    }
+    return name;
+}
+
 ASTNode *parser_parse_program(Parser *p) {
     ASTNode *program = ast_program_new(1, 1);
     if (!program) return NULL;
@@ -1127,8 +1145,7 @@ ASTNode *parser_parse_program(Parser *p) {
             advance(p);
             ASTNode *imp = ast_node_new(NODE_IMPORT, t->line, t->column);
             if (imp && match(p, TK_IDENT)) {
-                Token *m = advance(p);
-                imp->data = s_strdup(m->value);
+                imp->data = parse_dotted_module(p);
                 ast_node_add_child(program, imp);
             } else if (imp) {
                 ast_node_add_child(program, imp);
@@ -1139,8 +1156,7 @@ ASTNode *parser_parse_program(Parser *p) {
             advance(p);
             ASTNode *imp = ast_node_new(NODE_IMPORT, t->line, t->column);
             if (imp && match(p, TK_IDENT)) {
-                Token *m = advance(p);
-                imp->data = s_strdup(m->value);
+                imp->data = parse_dotted_module(p);
                 ast_node_add_child(program, imp);
             } else if (imp) {
                 ast_node_add_child(program, imp);
