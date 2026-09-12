@@ -46,7 +46,7 @@ typedef struct DistributedRuntime {
 /* 连接管理 */
 DistConnection *dist_conn_connect(const char *host, int port);
 DistConnection *dist_conn_listen(int port);
-int dist_conn_accept(DistConnection *listener);
+DistConnection *dist_conn_accept(DistConnection *listener);
 void dist_conn_free(DistConnection *conn);
 
 /* 网络 I/O */

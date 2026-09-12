@@ -19,7 +19,7 @@ TEST(DistConn, ListenAndClose) {
 }
 
 TEST(DistConn, AcceptNull) {
-    EXPECT_EQ(dist_conn_accept(nullptr), -1);
+    EXPECT_EQ(dist_conn_accept(nullptr), (DistConnection *)nullptr);
 }
 
 TEST(DistConn, SendNull) {

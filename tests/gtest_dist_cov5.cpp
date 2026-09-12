@@ -57,16 +57,21 @@ TEST(DistCov5, SendRecvLoopback) {
     DistConnection *client = dist_conn_connect("127.0.0.1", listener->peer_port);
     ASSERT_NE(client, nullptr);
     
-    int r = dist_conn_accept(listener);
-    EXPECT_EQ(r, 0);
+    DistConnection *server = dist_conn_accept(listener);
+    ASSERT_NE(server, nullptr);
     
     const char *msg = "hello";
     int sent = dist_send(client, msg, strlen(msg));
     EXPECT_EQ(sent, (int)strlen(msg));
     
-    /* dist_recv reads from listener->fd which is the listening socket, not the accepted fd */
-    /* So we just verify send succeeds */
+    /* dist_conn_accept 现在返回可用的连接，recv 可以真正读到数据 */
+    char buf[256];
+    memset(buf, 0, sizeof(buf));
+    int received = dist_recv(server, buf, sizeof(buf));
+    EXPECT_EQ(received, (int)strlen(msg));
+    EXPECT_STREQ(buf, msg);
     
+    dist_conn_free(server);
     dist_conn_free(client);
     dist_conn_free(listener);
 }
@@ -321,8 +326,7 @@ TEST(DistCov5, ConnFreeNull) {
 
 
 TEST(DistCov5, ConnAcceptNull) {
-    int r = dist_conn_accept(nullptr);
-    EXPECT_LT(r, 0);
+    EXPECT_EQ(dist_conn_accept(nullptr), (DistConnection *)nullptr);
 }
 
 TEST(DistCov5, RuntimeNewNull) {

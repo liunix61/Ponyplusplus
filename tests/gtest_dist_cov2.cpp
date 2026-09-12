@@ -25,7 +25,7 @@ TEST(DistCov2, ConnListenValidPort) {
 }
 
 TEST(DistCov2, ConnAcceptNull) {
-    EXPECT_EQ(dist_conn_accept(nullptr), -1);
+    EXPECT_EQ(dist_conn_accept(nullptr), (DistConnection *)nullptr);
 }
 
 TEST(DistCov2, ConnFreeNull) {

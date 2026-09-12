@@ -378,7 +378,7 @@ TEST(DistCov6, SupervisorPendingRestartsNull) {
 }
 
 TEST(DistCov6, AcceptNull) {
-    int r = dist_conn_accept(nullptr);
+    DistConnection *r = dist_conn_accept(nullptr);
     (void)r;
     SUCCEED();
 }

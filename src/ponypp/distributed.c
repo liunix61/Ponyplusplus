@@ -98,20 +98,20 @@ DistConnection *dist_conn_listen(int port) {
     return conn;
 }
 
-int dist_conn_accept(DistConnection *listener) {
-    if (!listener || listener->fd < 0) return -1;
+DistConnection *dist_conn_accept(DistConnection *listener) {
+    if (!listener || listener->fd < 0) return NULL;
     struct sockaddr_in addr;
     socklen_t len = sizeof(addr);
     int fd = accept(listener->fd, (struct sockaddr *)&addr, &len);
-    if (fd < 0) return -1;
+    if (fd < 0) return NULL;
 
     DistConnection *conn = (DistConnection *)calloc(1, sizeof(DistConnection));
-    if (!conn) { close(fd); return -2; }
+    if (!conn) { close(fd); return NULL; }
     conn->fd = fd;
     conn->peer_addr = strdup(inet_ntoa(addr.sin_addr));
     conn->peer_port = ntohs(addr.sin_port);
     conn->connected = true;
-    return 0;
+    return conn;
 }
 
 void dist_conn_free(DistConnection *conn) {

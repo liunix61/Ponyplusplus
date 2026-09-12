@@ -40,7 +40,7 @@ TEST(DistCov4, ConnListenZeroPort) {
 }
 
 TEST(DistCov4, ConnAcceptInvalidListener) {
-    EXPECT_EQ(dist_conn_accept(nullptr), -1);
+    EXPECT_EQ(dist_conn_accept(nullptr), (DistConnection *)nullptr);
 }
 
 /* ==================== 更多数据传输组合 ==================== */
@@ -166,7 +166,7 @@ TEST(DistCov4, AllNullSafety) {
     dist_supervisor_free(nullptr);
     dist_conn_free(nullptr);
     
-    EXPECT_EQ(dist_conn_accept(nullptr), -1);
+    EXPECT_EQ(dist_conn_accept(nullptr), (DistConnection *)nullptr);
     EXPECT_EQ(dist_send(nullptr, nullptr, 0), -1);
     EXPECT_EQ(dist_recv(nullptr, nullptr, 0), -1);
     EXPECT_EQ(dist_runtime_listen(nullptr), -1);

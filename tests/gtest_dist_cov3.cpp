@@ -40,7 +40,7 @@ TEST(DistCov3, ConnListenZeroPort) {
 }
 
 TEST(DistCov3, ConnAcceptInvalidListener) {
-    EXPECT_EQ(dist_conn_accept(nullptr), -1);
+    EXPECT_EQ(dist_conn_accept(nullptr), (DistConnection *)nullptr);
 }
 
 /* ==================== 更多数据传输 ==================== */
