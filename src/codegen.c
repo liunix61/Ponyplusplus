@@ -20,6 +20,11 @@ struct Codegen {
     char actor_name[64]; /* 当前 Actor 名称, 用于方法调用 */
     char **params;      /* 当前方法的参数名 */
     size_t param_count; /* 当前方法的参数数量 */
+    char known_actors[16][64]; /* 程序中所有 actor 类型名（构造调用识别用） */
+    size_t known_actor_count;
+    char local_vars[32][64];   /* 当前 actor 内局部变量名 */
+    char local_types[32][64];  /* 对应 actor 类型名（方法调用分派用） */
+    size_t local_var_count;
 };
 
 Codegen *codegen_new(FILE *out) {
@@ -181,6 +186,27 @@ static const char *cg_builtin_type(const char *name) {
     if (strcmp(name, "Set") == 0) return "PnySet *";
     if (strcmp(name, "Map") == 0) return "PnyMap *";
     return name;
+}
+
+static bool cg_is_known_actor(const Codegen *cg, const char *name) {
+    if (!name) return false;
+    for (size_t i = 0; i < cg->known_actor_count; i++)
+        if (strcmp(cg->known_actors[i], name) == 0) return true;
+    return false;
+}
+
+static const char *cg_local_actor_type(const Codegen *cg, const char *var) {
+    if (!var) return NULL;
+    for (size_t i = 0; i < cg->local_var_count; i++)
+        if (strcmp(cg->local_vars[i], var) == 0) return cg->local_types[i];
+    return NULL;
+}
+
+static void cg_local_add(Codegen *cg, const char *var, const char *type) {
+    if (cg->local_var_count >= 32) return;
+    snprintf(cg->local_vars[cg->local_var_count], 64, "%s", var ? var : "");
+    snprintf(cg->local_types[cg->local_var_count], 64, "%s", type ? type : "");
+    cg->local_var_count++;
 }
 
 static char *cg_cstr_escape(const char *s, char *buf, size_t sz) {
@@ -359,8 +385,35 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     cg_emit_raw(cg, ")");
                     break;
                 }
+                /* 局部 actor 变量方法调用: c.get_count() → Counter_get_count(c) */
+                {
+                    const char *at = cg_local_actor_type(cg, receiver);
+                    if (at) {
+                        cg_emit_raw(cg, "%s_%s(%s", at, method_name, receiver);
+                        if (args) {
+                            for (size_t i = 0; i < args->child_count; i++) {
+                                cg_emit_raw(cg, ", ");
+                                cg_expr(cg, args->children[i]);
+                            }
+                        }
+                        cg_emit_raw(cg, ")");
+                        break;
+                    }
+                }
                 /* Generic method: receiver->method(...) — stub for now */
                 cg_emit_raw(cg, "0"); /* stub: unknown method returns 0 */
+                break;
+            }
+            /* 已登记 Actor 类型构造（含零参）: Counter() → Counter_create() */
+            if (func && cg_is_known_actor(cg, func)) {
+                cg_emit_raw(cg, "%s_create(", func);
+                if (args) {
+                    for (size_t i = 0; i < args->child_count; i++) {
+                        if (i > 0) cg_emit_raw(cg, ", ");
+                        cg_expr(cg, args->children[i]);
+                    }
+                }
+                cg_emit_raw(cg, ")");
                 break;
             }
             /* 类型构造函数: List(), Set(), Map(), ActorRef() 等 */
@@ -632,27 +685,41 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
             cg_emit_raw(cg, ";\n");
             return;
         }
-        /* 赋值: assign(ident, rhs) */
-        if (n->data && strcmp((const char *)n->data, "assign") == 0 && n->child_count >= 2) {
+        /* 赋值: assign(ident, rhs) 及复合赋值 add/sub/mul/div-assign → lhs = lhs op rhs */
+        if (n->data && n->child_count >= 2) {
+            const char *dstr = (const char *)n->data;
+            const char *compound_op = NULL;
+            if (strcmp(dstr, "assign") != 0) {
+                if (strcmp(dstr, "add-assign") == 0) compound_op = "+";
+                else if (strcmp(dstr, "sub-assign") == 0) compound_op = "-";
+                else if (strcmp(dstr, "mul-assign") == 0) compound_op = "*";
+                else if (strcmp(dstr, "div-assign") == 0) compound_op = "/";
+            }
+            if (strcmp(dstr, "assign") == 0 || compound_op) {
             /* 左值 */
             if (n->children[0]->type == NODE_IDENT && n->children[0]->data) {
                 const char *lhs = (const char *)n->children[0]->data;
                 if (lhs[0] == 't' && lhs[1] == 'h' && lhs[2] == 'i' && lhs[3] == 's' && lhs[4] == '.') {
                     /* "this.field" → self->field */
                     cg_emit_raw(cg, "/* stmt */self->%s = ", lhs + 5);
+                    if (compound_op) cg_emit_raw(cg, "self->%s %s ", lhs + 5, compound_op);
                 } else if (cg_is_param(cg, lhs)) {
                     /* 参数赋值: 直接输出 */
                     cg_emit_raw(cg, "/* stmt */%s = ", lhs);
+                    if (compound_op) cg_emit_raw(cg, "%s %s ", lhs, compound_op);
                 } else if (cg_has_field(cg, lhs)) {
                     /* 裸字段名 (如 pos = 0) → self->pos = 0 */
                     cg_emit_raw(cg, "/* stmt */self->%s = ", lhs);
+                    if (compound_op) cg_emit_raw(cg, "self->%s %s ", lhs, compound_op);
                 } else {
                     /* 普通标识符 (局部变量) */
                     cg_emit_raw(cg, "/* stmt */%s = ", lhs);
+                    if (compound_op) cg_emit_raw(cg, "%s %s ", lhs, compound_op);
                 }
                 cg_expr(cg, n->children[1]);
                 cg_emit_raw(cg, ";");
                 return;
+            }
             }
         }
         /* 块节点: 遍历子节点 */
@@ -755,8 +822,15 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
             if (!n->data) break;
             if (n->child_count > 0 && n->children[0]->type == NODE_CAP && n->children[0]->data && strcmp((const char *)n->children[0]->data, "type") == 0) {
                 /* var x: Type = expr → Ctype x = expr; */
-                const char *ptype = cg_builtin_type((const char *)n->children[0]->children[0]->data);
-                cg_emit_raw(cg, "%s %s", ptype, n->data);
+                const char *vtype_name = (const char *)n->children[0]->children[0]->data;
+                if (cg_is_known_actor(cg, vtype_name)) {
+                    /* 局部 actor 变量: 指针类型 + 登记供方法调用分派 */
+                    cg_emit_raw(cg, "%s_t *%s", vtype_name, n->data);
+                    cg_local_add(cg, n->data, vtype_name);
+                } else {
+                    const char *ptype = cg_builtin_type(vtype_name);
+                    cg_emit_raw(cg, "%s %s", ptype, n->data);
+                }
                 if (n->child_count > 1) {
                     cg_emit_raw(cg, " = ");
                     cg_expr(cg, n->children[1]);
@@ -1116,12 +1190,17 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
                 atn_count++;
                 actor_type_names = (const char **)realloc(actor_type_names, atn_count * sizeof(char *));
                 actor_type_names[atn_count - 1] = nm;
+                if (cg->known_actor_count < 16) {
+                    snprintf(cg->known_actors[cg->known_actor_count], 64, "%s", nm);
+                    cg->known_actor_count++;
+                }
             }
         }
     }
 
     for (size_t i = 0; ast && i < ast->child_count; i++) {
         if (ast->children[i] && ast->children[i]->type == NODE_ACTOR) {
+            cg->local_var_count = 0; /* 新 actor 作用域: 重置局部变量表 */
             cg_actor(cg, ast->children[i], actor_type_names, atn_count);
         }
     }
@@ -1157,8 +1236,11 @@ static void cg_emit_create_call(Codegen *cg, const char *name, ASTNode *actor) {
     for (size_t j = 0; j < actor->child_count; j++) {
         ASTNode *m = actor->children[j];
         if (m && m->type == NODE_NEW && m->child_count > 0) {
-            ctor_params = m->children[0];
-            if (ctor_params->child_count > 0) has_params = 1;
+            /* children[0] 仅当带参时是 params; 零参时 children[0]=body */
+            if (m->child_count >= 2) {
+                ctor_params = m->children[0];
+                if (ctor_params->child_count > 0) has_params = 1;
+            }
             break;
         }
     }
@@ -1182,38 +1264,41 @@ static void cg_emit_create_call(Codegen *cg, const char *name, ASTNode *actor) {
 static void cg_emit_main(Codegen *cg, ASTNode *ast) {
     cg_emit_raw(cg, "int main(int argc, char *argv[]) {\n");
     cg_push(cg);
-    for (size_t i = 0; ast && i < ast->child_count; i++) {
-        ASTNode *ch = ast->children[i];
-        if (!ch || ch->type != NODE_ACTOR) continue;
-        const char *name = (const char *)ch->data;
-        if (!name) continue;
-
-        for (size_t j = 0; j < ch->child_count; j++) {
-            ASTNode *m = ch->children[j];
-            if (m && (m->type == NODE_BE || m->type == NODE_FUN) &&
-                m->data && strcmp((const char *)m->data, "run") == 0) {
-                cg_emit_create_call(cg, name, ch);
-                cg_emit(cg, "%s_%s(__main_obj);\n", name, "run");
-                cg_emit(cg, "PnyRuntime *r = pny_runtime_new();\n");
-                cg_emit(cg, "PnyActor *__actor = pny_actor_new(\"%s\", sizeof(%s_t));\n", name, name);
-                cg_emit(cg, "if (__actor) { memcpy(__actor->state, __main_obj, sizeof(%s_t)); pny_actor_register(r, __actor); }\n", name);
-                cg_emit(cg, "(void)r; (void)__actor;\n");
-                goto skip_main_body;
+    /* 入口 actor 选择: 优先名为 "main" 且带 create/run, 再任意带 create/run 的 actor;
+       全部不匹配才输出 Hello (修复: 旧逻辑第一个无构造 actor 直接截胡输出 Hello) */
+    ASTNode *entry_actor = NULL;
+    const char *entry_name = NULL;
+    int entry_has_run = 0;
+    for (int pass = 0; pass < 2 && !entry_actor; pass++) {
+        for (size_t i = 0; ast && i < ast->child_count; i++) {
+            ASTNode *ch = ast->children[i];
+            if (!ch || ch->type != NODE_ACTOR) continue;
+            const char *nm = (const char *)ch->data;
+            if (!nm) continue;
+            if (pass == 0 && strcmp(nm, "main") != 0) continue;
+            int has_ctor = 0, has_run = 0;
+            for (size_t j = 0; j < ch->child_count; j++) {
+                ASTNode *m = ch->children[j];
+                if (!m) continue;
+                if (m->type == NODE_NEW) has_ctor = 1;
+                if ((m->type == NODE_BE || m->type == NODE_FUN) && m->data &&
+                    strcmp((const char *)m->data, "run") == 0) has_run = 1;
+            }
+            if (has_ctor || has_run) {
+                entry_actor = ch; entry_name = nm; entry_has_run = has_run;
+                break;
             }
         }
-        for (size_t j = 0; j < ch->child_count; j++) {
-            ASTNode *m = ch->children[j];
-            if (m && m->type == NODE_NEW) {
-                cg_emit_create_call(cg, name, ch);
-                cg_emit(cg, "PnyRuntime *r = pny_runtime_new();\n");
-                cg_emit(cg, "PnyActor *__actor = pny_actor_new(\"%s\", sizeof(%s_t));\n", name, name);
-                cg_emit(cg, "if (__actor) { memcpy(__actor->state, __main_obj, sizeof(%s_t)); pny_actor_register(r, __actor); }\n", name);
-                cg_emit(cg, "(void)r; (void)__actor;\n");
-                goto skip_main_body;
-            }
-        }
+    }
+    if (entry_actor) {
+        cg_emit_create_call(cg, entry_name, entry_actor);
+        if (entry_has_run) cg_emit(cg, "%s_%s(__main_obj);\n", entry_name, "run");
+        cg_emit(cg, "PnyRuntime *r = pny_runtime_new();\n");
+        cg_emit(cg, "PnyActor *__actor = pny_actor_new(\"%s\", sizeof(%s_t));\n", entry_name, entry_name);
+        cg_emit(cg, "if (__actor) { memcpy(__actor->state, __main_obj, sizeof(%s_t)); pny_actor_register(r, __actor); }\n", entry_name);
+        cg_emit(cg, "(void)r; (void)__actor;\n");
+    } else {
         cg_emit(cg, "printf(\"Hello from Pony++ native (real backend)\\n\");\n");
-        goto skip_main_body;
     }
     skip_main_body:
     cg_pop(cg);

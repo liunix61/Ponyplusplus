@@ -491,6 +491,31 @@ static ASTNode *parse_statement(Parser *p) {
 
     /* 赋值语句或表达式语句: x = expr / this.field = expr / List() */
     ASTNode *expr = parse_expression(p);
+    /* 复合赋值: += -= *= /= → add/sub/mul/div-assign(lhs, rhs) */
+    {
+        struct { TokenType tk; const char *nm; } cands[4] = {
+            { TK_PLUS_ASSIGN, "add-assign" }, { TK_MINUS_ASSIGN, "sub-assign" },
+            { TK_STAR_ASSIGN, "mul-assign" }, { TK_SLASH_ASSIGN, "div-assign" },
+        };
+        for (int ci = 0; ci < 4; ci++) {
+            if (match(p, cands[ci].tk)) {
+                advance(p);
+                ASTNode *crhs = parse_expression(p);
+                if (expr && crhs) {
+                    ASTNode *node = ast_node_new(NODE_EMPTY, line, col);
+                    if (node) {
+                        node->data = s_strdup(cands[ci].nm);
+                        ast_node_add_child(node, expr);
+                        ast_node_add_child(node, crhs);
+                        if (match(p, TK_SEMI)) advance(p);
+                        return node;
+                    }
+                }
+                if (crhs) ast_node_free(crhs);
+                break;
+            }
+        }
+    }
     if (match(p, TK_EQ)) {
         advance(p);
         ASTNode *rhs = parse_expression(p);

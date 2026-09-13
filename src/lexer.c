@@ -454,10 +454,50 @@ static TokenType advance(Lexer *lex) {
         case ',': lex->current.type = TK_COMMA; return TK_COMMA;
         case ';': lex->current.type = TK_SEMI; return TK_SEMI;
         case ':': lex->current.type = TK_COLON; return TK_COLON;
-        case '+': lex->current.type = TK_PLUS; return TK_PLUS;
-        case '-': lex->current.type = TK_DASH; return TK_DASH;
-        case '*': lex->current.type = TK_STAR; return TK_STAR;
-        case '/': lex->current.type = TK_SLASH; return TK_SLASH;
+        case '+':
+            if (lex->source[lex->pos] == '=') {
+                advance_char(lex);
+                lex->current.type = TK_PLUS_ASSIGN;
+                lex->current.value = s_strdup("+=");
+                lex->current.line = start_line;
+                lex->current.column = start_col;
+                lex->current.length = 2;
+                return TK_PLUS_ASSIGN;
+            }
+            lex->current.type = TK_PLUS; return TK_PLUS;
+        case '-':
+            if (lex->source[lex->pos] == '=') {
+                advance_char(lex);
+                lex->current.type = TK_MINUS_ASSIGN;
+                lex->current.value = s_strdup("-=");
+                lex->current.line = start_line;
+                lex->current.column = start_col;
+                lex->current.length = 2;
+                return TK_MINUS_ASSIGN;
+            }
+            lex->current.type = TK_DASH; return TK_DASH;
+        case '*':
+            if (lex->source[lex->pos] == '=') {
+                advance_char(lex);
+                lex->current.type = TK_STAR_ASSIGN;
+                lex->current.value = s_strdup("*=");
+                lex->current.line = start_line;
+                lex->current.column = start_col;
+                lex->current.length = 2;
+                return TK_STAR_ASSIGN;
+            }
+            lex->current.type = TK_STAR; return TK_STAR;
+        case '/':
+            if (lex->source[lex->pos] == '=') {
+                advance_char(lex);
+                lex->current.type = TK_SLASH_ASSIGN;
+                lex->current.value = s_strdup("/=");
+                lex->current.line = start_line;
+                lex->current.column = start_col;
+                lex->current.length = 2;
+                return TK_SLASH_ASSIGN;
+            }
+            lex->current.type = TK_SLASH; return TK_SLASH;
         case '=': lex->current.type = TK_EQ; return TK_EQ;
         case '!': lex->current.type = TK_BANG; return TK_BANG;
         case '<': lex->current.type = TK_LT; return TK_LT;

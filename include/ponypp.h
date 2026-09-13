@@ -94,7 +94,11 @@ typedef enum {
     TK_ARROW_ARR, /* => */
     TK_AMPAMP,    /* && */
     TK_PIPEPIPE,  /* || */
-    TK_CHAR       /* 字符字面量 'a' */
+    TK_CHAR,      /* 字符字面量 'a' */
+    TK_PLUS_ASSIGN,  /* += */
+    TK_MINUS_ASSIGN, /* -= */
+    TK_STAR_ASSIGN,  /* *= */
+    TK_SLASH_ASSIGN, /* /= */
 } TokenType;
 
 /* Token 结构 */
