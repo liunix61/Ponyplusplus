@@ -264,9 +264,15 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
             default: opt_flags = "-O2"; break;
         }
         /* AOT 优化分级: 根据 OptLevel 映射 gcc 优化选项 */
-        char cmdbuf[4096];
+        char cmdbuf[8192];
+        const char *extra_cflags = getenv("PONYPPC_CFLAGS");
+        const char *extra_ldflags = getenv("PONYPPC_LDFLAGS");
         int cmdlen = snprintf(cmdbuf, sizeof(cmdbuf),
-            "gcc -std=c11 -Wall %s -o %s %s", opt_flags, binary_output, c_output);
+            "gcc -std=c11 -Wall %s %s -o %s %s %s",
+            opt_flags,
+            extra_cflags ? extra_cflags : "",
+            binary_output, c_output,
+            extra_ldflags ? extra_ldflags : "");
         if (cmdlen <= 0 || cmdlen >= (int)sizeof(cmdbuf) || system(cmdbuf) != 0) {
             s_free(binary_output);
             s_free(c_output);

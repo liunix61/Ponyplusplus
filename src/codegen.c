@@ -286,7 +286,7 @@ static bool cg_expr_is_string(Codegen *cg, ASTNode *n) {
         }
         if (strchr(d, '.') == NULL) {
             const char *lt = cg_local_actor_type(cg, d);
-            if (lt && strcmp(lt, "String") == 0) return true;
+            if (lt && (strcmp(lt, "String") == 0 || strcmp(lt, "const char *") == 0)) return true;
             const char *ft = cg_field_type(cg, d);
             if (ft && strcmp(ft, "String") == 0) return true;
         }
@@ -646,6 +646,52 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     cg_emit_raw(cg, ")");
                     break;
                 }
+            }
+            /* 内置函数: str_hash/arg/file_append/str_field/str_to_int */
+            if (func && strcmp(func, "str_hash") == 0) {
+                cg_emit_raw(cg, "pny_str_hash(");
+                if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                cg_emit_raw(cg, ")");
+                break;
+            }
+            if (func && strcmp(func, "arg") == 0) {
+                cg_emit_raw(cg, "pny_arg(");
+                if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                cg_emit_raw(cg, ")");
+                break;
+            }
+            if (func && strcmp(func, "file_append") == 0) {
+                cg_emit_raw(cg, "((int)pny_file_append(");
+                if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                cg_emit_raw(cg, ", ");
+                if (args && args->child_count > 1) cg_expr(cg, args->children[1]);
+                cg_emit_raw(cg, "))");
+                break;
+            }
+            if (func && strcmp(func, "str_field") == 0) {
+                cg_emit_raw(cg, "pny_str_field(");
+                if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                cg_emit_raw(cg, ", ");
+                if (args && args->child_count > 1) cg_expr(cg, args->children[1]);
+                cg_emit_raw(cg, ", ");
+                if (args && args->child_count > 2) cg_expr(cg, args->children[2]);
+                cg_emit_raw(cg, ")");
+                break;
+            }
+            if (func && strcmp(func, "str_to_int") == 0) {
+                cg_emit_raw(cg, "pny_str_to_int(");
+                if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                cg_emit_raw(cg, ")");
+                break;
+            }
+            /* 内置函数: sandbox_exec(wasm_path, fuel) → pny_sandbox_exec (需 -include wasm_exec.h) */
+            if (func && strcmp(func, "sandbox_exec") == 0) {
+                cg_emit_raw(cg, "pny_sandbox_exec(");
+                if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                cg_emit_raw(cg, ", ");
+                if (args && args->child_count > 1) cg_expr(cg, args->children[1]);
+                cg_emit_raw(cg, ")");
+                break;
             }
             /* 内置函数: sys_exec(cmd) → pny_exec_capture(cmd) */
             if (func && strcmp(func, "sys_exec") == 0) {
@@ -1451,6 +1497,9 @@ static int cg_ast_uses_json(ASTNode *n) {
     return 0;
 }
 
+static const char *PNY_PEX_RUNTIME =
+"\n/* ===== ponyexecution 内联运行时 ===== */\nstatic char *pny_str_hash(const char *s) {\n    unsigned long h = 5381;\n    if (s) for (const char *p = s; *p; p++) h = h * 33 + (unsigned char)*p;\n    char *out = (char *)malloc(24);\n    if (out) snprintf(out, 24, \"%016lx\", h);\n    return out;\n}\nstatic char *pny_arg(int i) {\n    FILE *f = fopen(\"/proc/self/cmdline\", \"rb\");\n    if (!f) return (char *)\"\";\n    static char buf[8192];\n    size_t n = fread(buf, 1, sizeof(buf) - 1, f);\n    fclose(f);\n    buf[n] = 0;\n    int idx = 0;\n    char *p = buf;\n    while (idx < i) {\n        while ((size_t)(p - buf) < n && *p) p++;\n        if ((size_t)(p - buf) >= n) return (char *)\"\";\n        p++;\n        idx++;\n    }\n    return p;\n}\nstatic int pny_file_append(const char *path, const char *content) {\n    if (!path) return 0;\n    FILE *f = fopen(path, \"ab\");\n    if (!f) return 0;\n    size_t len = content ? strlen(content) : 0;\n    size_t wr = len ? fwrite(content, 1, len, f) : 0;\n    fclose(f);\n    return wr == len;\n}\nstatic char *pny_str_field(const char *s, int idx, const char *sep) {\n    if (!s || !sep) return (char *)\"\";\n    const char *p = s;\n    int cur = 0;\n    size_t seplen = strlen(sep);\n    while (cur < idx) {\n        const char *hit = strstr(p, sep);\n        if (!hit) return (char *)\"\";\n        p = hit + seplen;\n        cur++;\n    }\n    const char *end = strstr(p, sep);\n    size_t len = end ? (size_t)(end - p) : strlen(p);\n    char *out = (char *)malloc(len + 1);\n    if (!out) return (char *)\"\";\n    memcpy(out, p, len);\n    out[len] = 0;\n    return out;\n}\nstatic int pny_str_to_int(const char *s) {\n    return s ? atoi(s) : 0;\n}\n";
+
 static const char *PNY_EXEC_RUNTIME =
 "\n/* ===== exec 内联运行时 (M2: 真实命令执行, 输出截断8KB) ===== */\nstatic char *pny_exec_capture(const char *cmd) {\n    if (!cmd) return (char *)\"\";\n    FILE *p = popen(cmd, \"r\");\n    if (!p) return (char *)\"EXEC: popen failed\";\n    char *buf = (char *)malloc(8192);\n    if (!buf) { pclose(p); return (char *)\"EXEC: oom\"; }\n    size_t n = fread(buf, 1, 8191, p);\n    buf[n] = 0;\n    int rc = pclose(p);\n    if (n == 0 && rc != 0) {\n        snprintf(buf, 8192, \"EXEC: exit=%d\", rc);\n    }\n    return buf;\n}\n";
 
@@ -1473,6 +1522,7 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
     cg_emit_runtime(cg);
     cg_emit_raw(cg, "%s", PNY_STR_RUNTIME);
     cg_emit_raw(cg, "%s", PNY_FILE_RUNTIME);
+    cg_emit_raw(cg, "%s", PNY_PEX_RUNTIME);
     cg_emit_raw(cg, "%s", PNY_EXEC_RUNTIME);
     if (cg_ast_uses_json(ast)) {
         cg_emit_raw(cg, "%s", PNY_JSON_RUNTIME);
