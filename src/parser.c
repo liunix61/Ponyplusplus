@@ -619,6 +619,15 @@ static ASTNode *parse_expression_primary(Parser *p) {
                             }
                             if (match(p, TK_PAREN_R)) advance(p);
                             return call;
+                        } else {
+                            /* this.a.b 字段链(无括号): IDENT "this.a.b" */
+                            ASTNode *f3 = ast_node_new(NODE_IDENT, line, col);
+                            if (f3) {
+                                char fbuf3[192];
+                                snprintf(fbuf3, sizeof(fbuf3), "this.%s", method_name);
+                                f3->data = s_strdup(fbuf3);
+                            }
+                            return f3;
                         }
                     }
                 }
@@ -752,9 +761,9 @@ static ASTNode *parse_expression_primary(Parser *p) {
                     }
                     return call;
                 }
-                /* 非调用，恢复为普通标识符 */
+                /* 非调用: 字段访问 b.v → IDENT "b.v" (codegen 依类型字段表生成 b->v) */
                 ASTNode *node = ast_node_new(NODE_IDENT, line, col);
-                if (node) node->data = s_strdup(t->value);
+                if (node) node->data = s_strdup(method_name);
                 return node;
             }
         }
@@ -1158,8 +1167,9 @@ ASTNode *parser_parse_program(Parser *p) {
             ASTNode *actor = parse_actor(p);
             if (actor) ast_node_add_child(program, actor);
         } else if (is_keyword_token(t, "class")) {
-            /* 简化: 跳过 class */
-            advance(p);
+            /* class 与 actor 结构同构(字段/构造/方法): 复用 parse_actor; extends 继承暂不支持 */
+            ASTNode *cls = parse_actor(p);
+            if (cls) ast_node_add_child(program, cls);
         } else if (is_keyword_token(t, "trait")) {
             advance(p);
         } else if (is_keyword_token(t, "supervise")) {

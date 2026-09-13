@@ -25,6 +25,10 @@ struct Codegen {
     char local_vars[32][64];   /* 当前 actor 内局部变量名 */
     char local_types[32][64];  /* 对应 actor 类型名（方法调用分派用） */
     size_t local_var_count;
+    char type_names[16][64];   /* 所有 actor/class 类型名 */
+    char type_fields[16][32][64]; /* 每个类型的字段名 */
+    size_t type_field_counts[16];
+    size_t type_count;
 };
 
 Codegen *codegen_new(FILE *out) {
@@ -202,6 +206,25 @@ static const char *cg_local_actor_type(const Codegen *cg, const char *var) {
     return NULL;
 }
 
+static const char *cg_type_field_base(const Codegen *cg, const char *type) {
+    /* 返回类型名本身若已登记, 否则 NULL */
+    if (!type) return NULL;
+    for (size_t i = 0; i < cg->type_count; i++)
+        if (strcmp(cg->type_names[i], type) == 0) return cg->type_names[i];
+    return NULL;
+}
+
+static bool cg_type_has_field(const Codegen *cg, const char *type, const char *field) {
+    if (!type || !field) return false;
+    for (size_t i = 0; i < cg->type_count; i++) {
+        if (strcmp(cg->type_names[i], type) != 0) continue;
+        for (size_t j = 0; j < cg->type_field_counts[i]; j++)
+            if (strcmp(cg->type_fields[i][j], field) == 0) return true;
+        return false;
+    }
+    return false;
+}
+
 static void cg_local_add(Codegen *cg, const char *var, const char *type) {
     if (cg->local_var_count >= 32) return;
     snprintf(cg->local_vars[cg->local_var_count], 64, "%s", var ? var : "");
@@ -284,6 +307,13 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                         break;
                     } else if (a0->type == NODE_IDENT) {
                         const char *_id = a0->data ? (const char *)a0->data : "?";
+                        if (strchr(_id, '.')) {
+                            /* 字段访问表达式 (b.v / this.b.v): 交由 cg_expr 按类型字段表生成 */
+                            cg_emit_raw(cg, "printf(\"%%d\\n\", (int)(");
+                            cg_expr(cg, a0);
+                            cg_emit_raw(cg, "))");
+                            break;
+                        }
                         const char *_ftype = cg_field_type(cg, _id);
                         if (_ftype && strcmp(_ftype, "String") == 0) {
                             cg_emit_raw(cg, "printf(\"%%s\\n\", (");
@@ -384,6 +414,32 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     cg_emit_field_access(cg, receiver);
                     cg_emit_raw(cg, ")");
                     break;
+                }
+                /* 字段访问: b.v → b->v; this.b.v → self->b->v (method_name 是 receiver 类型的字段) */
+                {
+                    const char *base_type = NULL;
+                    char self_prefix[256];
+                    self_prefix[0] = 0;
+                    if (strcmp(receiver, "this") == 0) {
+                        base_type = cg->actor_name[0] ? cg->actor_name : NULL;
+                        snprintf(self_prefix, sizeof(self_prefix), "self");
+                    } else if (strncmp(receiver, "this.", 5) == 0) {
+                        const char *f = receiver + 5;
+                        for (size_t i = 0; i < cg->field_count; i++) {
+                            if (cg->fields[i] && strcmp(cg->fields[i], f) == 0) {
+                                base_type = cg->field_types[i];
+                                break;
+                            }
+                        }
+                        snprintf(self_prefix, sizeof(self_prefix), "self->%s", f);
+                    } else {
+                        base_type = cg_local_actor_type(cg, receiver);
+                        if (base_type) snprintf(self_prefix, sizeof(self_prefix), "%s", receiver);
+                    }
+                    if (base_type && self_prefix[0] && cg_type_has_field(cg, base_type, method_name)) {
+                        cg_emit_raw(cg, "%s->%s", self_prefix, method_name);
+                        break;
+                    }
                 }
                 /* 局部 actor 变量方法调用: c.get_count() → Counter_get_count(c) */
                 {
@@ -528,9 +584,27 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
         }
         case NODE_IDENT: {
             const char *name = (const char *)n->data;
-            if (name && name[0] == 't' && name[1] == 'h' && name[2] == 'i' && name[3] == 's' && name[4] == '.') {
-                /* "this.field" → self->field */
-                cg_emit_raw(cg, "self->%s", name + 5);
+            if (name && strncmp(name, "this.", 5) == 0) {
+                /* "this.field" → self->field; "this.f.g" → self->f->g (类型字段表) */
+                const char *rest = name + 5;
+                const char *dot = strchr(rest, '.');
+                if (dot) {
+                    char seg[64];
+                    size_t fl = (size_t)(dot - rest);
+                    if (fl >= 64) fl = 63;
+                    memcpy(seg, rest, fl);
+                    seg[fl] = 0;
+                    const char *ftype = NULL;
+                    for (size_t i = 0; i < cg->field_count; i++)
+                        if (cg->fields[i] && strcmp(cg->fields[i], seg) == 0) { ftype = cg->field_types[i]; break; }
+                    if (ftype && cg_type_has_field(cg, ftype, dot + 1)) {
+                        cg_emit_raw(cg, "self->%s->%s", seg, dot + 1);
+                    } else {
+                        cg_emit_raw(cg, "self->%s.%s", seg, dot + 1);
+                    }
+                } else {
+                    cg_emit_raw(cg, "self->%s", rest);
+                }
             } else if (name && strcmp(name, "this") == 0) {
                 cg_emit_raw(cg, "self");
             } else if (name && strcmp(name, "nil") == 0) {
@@ -538,6 +612,20 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
             } else if (name && cg_is_param(cg, name)) {
                 /* 参数名: 直接输出变量名, 不加 self-> */
                 cg_emit_raw(cg, "%s", name);
+            } else if (name && strchr(name, '.')) {
+                /* 局部变量字段访问: b.v → b->v (类型字段表分派) */
+                char recv[128];
+                const char *dot = strchr(name, '.');
+                size_t rl = (size_t)(dot - name);
+                if (rl >= 128) rl = 127;
+                memcpy(recv, name, rl);
+                recv[rl] = 0;
+                const char *rt = cg_local_actor_type(cg, recv);
+                if (rt && cg_type_has_field(cg, rt, dot + 1)) {
+                    cg_emit_raw(cg, "%s->%s", recv, dot + 1);
+                } else {
+                    cg_emit_field_access(cg, name);
+                }
             } else if (name) {
                 cg_emit_field_access(cg, name);
             }
@@ -914,7 +1002,7 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
                 }
                 if (is_actor) {
                     static char buf[64];
-                    snprintf(buf, sizeof(buf), "%s_t", ft);
+                    snprintf(buf, sizeof(buf), "%s_t *", ft);
                     ft = buf;
                 }
             } else ft = "int";
@@ -951,6 +1039,14 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
                     ASTNode *p = ch->children[0]->children[j];
                     if (j) cg_emit_raw(cg, ", ");
                     const char *pt = (p->child_count > 0 && p->children[0]) ? cg_type_of(p->children[0], actor_types, atc) : "int";
+                    {
+                        static char pbuf[80];
+                        int pt_actor = 0;
+                        for (size_t ai = 0; ai < atc; ai++) {
+                            if (actor_types[ai] && strcmp(actor_types[ai], pt) == 0) { pt_actor = 1; break; }
+                        }
+                        if (pt_actor) { snprintf(pbuf, sizeof(pbuf), "%s_t *", pt); pt = pbuf; }
+                    }
                     const char *pn = (const char *)p->data;
                     cg_emit_raw(cg, "%s %s", pt, pn ? pn : "a");
                 }
@@ -1042,6 +1138,14 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
                     ASTNode *p = params->children[j];
                     cg_emit_raw(cg, ", ");
                     const char *pt = (p->child_count > 0 && p->children[0]) ? cg_type_of(p->children[0], actor_types, atc) : "int";
+                    {
+                        static char pbuf[80];
+                        int pt_actor = 0;
+                        for (size_t ai = 0; ai < atc; ai++) {
+                            if (actor_types[ai] && strcmp(actor_types[ai], pt) == 0) { pt_actor = 1; break; }
+                        }
+                        if (pt_actor) { snprintf(pbuf, sizeof(pbuf), "%s_t *", pt); pt = pbuf; }
+                    }
                     const char *pn = (const char *)p->data;
                     cg_emit_raw(cg, "%s %s", pt, pn ? pn : "a");
                 }
@@ -1193,6 +1297,20 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
                 if (cg->known_actor_count < 16) {
                     snprintf(cg->known_actors[cg->known_actor_count], 64, "%s", nm);
                     cg->known_actor_count++;
+                }
+                /* 类型字段注册表 */
+                if (cg->type_count < 16) {
+                    size_t ti = cg->type_count++;
+                    snprintf(cg->type_names[ti], 64, "%s", nm);
+                    cg->type_field_counts[ti] = 0;
+                    for (size_t k = 0; k < ast->children[i]->child_count; k++) {
+                        ASTNode *fch = ast->children[i]->children[k];
+                        if (fch && fch->type == NODE_VAR && fch->data && cg->type_field_counts[ti] < 32) {
+                            snprintf(cg->type_fields[ti][cg->type_field_counts[ti]], 64, "%s",
+                                     (const char *)fch->data);
+                            cg->type_field_counts[ti]++;
+                        }
+                    }
                 }
             }
         }
