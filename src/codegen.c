@@ -511,6 +511,10 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     recv_expr[0] = 0;
                     if (at) {
                         snprintf(recv_expr, sizeof(recv_expr), "%s", receiver);
+                    } else if (strcmp(receiver, "this") == 0) {
+                        /* this.method() → {Actor}_{method}(self) (Bug#20) */
+                        if (cg->actor_name[0]) at = cg->actor_name;
+                        snprintf(recv_expr, sizeof(recv_expr), "self");
                     } else {
                         for (size_t i = 0; i < cg->field_count; i++)
                             if (cg->fields[i] && strcmp(cg->fields[i], receiver) == 0) { ft = cg->field_types[i]; break; }

@@ -634,6 +634,25 @@ static ASTNode *parse_expression_primary(Parser *p) {
                         }
                     }
                 }
+                /* this.method(args) 两段带括号: NODE_CALL "this.method" (Bug#20) */
+                if (match(p, TK_PAREN_L)) {
+                    advance(p);
+                    ASTNode *call = ast_node_new(NODE_CALL, line, col);
+                    if (call) {
+                        char cbuf[192];
+                        snprintf(cbuf, sizeof(cbuf), "this.%s", field_name);
+                        call->data = s_strdup(cbuf);
+                    }
+                    ASTNode *margs = ast_node_new(NODE_EMPTY, line, col);
+                    if (margs) { margs->data = s_strdup("args"); ast_node_add_child(call, margs); }
+                    while (p->pos < p->token_count && cur(p)->type != TK_PAREN_R) {
+                        ASTNode *arg = parse_expression(p);
+                        if (arg) ast_node_add_child(margs, arg);
+                        if (match(p, TK_COMMA)) advance(p);
+                    }
+                    if (match(p, TK_PAREN_R)) advance(p);
+                    return call;
+                }
                 /* 仅字段访问: this.field → 返回 "this.field" (codegen 生成 self->field) */
                 ASTNode *f = ast_node_new(NODE_IDENT, line, col);
                 char fbuf[128];
