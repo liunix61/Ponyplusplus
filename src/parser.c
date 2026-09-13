@@ -430,6 +430,8 @@ static ASTNode *parse_statement(Parser *p) {
         if (!node) return NULL;
         ASTNode *expr = parse_expression(p);
         if (expr) ast_node_add_child(node, expr);
+        /* 可选花括号包裹: match x { ... } */
+        if (match(p, TK_BRACE_L)) advance(p);
         /* match arms: | pattern => body (Pony语法) */
         while (p->pos < p->token_count) {
             /* 跳过 | 分隔符 */
@@ -466,7 +468,8 @@ static ASTNode *parse_statement(Parser *p) {
                 if (cur(p)->type == TK_BRACE_L) {
                     body = parse_block(p);
                 } else {
-                    body = parse_expression(p);
+                    /* arm 体是语句(return/赋值/表达式) */
+                    body = parse_statement(p);
                 }
                 if (body) ast_node_add_child(arm, body);
                 ast_node_add_child(node, arm);
@@ -930,6 +933,7 @@ static ASTNode *parse_expression(Parser *p) {
 /* 解析 Actor 方法 */
 static ASTNode *parse_method(Parser *p, bool is_be) {
     advance(p); /* 跳过 be/fun */
+    if (cur(p)->type == TK_CAP) advance(p); /* fun ref name() — 方法能力标注 */
     if (!match(p, TK_IDENT)) {
         set_error(p, "期望方法名");
         return NULL;

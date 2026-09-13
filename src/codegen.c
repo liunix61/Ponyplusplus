@@ -25,6 +25,8 @@ struct Codegen {
     char local_vars[32][64];   /* 当前 actor 内局部变量名 */
     char local_types[32][64];  /* 对应 actor 类型名（方法调用分派用） */
     size_t local_var_count;
+    char str_ret_methods[64][64]; /* 返回类型为 String 的方法名(扁平) */
+    size_t str_ret_count;
     char type_names[16][64];   /* 所有 actor/class 类型名 */
     char type_fields[16][32][64]; /* 每个类型的字段名 */
     size_t type_field_counts[16];
@@ -149,6 +151,7 @@ static const char *cg_type_of(ASTNode *n, const char **actor_types, size_t atc) 
             return actor_types[i]; /* caller handles _t suffix */
         }
     }
+    if (strcmp(name, "JSON") == 0) return "PnyJson *";
     if (strcmp(name, "U8") == 0) return "unsigned char";
     if (strcmp(name, "U16") == 0) return "unsigned short";
     if (strcmp(name, "U32") == 0) return "unsigned int";
@@ -165,12 +168,14 @@ static const char *cg_type_of(ASTNode *n, const char **actor_types, size_t atc) 
     if (strcmp(name, "Bool") == 0) return "int";
     if (strcmp(name, "Int") == 0) return "long long";
     if (strcmp(name, "None") == 0 || strcmp(name, "NoneType") == 0) return "void";
+    if (strcmp(name, "JSON") == 0) return "PnyJson *";
     return name;
 }
 
 /* 内置类型名 → C 类型名（不依赖 actor_types，用于 var/let 声明） */
 static const char *cg_builtin_type(const char *name) {
     if (!name) return "int";
+    if (strcmp(name, "JSON") == 0) return "PnyJson *";
     if (strcmp(name, "U8") == 0) return "unsigned char";
     if (strcmp(name, "U16") == 0) return "unsigned short";
     if (strcmp(name, "U32") == 0) return "unsigned int";
@@ -186,6 +191,7 @@ static const char *cg_builtin_type(const char *name) {
     if (strcmp(name, "Bool") == 0) return "int";
     if (strcmp(name, "Int") == 0) return "long long";
     if (strcmp(name, "None") == 0 || strcmp(name, "NoneType") == 0) return "void";
+    if (strcmp(name, "JSON") == 0) return "PnyJson *";
     if (strcmp(name, "List") == 0) return "PnyList *";
     if (strcmp(name, "Set") == 0) return "PnySet *";
     if (strcmp(name, "Map") == 0) return "PnyMap *";
@@ -212,6 +218,13 @@ static const char *cg_type_field_base(const Codegen *cg, const char *type) {
     for (size_t i = 0; i < cg->type_count; i++)
         if (strcmp(cg->type_names[i], type) == 0) return cg->type_names[i];
     return NULL;
+}
+
+static bool cg_is_str_ret_method(const Codegen *cg, const char *m) {
+    if (!m) return false;
+    for (size_t i = 0; i < cg->str_ret_count; i++)
+        if (strcmp(cg->str_ret_methods[i], m) == 0) return true;
+    return false;
 }
 
 static bool cg_type_has_field(const Codegen *cg, const char *type, const char *field) {
@@ -256,6 +269,36 @@ static void cg_emit_main(Codegen *cg, ASTNode *ast);
 static void cg_actor(Codegen *cg, ASTNode *actor,
                      const char **actor_types, size_t atc);
 
+static bool cg_expr_is_string(Codegen *cg, ASTNode *n) {
+    if (!n) return false;
+    if (n->type == NODE_STRING) return true;
+    if (n->type == NODE_IDENT && n->data) {
+        const char *d = (const char *)n->data;
+        if (strncmp(d, "this.", 5) == 0) {
+            const char *f = d + 5;
+            const char *dot = strchr(f, '.');
+            char seg[64];
+            size_t fl = dot ? (size_t)(dot - f) : strlen(f);
+            if (fl >= 64) fl = 63;
+            memcpy(seg, f, fl); seg[fl] = 0;
+            const char *ft = cg_field_type(cg, seg);
+            return ft && strcmp(ft, "String") == 0;
+        }
+        if (strchr(d, '.') == NULL) {
+            const char *lt = cg_local_actor_type(cg, d);
+            if (lt && strcmp(lt, "String") == 0) return true;
+            const char *ft = cg_field_type(cg, d);
+            if (ft && strcmp(ft, "String") == 0) return true;
+        }
+        return false;
+    }
+    if (n->type == NODE_EMPTY && n->data && strcmp((const char *)n->data, "+") == 0) {
+        return cg_expr_is_string(cg, n->child_count > 0 ? n->children[0] : NULL) ||
+               cg_expr_is_string(cg, n->child_count > 1 ? n->children[1] : NULL);
+    }
+    return false;
+}
+
 static void cg_expr(Codegen *cg, ASTNode *n) {
     if (!n) return;
     switch (n->type) {
@@ -271,9 +314,14 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
         case NODE_FLOAT:
             cg_emit_raw(cg, "%s", n->data ? (const char *)n->data : "0.0");
             break;
-        case NODE_BOOL:
-            cg_emit_raw(cg, "%d", n->value_int ? 1 : 0);
+        case NODE_BOOL: {
+            /* ast_bool_new 把值存在 data(bool*); value_int 兜底 */
+            bool bv = false;
+            if (n->data) bv = *(bool *)n->data;
+            else bv = n->value_int != 0;
+            cg_emit_raw(cg, "%d", bv ? 1 : 0);
             break;
+        }
         case NODE_CHAR: {
             /* data = 实际字符值 (e.g. 'a'=0x61, '\n'=0x0A) */
             char c = ' ';
@@ -315,6 +363,7 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                             break;
                         }
                         const char *_ftype = cg_field_type(cg, _id);
+                        if (!_ftype) _ftype = cg_local_actor_type(cg, _id); /* 局部 String 变量 */
                         if (_ftype && strcmp(_ftype, "String") == 0) {
                             cg_emit_raw(cg, "printf(\"%%s\\n\", (");
                             cg_emit_field_access(cg, _id);
@@ -328,8 +377,21 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                         }
                         break;
                     } else if (a0->type == NODE_CALL) {
-                        /* print(s.len()) — 嵌套方法调用 */
-                        cg_emit_raw(cg, "printf(\"%%d\\n\", ");
+                        /* 嵌套方法调用: String 返回方法用 %s */
+                        const char *cf = a0->data ? (const char *)a0->data : "";
+                        const char *cm = strrchr(cf, '.');
+                        cm = cm ? cm + 1 : cf;
+                        if (cg_is_str_ret_method(cg, cm)) {
+                            cg_emit_raw(cg, "printf(\"%%s\\n\", ");
+                        } else {
+                            cg_emit_raw(cg, "printf(\"%%d\\n\", ");
+                        }
+                        cg_expr(cg, a0);
+                        cg_emit_raw(cg, ")");
+                        break;
+                    } else if (cg_expr_is_string(cg, a0)) {
+                        /* print("..." + x) — 字符串表达式用 %s */
+                        cg_emit_raw(cg, "printf(\"%%s\\n\", ");
                         cg_expr(cg, a0);
                         cg_emit_raw(cg, ")");
                         break;
@@ -441,11 +503,48 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                         break;
                     }
                 }
-                /* 局部 actor 变量方法调用: c.get_count() → Counter_get_count(c) */
+                /* 方法调用统一分派: 局部变量 c.m() / 字段(本actor) f.m() → {T}_{m}(recv, ...) */
                 {
                     const char *at = cg_local_actor_type(cg, receiver);
+                    const char *ft = NULL;
+                    char recv_expr[160];
+                    recv_expr[0] = 0;
                     if (at) {
-                        cg_emit_raw(cg, "%s_%s(%s", at, method_name, receiver);
+                        snprintf(recv_expr, sizeof(recv_expr), "%s", receiver);
+                    } else {
+                        for (size_t i = 0; i < cg->field_count; i++)
+                            if (cg->fields[i] && strcmp(cg->fields[i], receiver) == 0) { ft = cg->field_types[i]; break; }
+                        if (ft && !cg_type_field_base(cg, ft)) ft = NULL;
+                        if (ft) snprintf(recv_expr, sizeof(recv_expr), "self->%s", receiver);
+                    }
+                    const char *disp = at ? at : ft;
+                    int disp_is_json = disp && (strcmp(disp, "JSON") == 0 || strcmp(disp, "PnyJson *") == 0);
+                    if (disp && recv_expr[0] && !disp_is_json && !cg_type_field_base(cg, disp)) {
+                        disp = NULL; /* 非复合类型(内置标量)不参与方法分派 */
+                    }
+                    if (disp && recv_expr[0] && disp_is_json) {
+                        if (strcmp(method_name, "get") == 0) {
+                            cg_emit_raw(cg, "pny_json_get(%s, ", recv_expr);
+                            if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                            cg_emit_raw(cg, ")");
+                            break;
+                        }
+                        if (strcmp(method_name, "set") == 0) {
+                            cg_emit_raw(cg, "pny_json_set(%s, ", recv_expr);
+                            if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                            cg_emit_raw(cg, ", ");
+                            if (args && args->child_count > 1) cg_expr(cg, args->children[1]);
+                            else cg_emit_raw(cg, "\"\"");
+                            cg_emit_raw(cg, ")");
+                            break;
+                        }
+                        if (strcmp(method_name, "to_string") == 0) {
+                            cg_emit_raw(cg, "pny_json_stringify(%s)", recv_expr);
+                            break;
+                        }
+                    }
+                    if (disp && recv_expr[0]) {
+                        cg_emit_raw(cg, "%s_%s(%s", disp, method_name, recv_expr);
                         if (args) {
                             for (size_t i = 0; i < args->child_count; i++) {
                                 cg_emit_raw(cg, ", ");
@@ -482,6 +581,11 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 /* Set() → pny_set_new() */
                 if (strcmp(func, "Set") == 0) {
                     cg_emit_raw(cg, "pny_set_new()");
+                    break;
+                }
+                /* JSON() → pny_json_new() */
+                if (strcmp(func, "JSON") == 0) {
+                    cg_emit_raw(cg, "pny_json_new()");
                     break;
                 }
                 /* Map() → pny_map_new() */
@@ -542,6 +646,13 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     cg_emit_raw(cg, ")");
                     break;
                 }
+            }
+            /* 内置函数: parse_json(s) → pny_json_parse(s) */
+            if (func && strcmp(func, "parse_json") == 0) {
+                cg_emit_raw(cg, "pny_json_parse(");
+                if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                cg_emit_raw(cg, ")");
+                break;
             }
             cg_emit_raw(cg, "%s_%s(", cg->actor_name[0] ? cg->actor_name : "main", func ? func : "?");
             if (args) {
@@ -645,51 +756,49 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
         /* match 表达式: 生成 switch/if-else 链 */
         case NODE_MATCH: {
             if (n->child_count >= 2 && n->children[0]) {
-                cg_emit_raw(cg, "int _match_expr = ");
-                cg_expr(cg, n->children[0]);
-                cg_emit_raw(cg, ";\n");
-
-                int first_concrete = 1;
-                int emitted_wildcard = 0;
-
+                ASTNode *mexpr = n->children[0];
+                int first = 1;
+                /* 具体分支(通配符延后) */
                 for (size_t i = 1; i < n->child_count; i++) {
                     ASTNode *arm = n->children[i];
                     if (!arm || arm->child_count < 2) continue;
-
                     ASTNode *pat = arm->children[0];
-                    int is_wildcard = (pat && pat->type == NODE_IDENT && pat->data &&
-                                       strcmp((const char *)pat->data, "_") == 0);
-
-                    if (is_wildcard) {
-                        /* 通配符: else { ... } */
-                        cg_emit_raw(cg, "else { ");
-                        cg_expr(cg, arm->children[1]);
-                        cg_emit_raw(cg, "; }");
-                        emitted_wildcard = 1;
-                    } else {
-                        /* 具体模式: if (pat == _match_expr) { ... } */
-                        if (first_concrete) {
-                            cg_emit_raw(cg, "if (");
-                            first_concrete = 0;
-                        } else {
-                            cg_emit_raw(cg, "else if (");
-                        }
+                    if (pat && pat->type == NODE_IDENT && pat->data &&
+                        strcmp((const char *)pat->data, "_") == 0) continue;
+                    if (first) { cg_emit_raw(cg, "if ("); first = 0; }
+                    else cg_emit_raw(cg, "else if (");
+                    if (pat && (pat->type == NODE_INT || pat->type == NODE_CHAR)) {
+                        cg_expr(cg, mexpr);
+                        cg_emit_raw(cg, " == ");
                         cg_expr(cg, pat);
-                        cg_emit_raw(cg, " == _match_expr) {");
-                        cg_expr(cg, arm->children[1]);
-                        cg_emit_raw(cg, "; }");
+                    } else {
+                        cg_emit_raw(cg, "strcmp(");
+                        cg_expr(cg, mexpr);
+                        cg_emit_raw(cg, ", ");
+                        cg_expr(cg, pat);
+                        cg_emit_raw(cg, ") == 0");
                     }
+                    cg_emit_raw(cg, ") {\n");
+                    cg_push(cg);
+                    cg_stmt(cg, arm->children[1]);
+                    cg_pop(cg);
+                    cg_emit(cg, "}\n");
                 }
-
-                if (first_concrete) {
-                    /* 无有效分支 */
-                    cg_emit_raw(cg, "\n");
-                } else if (!emitted_wildcard) {
-                    /* 有具体分支但无通配符，补 catch-all */
-                    cg_emit_raw(cg, " else { }\n");
-                } else {
-                    cg_emit_raw(cg, "\n");
+                /* 通配分支: else 收尾 */
+                for (size_t i = 1; i < n->child_count; i++) {
+                    ASTNode *arm = n->children[i];
+                    if (!arm || arm->child_count < 2) continue;
+                    ASTNode *pat = arm->children[0];
+                    if (!(pat && pat->type == NODE_IDENT && pat->data &&
+                          strcmp((const char *)pat->data, "_") == 0)) continue;
+                    if (first) { cg_emit_raw(cg, "{\n"); first = 0; }
+                    else cg_emit_raw(cg, "else {\n");
+                    cg_push(cg);
+                    cg_stmt(cg, arm->children[1]);
+                    cg_pop(cg);
+                    cg_emit(cg, "}\n");
                 }
+                cg_emit_raw(cg, "\n");
             }
             break;
         }
@@ -720,10 +829,31 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 } else if (strcmp(d, "==") == 0 || strcmp(d, "!=") == 0 ||
                            strcmp(d, "<") == 0 || strcmp(d, ">") == 0 ||
                            strcmp(d, "<=") == 0 || strcmp(d, ">=") == 0) {
-                    /* 比较运算符 */
-                    cg_emit_raw(cg, "(");
+                    /* 比较运算符; 一侧为字符串字面量且是等值比较 → strcmp 内容比较 */
+                    int str_cmp = 0;
+                    if ((strcmp(d, "==") == 0 || strcmp(d, "!=") == 0) &&
+                        n->child_count >= 2 && n->children[0] && n->children[1] &&
+                        (n->children[0]->type == NODE_STRING || n->children[1]->type == NODE_STRING)) {
+                        str_cmp = 1;
+                    }
+                    if (str_cmp) {
+                        cg_emit_raw(cg, "(strcmp(");
+                        cg_expr(cg, n->children[0]);
+                        cg_emit_raw(cg, ", ");
+                        cg_expr(cg, n->children[1]);
+                        cg_emit_raw(cg, ") %s 0)", strcmp(d, "==") == 0 ? "==" : "!=");
+                    } else {
+                        cg_emit_raw(cg, "(");
+                        if (n->child_count > 0) cg_expr(cg, n->children[0]);
+                        cg_emit_raw(cg, " %s ", d);
+                        if (n->child_count > 1) cg_expr(cg, n->children[1]);
+                        cg_emit_raw(cg, ")");
+                    }
+                } else if (strcmp(d, "+") == 0 && cg_expr_is_string(cg, n)) {
+                    /* String 拼接 → pny_str_concat */
+                    cg_emit_raw(cg, "pny_str_concat(");
                     if (n->child_count > 0) cg_expr(cg, n->children[0]);
-                    cg_emit_raw(cg, " %s ", d);
+                    cg_emit_raw(cg, ", ");
                     if (n->child_count > 1) cg_expr(cg, n->children[1]);
                     cg_emit_raw(cg, ")");
                 } else if (strcmp(d, "+") == 0) {
@@ -878,6 +1008,9 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
             cg_emit(cg, "}\n");
             break;
         }
+        case NODE_MATCH:
+            cg_expr(cg, n); /* match 语句: 生成 if/else 链 */
+            break;
         case NODE_RETURN:
             cg_emit(cg, "return");
             if (n->child_count > 0) { cg_emit_raw(cg, " "); cg_expr(cg, n->children[0]); }
@@ -915,9 +1048,13 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
                     /* 局部 actor 变量: 指针类型 + 登记供方法调用分派 */
                     cg_emit_raw(cg, "%s_t *%s", vtype_name, n->data);
                     cg_local_add(cg, n->data, vtype_name);
+                } else if (vtype_name && strcmp(vtype_name, "JSON") == 0) {
+                    cg_emit_raw(cg, "PnyJson *%s", n->data);
+                    cg_local_add(cg, n->data, "JSON");
                 } else {
                     const char *ptype = cg_builtin_type(vtype_name);
                     cg_emit_raw(cg, "%s %s", ptype, n->data);
+                    cg_local_add(cg, n->data, vtype_name); /* 登记供打印/分派 */
                 }
                 if (n->child_count > 1) {
                     cg_emit_raw(cg, " = ");
@@ -1031,6 +1168,7 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
         ASTNode *ch = actor->children[i];
         if (!ch) continue;
         if (ch->type == NODE_NEW) {
+            cg->local_var_count = 0; /* 构造函数作用域: 重置局部/参数表 */
             const char *ctor = (const char *)ch->data;
             cg_emit(cg, "static %s_t *%s_%s(", name, name, ctor ? ctor : "new");
             if (ch->child_count > 0 && ch->children[0] && ch->children[0]->data &&
@@ -1038,17 +1176,19 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
                 for (size_t j = 0; j < ch->children[0]->child_count; j++) {
                     ASTNode *p = ch->children[0]->children[j];
                     if (j) cg_emit_raw(cg, ", ");
-                    const char *pt = (p->child_count > 0 && p->children[0]) ? cg_type_of(p->children[0], actor_types, atc) : "int";
+                    const char *pt_raw = (p->child_count > 0 && p->children[0]) ? cg_type_of(p->children[0], actor_types, atc) : "int";
+                    const char *pt = pt_raw;
                     {
                         static char pbuf[80];
                         int pt_actor = 0;
                         for (size_t ai = 0; ai < atc; ai++) {
-                            if (actor_types[ai] && strcmp(actor_types[ai], pt) == 0) { pt_actor = 1; break; }
+                            if (actor_types[ai] && strcmp(actor_types[ai], pt_raw) == 0) { pt_actor = 1; break; }
                         }
-                        if (pt_actor) { snprintf(pbuf, sizeof(pbuf), "%s_t *", pt); pt = pbuf; }
+                        if (pt_actor) { snprintf(pbuf, sizeof(pbuf), "%s_t *", pt_raw); pt = pbuf; }
                     }
                     const char *pn = (const char *)p->data;
                     cg_emit_raw(cg, "%s %s", pt, pn ? pn : "a");
+                    cg_local_add(cg, pn, pt_raw); /* 参数登记: 供字段/方法分派 */
                 }
             }
             cg_emit_raw(cg, ") {\n");
@@ -1088,6 +1228,7 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
             cg_emit(cg, "}\n\n");
             cg_set_ctor(cg, 0);
         } else if (ch->type == NODE_BE || ch->type == NODE_FUN) {
+            cg->local_var_count = 0; /* 方法作用域: 重置局部/参数表 */
             const char *fn = (const char *)ch->data;
             const char *rtype = (ch->type == NODE_FUN) ? "int" : "void";
             ASTNode *params = NULL;
@@ -1137,17 +1278,19 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
                 for (size_t j = 0; j < params->child_count; j++) {
                     ASTNode *p = params->children[j];
                     cg_emit_raw(cg, ", ");
-                    const char *pt = (p->child_count > 0 && p->children[0]) ? cg_type_of(p->children[0], actor_types, atc) : "int";
+                    const char *pt_raw = (p->child_count > 0 && p->children[0]) ? cg_type_of(p->children[0], actor_types, atc) : "int";
+                    const char *pt = pt_raw;
                     {
                         static char pbuf[80];
                         int pt_actor = 0;
                         for (size_t ai = 0; ai < atc; ai++) {
-                            if (actor_types[ai] && strcmp(actor_types[ai], pt) == 0) { pt_actor = 1; break; }
+                            if (actor_types[ai] && strcmp(actor_types[ai], pt_raw) == 0) { pt_actor = 1; break; }
                         }
-                        if (pt_actor) { snprintf(pbuf, sizeof(pbuf), "%s_t *", pt); pt = pbuf; }
+                        if (pt_actor) { snprintf(pbuf, sizeof(pbuf), "%s_t *", pt_raw); pt = pbuf; }
                     }
                     const char *pn = (const char *)p->data;
                     cg_emit_raw(cg, "%s %s", pt, pn ? pn : "a");
+                    cg_local_add(cg, pn, pt_raw); /* 参数登记: 供字段/方法分派 */
                 }
             }
             cg_emit_raw(cg, ") {\n");
@@ -1268,6 +1411,24 @@ static void cg_emit_runtime(Codegen *cg) {
         "    return a;\n}\n\n");
 }
 
+static int cg_ast_uses_json(ASTNode *n) {
+    if (!n) return 0;
+    if (n->data) {
+        const char *d = (const char *)n->data;
+        if (strcmp(d, "JSON") == 0 || strcmp(d, "parse_json") == 0) return 1;
+        if (strstr(d, "json")) return 1;
+    }
+    for (size_t i = 0; i < n->child_count; i++)
+        if (cg_ast_uses_json(n->children[i])) return 1;
+    return 0;
+}
+
+static const char *PNY_STR_RUNTIME =
+"\n/* ===== String concat 内联运行时 ===== */\nstatic char *pny_str_concat(const char *a, const char *b) {\n    if (!a) a = \"\"; if (!b) b = \"\";\n    size_t na = strlen(a), nb = strlen(b);\n    char *r = (char *)malloc(na + nb + 1);\n    if (!r) return (char *)\"\";\n    memcpy(r, a, na); memcpy(r + na, b, nb + 1);\n    return r;\n}\n";
+
+static const char *PNY_JSON_RUNTIME =
+"""\n/* ===== inline JSON runtime (flat string objects, Ponypi M0) ===== */\ntypedef struct PnyJsonPair { char *key; char *val; } PnyJsonPair;\ntypedef struct PnyJson { PnyJsonPair *pairs; int count; int cap; } PnyJson;\n\nstatic char *pj_strdup(const char *s) {\n    if (!s) s = \"\";\n    size_t n = strlen(s) + 1;\n    char *d = (char *)malloc(n);\n    memcpy(d, s, n);\n    return d;\n}\nstatic char *pj_unescape(const char *s, const char **end) {\n    size_t cap = 64, len = 0;\n    char *out = (char *)malloc(cap);\n    while (*s && *s != '\"') {\n        char c = *s++;\n        if (c == '\\\\' && *s) {\n            char e = *s++;\n            if (e == 'n') c = '\\n';\n            else if (e == 't') c = '\\t';\n            else c = e;\n        }\n        if (len + 2 > cap) { cap *= 2; out = (char *)realloc(out, cap); }\n        out[len++] = c;\n    }\n    out[len] = 0;\n    if (*s == '\"') s++;\n    if (end) *end = s;\n    return out;\n}\nstatic void pj_skip_ws(const char **s) {\n    while (**s == ' ' || **s == '\\t' || **s == '\\n' || **s == '\\r') (*s)++;\n}\nstatic PnyJson *pny_json_new(void) { return (PnyJson *)calloc(1, sizeof(PnyJson)); }\nstatic PnyJson *pny_json_parse(const char *s) {\n    PnyJson *j = pny_json_new();\n    const char *p = s;\n    if (!p) return j;\n    pj_skip_ws(&p);\n    if (*p != '{') return j;\n    p++;\n    pj_skip_ws(&p);\n    while (*p && *p != '}') {\n        if (*p != '\"') break;\n        p++;\n        const char *e = NULL;\n        char *k = pj_unescape(p, &e);\n        p = e;\n        pj_skip_ws(&p);\n        if (*p != ':') { free(k); break; }\n        p++;\n        pj_skip_ws(&p);\n        char *v = NULL;\n        if (*p == '\"') { p++; v = pj_unescape(p, &e); p = e; }\n        else {\n            const char *st = p;\n            while (*p && *p != ',' && *p != '}') p++;\n            v = (char *)malloc((size_t)(p - st) + 1);\n            memcpy(v, st, (size_t)(p - st));\n            v[p - st] = 0;\n        }\n        if (j->count == j->cap) {\n            j->cap = j->cap ? j->cap * 2 : 8;\n            j->pairs = (PnyJsonPair *)realloc(j->pairs, (size_t)j->cap * sizeof(PnyJsonPair));\n        }\n        j->pairs[j->count].key = k;\n        j->pairs[j->count].val = v;\n        j->count++;\n        pj_skip_ws(&p);\n        if (*p == ',') { p++; pj_skip_ws(&p); }\n    }\n    return j;\n}\nstatic const char *pny_json_get(PnyJson *j, const char *k) {\n    if (!j || !k) return \"\";\n    for (int i = 0; i < j->count; i++)\n        if (strcmp(j->pairs[i].key, k) == 0) return j->pairs[i].val ? j->pairs[i].val : \"\";\n    return \"\";\n}\nstatic void pny_json_set(PnyJson *j, const char *k, const char *v) {\n    if (!j || !k) return;\n    for (int i = 0; i < j->count; i++) {\n        if (strcmp(j->pairs[i].key, k) == 0) {\n            free(j->pairs[i].val);\n            j->pairs[i].val = pj_strdup(v);\n            return;\n        }\n    }\n    if (j->count == j->cap) {\n        j->cap = j->cap ? j->cap * 2 : 8;\n        j->pairs = (PnyJsonPair *)realloc(j->pairs, (size_t)j->cap * sizeof(PnyJsonPair));\n    }\n    j->pairs[j->count].key = pj_strdup(k);\n    j->pairs[j->count].val = pj_strdup(v);\n    j->count++;\n}\nstatic char *pj_escape(const char *s) {\n    size_t cap = 64, len = 0;\n    char *out = (char *)malloc(cap);\n    for (; s && *s; s++) {\n        char c = *s;\n        char buf[2];\n        int n = 1;\n        buf[0] = c;\n        if (c == '\"' || c == '\\\\') { buf[0] = c; n = 2; }\n        if (len + (size_t)n + 3 > cap) { cap = (len + (size_t)n + 3) * 2; out = (char *)realloc(out, cap); }\n        if (n == 2) { out[len++] = '\\\\'; out[len++] = buf[0]; }\n        else if (c == '\\n') { out[len++] = '\\\\'; out[len++] = 'n'; }\n        else if (c == '\\t') { out[len++] = '\\\\'; out[len++] = 't'; }\n        else out[len++] = c;\n    }\n    out[len] = 0;\n    return out;\n}\nstatic const char *pny_json_stringify(PnyJson *j) {\n    if (!j) return \"null\";\n    size_t cap = 128, len = 0;\n    char *out = (char *)malloc(cap);\n    out[len++] = '{';\n    for (int i = 0; i < j->count; i++) {\n        char *k = pj_escape(j->pairs[i].key);\n        char *v = pj_escape(j->pairs[i].val);\n        size_t need = strlen(k) + strlen(v) + 8;\n        if (len + need + 2 > cap) { cap = (len + need + 2) * 2; out = (char *)realloc(out, cap); }\n        if (i) out[len++] = ',';\n        len += (size_t)snprintf(out + len, cap - len, \"\\\"%s\\\":\\\"%s\\\"\", k, v);\n        free(k);\n        free(v);\n    }\n    out[len++] = '}';\n    out[len] = 0;\n    return out;\n}\n/* ===== end inline JSON runtime ===== */\n""";
+
 void codegen_program(Codegen *cg, ASTNode *ast) {
     cg_emit_raw(cg, "/* Pony++ native backend generated code */\n");
     cg_emit_raw(cg, "#include <stdio.h>\n");
@@ -1275,6 +1436,11 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
     cg_emit_raw(cg, "#include <stdlib.h>\n");
     cg_emit_raw(cg, "#include <stdint.h>\n\n");
     cg_emit_runtime(cg);
+    cg_emit_raw(cg, "%s", PNY_STR_RUNTIME);
+    if (cg_ast_uses_json(ast)) {
+        cg_emit_raw(cg, "%s", PNY_JSON_RUNTIME);
+        cg_emit_raw(cg, "\n");
+    }
 
     /* 处理 import/use 声明 */
     for (size_t i = 0; ast && i < ast->child_count; i++) {
@@ -1297,6 +1463,23 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
                 if (cg->known_actor_count < 16) {
                     snprintf(cg->known_actors[cg->known_actor_count], 64, "%s", nm);
                     cg->known_actor_count++;
+                }
+                /* String 返回方法注册: fun xxx(...): String */
+                for (size_t k = 0; k < ast->children[i]->child_count; k++) {
+                    ASTNode *mch = ast->children[i]->children[k];
+                    if (mch && (mch->type == NODE_FUN || mch->type == NODE_BE) && mch->data &&
+                        cg->str_ret_count < 64) {
+                        for (size_t ci = 0; ci < mch->child_count; ci++) {
+                            ASTNode *cch = mch->children[ci];
+                            if (cch && cch->data && cch->type != NODE_EMPTY &&
+                                strcmp((const char *)cch->data, "String") == 0) {
+                                snprintf(cg->str_ret_methods[cg->str_ret_count], 64, "%s",
+                                         (const char *)mch->data);
+                                cg->str_ret_count++;
+                                break;
+                            }
+                        }
+                    }
                 }
                 /* 类型字段注册表 */
                 if (cg->type_count < 16) {
