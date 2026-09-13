@@ -17,7 +17,7 @@ TEST(Codegen, GeneratesC) {
 
     FILE* rf = fopen("/tmp/ponypp_gen.c", "r");
     ASSERT_NE(rf, nullptr);
-    char buf[8192] = {0};
+    static char buf[262144] = {0};
     size_t n = fread(buf, 1, sizeof(buf) - 1, rf);
     fclose(rf);
     EXPECT_GT(n, 0);
