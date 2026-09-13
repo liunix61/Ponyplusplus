@@ -647,6 +647,27 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     break;
                 }
             }
+            /* 内置函数: file_read/file_write/file_exists */
+            if (func && strcmp(func, "file_read") == 0) {
+                cg_emit_raw(cg, "pny_file_read(");
+                if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                cg_emit_raw(cg, ")");
+                break;
+            }
+            if (func && strcmp(func, "file_write") == 0) {
+                cg_emit_raw(cg, "((int)pny_file_write(");
+                if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                cg_emit_raw(cg, ", ");
+                if (args && args->child_count > 1) cg_expr(cg, args->children[1]);
+                cg_emit_raw(cg, "))");
+                break;
+            }
+            if (func && strcmp(func, "file_exists") == 0) {
+                cg_emit_raw(cg, "((int)pny_file_exists(");
+                if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                cg_emit_raw(cg, "))");
+                break;
+            }
             /* 内置函数: parse_json(s) → pny_json_parse(s) */
             if (func && strcmp(func, "parse_json") == 0) {
                 cg_emit_raw(cg, "pny_json_parse(");
@@ -1423,6 +1444,9 @@ static int cg_ast_uses_json(ASTNode *n) {
     return 0;
 }
 
+static const char *PNY_FILE_RUNTIME =
+"\n/* ===== File IO 内联运行时 ===== */\nstatic char *pny_file_read(const char *path) {\n    if (!path) return (char *)\"\";\n    FILE *f = fopen(path, \"rb\");\n    if (!f) return (char *)\"\";\n    fseek(f, 0, SEEK_END);\n    long n = ftell(f);\n    fseek(f, 0, SEEK_SET);\n    if (n < 0) { fclose(f); return (char *)\"\"; }\n    char *buf = (char *)malloc((size_t)n + 1);\n    if (!buf) { fclose(f); return (char *)\"\"; }\n    size_t rd = fread(buf, 1, (size_t)n, f);\n    buf[rd] = 0;\n    fclose(f);\n    return buf;\n}\nstatic int pny_file_write(const char *path, const char *content) {\n    if (!path) return 0;\n    FILE *f = fopen(path, \"wb\");\n    if (!f) return 0;\n    size_t len = content ? strlen(content) : 0;\n    size_t wr = len ? fwrite(content, 1, len, f) : 0;\n    fclose(f);\n    return wr == len;\n}\nstatic int pny_file_exists(const char *path) {\n    if (!path) return 0;\n    FILE *f = fopen(path, \"rb\");\n    if (!f) return 0;\n    fclose(f);\n    return 1;\n}\n";
+
 static const char *PNY_STR_RUNTIME =
 "\n/* ===== String concat 内联运行时 ===== */\nstatic char *pny_str_concat(const char *a, const char *b) {\n    if (!a) a = \"\"; if (!b) b = \"\";\n    size_t na = strlen(a), nb = strlen(b);\n    char *r = (char *)malloc(na + nb + 1);\n    if (!r) return (char *)\"\";\n    memcpy(r, a, na); memcpy(r + na, b, nb + 1);\n    return r;\n}\n";
 
@@ -1437,6 +1461,7 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
     cg_emit_raw(cg, "#include <stdint.h>\n\n");
     cg_emit_runtime(cg);
     cg_emit_raw(cg, "%s", PNY_STR_RUNTIME);
+    cg_emit_raw(cg, "%s", PNY_FILE_RUNTIME);
     if (cg_ast_uses_json(ast)) {
         cg_emit_raw(cg, "%s", PNY_JSON_RUNTIME);
         cg_emit_raw(cg, "\n");
