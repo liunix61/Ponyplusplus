@@ -647,6 +647,13 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     break;
                 }
             }
+            /* 内置函数: sys_exec(cmd) → pny_exec_capture(cmd) */
+            if (func && strcmp(func, "sys_exec") == 0) {
+                cg_emit_raw(cg, "pny_exec_capture(");
+                if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                cg_emit_raw(cg, ")");
+                break;
+            }
             /* 内置函数: file_read/file_write/file_exists */
             if (func && strcmp(func, "file_read") == 0) {
                 cg_emit_raw(cg, "pny_file_read(");
@@ -1444,6 +1451,9 @@ static int cg_ast_uses_json(ASTNode *n) {
     return 0;
 }
 
+static const char *PNY_EXEC_RUNTIME =
+"\n/* ===== exec 内联运行时 (M2: 真实命令执行, 输出截断8KB) ===== */\nstatic char *pny_exec_capture(const char *cmd) {\n    if (!cmd) return (char *)\"\";\n    FILE *p = popen(cmd, \"r\");\n    if (!p) return (char *)\"EXEC: popen failed\";\n    char *buf = (char *)malloc(8192);\n    if (!buf) { pclose(p); return (char *)\"EXEC: oom\"; }\n    size_t n = fread(buf, 1, 8191, p);\n    buf[n] = 0;\n    int rc = pclose(p);\n    if (n == 0 && rc != 0) {\n        snprintf(buf, 8192, \"EXEC: exit=%d\", rc);\n    }\n    return buf;\n}\n";
+
 static const char *PNY_FILE_RUNTIME =
 "\n/* ===== File IO 内联运行时 ===== */\nstatic char *pny_file_read(const char *path) {\n    if (!path) return (char *)\"\";\n    FILE *f = fopen(path, \"rb\");\n    if (!f) return (char *)\"\";\n    fseek(f, 0, SEEK_END);\n    long n = ftell(f);\n    fseek(f, 0, SEEK_SET);\n    if (n < 0) { fclose(f); return (char *)\"\"; }\n    char *buf = (char *)malloc((size_t)n + 1);\n    if (!buf) { fclose(f); return (char *)\"\"; }\n    size_t rd = fread(buf, 1, (size_t)n, f);\n    buf[rd] = 0;\n    fclose(f);\n    return buf;\n}\nstatic int pny_file_write(const char *path, const char *content) {\n    if (!path) return 0;\n    FILE *f = fopen(path, \"wb\");\n    if (!f) return 0;\n    size_t len = content ? strlen(content) : 0;\n    size_t wr = len ? fwrite(content, 1, len, f) : 0;\n    fclose(f);\n    return wr == len;\n}\nstatic int pny_file_exists(const char *path) {\n    if (!path) return 0;\n    FILE *f = fopen(path, \"rb\");\n    if (!f) return 0;\n    fclose(f);\n    return 1;\n}\n";
 
@@ -1455,6 +1465,7 @@ static const char *PNY_JSON_RUNTIME =
 
 void codegen_program(Codegen *cg, ASTNode *ast) {
     cg_emit_raw(cg, "/* Pony++ native backend generated code */\n");
+    cg_emit_raw(cg, "#define _DEFAULT_SOURCE\n#define _POSIX_C_SOURCE 200809L\n");
     cg_emit_raw(cg, "#include <stdio.h>\n");
     cg_emit_raw(cg, "#include <string.h>\n");
     cg_emit_raw(cg, "#include <stdlib.h>\n");
@@ -1462,6 +1473,7 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
     cg_emit_runtime(cg);
     cg_emit_raw(cg, "%s", PNY_STR_RUNTIME);
     cg_emit_raw(cg, "%s", PNY_FILE_RUNTIME);
+    cg_emit_raw(cg, "%s", PNY_EXEC_RUNTIME);
     if (cg_ast_uses_json(ast)) {
         cg_emit_raw(cg, "%s", PNY_JSON_RUNTIME);
         cg_emit_raw(cg, "\n");
