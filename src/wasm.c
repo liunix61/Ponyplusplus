@@ -71,8 +71,18 @@ static void bv_write_u32_leb128(ByteVec *bv, uint32_t v) {
     } while (v);
 }
 static void bv_write_i32_leb128(ByteVec *bv, int32_t v) {
-    uint32_t u = (uint32_t)v;
-    bv_write_u32_leb128(bv, u);
+    /* 有符号 LEB128: 终止字节的 bit6 须与符号一致 (64 → C0 00, -64 → 40) */
+    int more = 1;
+    while (more) {
+        uint8_t byte = (uint8_t)(v & 0x7F);
+        v >>= 7; /* 算术右移 */
+        if ((v == 0 && !(byte & 0x40)) || (v == -1 && (byte & 0x40))) {
+            more = 0;
+        } else {
+            byte |= 0x80;
+        }
+        bv_write_u8(bv, byte);
+    }
 }
 static void bv_write_str(ByteVec *bv, const char *s) {
     size_t len = s ? strlen(s) : 0;
@@ -216,9 +226,10 @@ static int32_t wasm_lookup_string(WasmGen *wg, const char *s) {
 }
 
 static void emit_print_i32(WasmGen *wg) {
-    /* 调用 $print_i32 (通过 fd_write 输出) */
+    /* 调用 $print_i32 (通过 fd_write 输出); 返回值 DROP 保持栈平衡 */
     bv_write_u8(&wg->out, WASM_OPCODE_CALL);
     bv_write_u32_leb128(&wg->out, (uint32_t)wg->print_func_idx);
+    bv_write_u8(&wg->out, WASM_OPCODE_DROP);
 }
 
 static void emit_print_string(WasmGen *wg, const char *s) {
@@ -305,8 +316,7 @@ static void emit_expr(WasmGen *wg, ASTNode *n) {
         case NODE_CALL: {
             const char *name = n->data ? (const char *)n->data : "";
             if (strcmp(name, "print") == 0) {
-                emit_print_call(wg, n);
-                bv_write_u8(&wg->out, WASM_OPCODE_DROP);
+                emit_print_call(wg, n); /* 已内部平衡, 无需 DROP */
             } else {
                 emit_i32_const(wg, 0);
             }
@@ -415,7 +425,7 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
     bv_write_u8(&bv, 0x01);
     {
         ByteVec body = {0};
-        bv_write_u8(&body, 0x02); /* 2 types */
+        bv_write_u8(&body, 0x05); /* 5 types (type 0-4) */
         /* type 0: (func (result i32)) */
         bv_write_u8(&body, 0x60);
         bv_write_u8(&body, 0x00);
@@ -437,6 +447,12 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
         bv_write_u8(&body, 0x60);
         bv_write_u8(&body, 0x03);
         bv_write_u8(&body, 0x7F); bv_write_u8(&body, 0x7E); bv_write_u8(&body, 0x7F);
+        bv_write_u8(&body, 0x01);
+        bv_write_u8(&body, 0x7F);
+        /* type 4: random_get signature (i32,i32)->i32 */
+        bv_write_u8(&body, 0x60);
+        bv_write_u8(&body, 0x02);
+        bv_write_u8(&body, 0x7F); bv_write_u8(&body, 0x7F);
         bv_write_u8(&body, 0x01);
         bv_write_u8(&body, 0x7F);
         bv_write_vec(&bv, &body);
@@ -490,7 +506,7 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
             bv_write_str(&body, module_name);
             bv_write_str(&body, "random_get");
             bv_write_u8(&body, 0x00);
-            bv_write_u8(&body, 0x01); /* (i32,i32)->i32 reuse type */
+            bv_write_u8(&body, 0x04); /* type 4: (i32,i32)->i32 */
         }
         bv_write_vec(&bv, &body);
         bv_free(&body);
