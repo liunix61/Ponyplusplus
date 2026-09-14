@@ -2,6 +2,35 @@
 
 All notable changes to Pony++ are documented in this file.
 
+## [0.2.0] - 2026-09-14
+
+App-as-test 实证期（PonyHarness H0-H4 + PonyAgents M1/M2 驱动），累计修复 13 个真实 bug。
+
+### Added
+- `str_from_char(c)`：单字符构造内建（Bug#37）
+- `s.find(sub)` / `s.contains(sub)`：String 方法（Bug#37）
+- `http_post_h(url, body, extra_headers)`：带自定义头 POST（H2）
+- wasm 后端真实语义（Bug#31-33）：locals 表、二元运算符、if/while、var 初始化、`memory` export、signed LEB i32.const
+- 链式解析基础设施 `cg_chain_resolve` + 全局类型字段表 `type_field_types`（Bug#25/26）
+- String 返回方法注册表 `str_ret_methods`（Bug#16/36）
+
+### Fixed
+- Bug#25：三段链 String 判定 warning
+- Bug#26：三段方法调用 `bus.sandbox.run()` 分派错误；recv_out 漏拼后续段
+- Bug#27：parser 字段链后接方法调用被拆两段
+- Bug#28：cstr_escape 不转义 `\r`
+- Bug#29：`pny_json_raw_get` 同名值碰撞（key 冒号跟随验证）
+- Bug#30：字符串 `==` 只认字面量 → 全面表达式判定
+- Bug#31：wasm 后端缺 `memory` export（WASI fd_write 需要）
+- Bug#32：i32.const 误用 unsigned LEB（0x40 解码为 -64）→ signed LEB
+- Bug#33：wasm 运算符 stub 成 const 0 / if 无条件 / 无 locals
+- Bug#34：String/List 内建特判劫持类方法（`this.field.append()` → `pny_list_append` 堆损坏）→ receiver 类型守卫
+- Bug#35：局部变量表 32 上限静默丢弃 → String 变量被误判 int；上限提至 256
+- Bug#36：concat 内联方法调用 String 返回误判 int（`cg_expr_is_string` 补 str_ret_methods 查询）
+
+### Semantics
+- 详见 docs/00-language-spec.md §0.4-0.6（内建清单 / String 方法 / 编译语义规则）
+
 ## [0.1.0] - 2026-09-07
 
 ### Added

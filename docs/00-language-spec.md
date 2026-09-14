@@ -25,3 +25,61 @@ Pony++ 是"天生云原生"的并发编程语言，融合：
 | Erlang | 监督树、容错架构 |
 | Rust | 类型安全、零成本抽象 |
 | WebAssembly | 通用沙箱、组件模型 |
+
+## 0.4 内建函数（以 ponyppc 源码为准，截至 0.2.0）
+
+### 字符串
+| 函数 | 签名 | 说明 |
+|---|---|---|
+| `str_field(s, i, sep)` | String → String | 按分隔符取第 i 段（0 起）；越界返回 "" |
+| `str_hash(s)` | String → String | djb2 哈希（16 位 hex） |
+| `str_to_int(s)` | String → U32 | atoi |
+| `str_from_char(c)` | U32 → String | 单字符构造（0.2.0 新增） |
+
+### 文件 IO
+| 函数 | 说明 |
+|---|---|
+| `file_read(path)` / `file_write(path, content)` / `file_append(path, content)` | 全量读 / 覆盖写 / 追加 |
+| `file_exists(path)` | 1/0 |
+
+### HTTP（native 后端内联运行时）
+| 函数 | 说明 |
+|---|---|
+| `http_post(url, body)` | POST，返回响应体（失败返回 ""） |
+| `http_post_h(url, body, extra_headers)` | 带自定义头（0.2.0 新增，extra_headers 为 `\r\n` 分隔的头行） |
+| `http_accept(port)` / `http_respond(json)` | 服务端：阻塞 accept + 200 应答 |
+
+### 系统 / 沙箱 / JSON
+| 函数 | 说明 |
+|---|---|
+| `arg(i)` | 命令行参数（argv[0]=程序名） |
+| `sys_exec(cmd)` | popen 捕获，输出截断 8KB |
+| `sandbox_exec(path, fuel)` | PonyExecution WASM 沙箱执行 |
+| `stdin_line()` | 读一行（去尾部换行） |
+| `json_raw_get(json, key)` | 原始提取（支持嵌套对象/数组值；key 冒号跟随验证防同名值碰撞） |
+| `parse_json(...)` | Ponypi M0 解析器 |
+
+## 0.5 String / List 方法（codegen 特判）
+
+| 方法 | 语义 |
+|---|---|
+| `s.len()` | strlen → U32 |
+| `s.charAt(i)` | 单字节取值 → U32 |
+| `s.to_string()` | 恒等（返回原串） |
+| `s.startsWith(p)` | 1/0 |
+| `s.toUpperCase()` | ASCII 大写 |
+| `s.find(sub)` | 子串下标；未找到返回 4294967295（0.2.0 新增） |
+| `s.contains(sub)` | 1/0（0.2.0 新增） |
+| `list.append(x)` | 追加；`list.len()` / `list.get(i)` / `list.set(i, v)` |
+
+特判守卫（0.2.0 起）：receiver 为 `this` 或解析为注册类类型的字段/变量时，**跳过** String/List 特判，走统一方法分派 `{Type}_{method}(recv, ...)` — 否则类方法 `append/len/...` 会被劫持为 List 内建。
+
+## 0.6 编译语义规则（实证沉淀）
+
+1. **方法定义顺序**：方法体内的调用目标必须先定义（编译器不生成前向声明）；构造器不能调用后定义的方法。
+2. **顶层自由函数**：`fun name(...)` 不受支持 — 调用会被错误分派为当前 actor 的方法。工具函数必须放进 class。
+3. **字符串 `==`**：任意表达式两侧均按 strcmp 语义处理（不限字面量）。
+4. **字符串拼接 `+`**：两侧任一为 String 即拼接；非 String 侧自动 `pny_itoa`。内联方法调用参与拼接时按 str_ret_methods 注册表判定 String 返回。
+5. **局部变量表容量 256**（0.2.0 起，原 32 静默丢弃）；单个 class/actor 作用域内生效。
+6. **WASM 后端**（0.2.0 起真实语义）：locals 表 / 二元运算符 / if / while / var 初始化 / signed LEB i32.const / `memory` export（WASI fd_write 需要）；运算符节点 AST 形状为 `NODE_EMPTY(data=op)`。
+7. **JSON 提取**：`json_raw_get` 对嵌套对象/数组按括号深度整体提取；key 匹配带冒号跟随验证。

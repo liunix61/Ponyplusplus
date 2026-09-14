@@ -369,7 +369,7 @@ static bool cg_expr_is_string(Codegen *cg, ASTNode *n) {
         static const char *str_fns[] = {
             "str_field", "file_read", "sandbox_exec", "str_hash",
             "stdin_line", "json_raw_get", "http_accept", "sys_exec",
-            "field_get", NULL
+            "field_get", "str_from_char", NULL
         };
         const char *f = (const char *)n->data;
         for (int i = 0; str_fns[i]; i++)
@@ -561,6 +561,26 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
                     else cg_emit_raw(cg, "\"\"");
                     cg_emit_raw(cg, " && 1)"); /* 简化: 检查非空 */
+                    break;
+                }
+                /* String.find(sub) — 未找到返回 4294967295 (Bug#37) */
+                if (recv_not_this && strcmp(method_name, "find") == 0) {
+                    cg_emit_raw(cg, "pny_str_find(");
+                    cg_emit_field_access(cg, receiver);
+                    cg_emit_raw(cg, ", ");
+                    if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                    else cg_emit_raw(cg, "\"\"");
+                    cg_emit_raw(cg, ")");
+                    break;
+                }
+                /* String.contains(sub) (Bug#37) */
+                if (recv_not_this && strcmp(method_name, "contains") == 0) {
+                    cg_emit_raw(cg, "pny_str_contains(");
+                    cg_emit_field_access(cg, receiver);
+                    cg_emit_raw(cg, ", ");
+                    if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                    else cg_emit_raw(cg, "\"\"");
+                    cg_emit_raw(cg, ")");
                     break;
                 }
                 /* String.toUpperCase() */
@@ -822,6 +842,12 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 if (args && args->child_count > 1) cg_expr(cg, args->children[1]);
                 cg_emit_raw(cg, ", ");
                 if (args && args->child_count > 2) cg_expr(cg, args->children[2]);
+                cg_emit_raw(cg, ")");
+                break;
+            }
+            if (func && strcmp(func, "str_from_char") == 0) {
+                cg_emit_raw(cg, "pny_str_from_char(");
+                if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
                 cg_emit_raw(cg, ")");
                 break;
             }
@@ -1683,7 +1709,7 @@ static const char *PNY_FILE_RUNTIME =
 "\n/* ===== File IO 内联运行时 ===== */\nstatic char *pny_file_read(const char *path) {\n    if (!path) return (char *)\"\";\n    FILE *f = fopen(path, \"rb\");\n    if (!f) return (char *)\"\";\n    fseek(f, 0, SEEK_END);\n    long n = ftell(f);\n    fseek(f, 0, SEEK_SET);\n    if (n < 0) { fclose(f); return (char *)\"\"; }\n    char *buf = (char *)malloc((size_t)n + 1);\n    if (!buf) { fclose(f); return (char *)\"\"; }\n    size_t rd = fread(buf, 1, (size_t)n, f);\n    buf[rd] = 0;\n    fclose(f);\n    return buf;\n}\nstatic int pny_file_write(const char *path, const char *content) {\n    if (!path) return 0;\n    FILE *f = fopen(path, \"wb\");\n    if (!f) return 0;\n    size_t len = content ? strlen(content) : 0;\n    size_t wr = len ? fwrite(content, 1, len, f) : 0;\n    fclose(f);\n    return wr == len;\n}\nstatic int pny_file_exists(const char *path) {\n    if (!path) return 0;\n    FILE *f = fopen(path, \"rb\");\n    if (!f) return 0;\n    fclose(f);\n    return 1;\n}\n";
 
 static const char *PNY_STR_RUNTIME =
-"\n/* ===== String concat 内联运行时 ===== */\nstatic char *pny_str_concat(const char *a, const char *b) {\n    if (!a) a = \"\"; if (!b) b = \"\";\n    size_t na = strlen(a), nb = strlen(b);\n    char *r = (char *)malloc(na + nb + 1);\n    if (!r) return (char *)\"\";\n    memcpy(r, a, na); memcpy(r + na, b, nb + 1);\n    return r;\n}\nstatic char *pny_itoa(long long v) {\n    char *out = (char *)malloc(24);\n    if (out) snprintf(out, 24, \"%lld\", v);\n    return out;\n}\n";
+"\n/* ===== String concat 内联运行时 ===== */\nstatic char *pny_str_concat(const char *a, const char *b) {\n    if (!a) a = \"\"; if (!b) b = \"\";\n    size_t na = strlen(a), nb = strlen(b);\n    char *r = (char *)malloc(na + nb + 1);\n    if (!r) return (char *)\"\";\n    memcpy(r, a, na); memcpy(r + na, b, nb + 1);\n    return r;\n}\nstatic char *pny_itoa(long long v) {\n    char *out = (char *)malloc(24);\n    if (out) snprintf(out, 24, \"%lld\", v);\n    return out;\n}\nstatic char *pny_str_from_char(int c) {\n    char *out = (char *)malloc(2);\n    if (out) { out[0] = (char)c; out[1] = 0; }\n    return out;\n}\nstatic long long pny_str_find(const char *s, const char *sub) {\n    if (!s || !sub) return 4294967295LL;\n    const char *p = strstr(s, sub);\n    return p ? (long long)(p - s) : 4294967295LL;\n}\nstatic int pny_str_contains(const char *s, const char *sub) {\n    if (!s || !sub) return 0;\n    return strstr(s, sub) != NULL;\n}\n";
 
 static const char *PNY_JSON_RUNTIME =
 """\n/* ===== inline JSON runtime (flat string objects, Ponypi M0) ===== */\ntypedef struct PnyJsonPair { char *key; char *val; } PnyJsonPair;\ntypedef struct PnyJson { PnyJsonPair *pairs; int count; int cap; } PnyJson;\n\nstatic char *pj_strdup(const char *s) {\n    if (!s) s = \"\";\n    size_t n = strlen(s) + 1;\n    char *d = (char *)malloc(n);\n    memcpy(d, s, n);\n    return d;\n}\nstatic char *pj_unescape(const char *s, const char **end) {\n    size_t cap = 64, len = 0;\n    char *out = (char *)malloc(cap);\n    while (*s && *s != '\"') {\n        char c = *s++;\n        if (c == '\\\\' && *s) {\n            char e = *s++;\n            if (e == 'n') c = '\\n';\n            else if (e == 't') c = '\\t';\n            else c = e;\n        }\n        if (len + 2 > cap) { cap *= 2; out = (char *)realloc(out, cap); }\n        out[len++] = c;\n    }\n    out[len] = 0;\n    if (*s == '\"') s++;\n    if (end) *end = s;\n    return out;\n}\nstatic void pj_skip_ws(const char **s) {\n    while (**s == ' ' || **s == '\\t' || **s == '\\n' || **s == '\\r') (*s)++;\n}\nstatic PnyJson *pny_json_new(void) { return (PnyJson *)calloc(1, sizeof(PnyJson)); }\nstatic PnyJson *pny_json_parse(const char *s) {\n    PnyJson *j = pny_json_new();\n    const char *p = s;\n    if (!p) return j;\n    pj_skip_ws(&p);\n    if (*p != '{') return j;\n    p++;\n    pj_skip_ws(&p);\n    while (*p && *p != '}') {\n        if (*p != '\"') break;\n        p++;\n        const char *e = NULL;\n        char *k = pj_unescape(p, &e);\n        p = e;\n        pj_skip_ws(&p);\n        if (*p != ':') { free(k); break; }\n        p++;\n        pj_skip_ws(&p);\n        char *v = NULL;\n        if (*p == '\"') { p++; v = pj_unescape(p, &e); p = e; }\n        else {\n            const char *st = p;\n            while (*p && *p != ',' && *p != '}') p++;\n            v = (char *)malloc((size_t)(p - st) + 1);\n            memcpy(v, st, (size_t)(p - st));\n            v[p - st] = 0;\n        }\n        if (j->count == j->cap) {\n            j->cap = j->cap ? j->cap * 2 : 8;\n            j->pairs = (PnyJsonPair *)realloc(j->pairs, (size_t)j->cap * sizeof(PnyJsonPair));\n        }\n        j->pairs[j->count].key = k;\n        j->pairs[j->count].val = v;\n        j->count++;\n        pj_skip_ws(&p);\n        if (*p == ',') { p++; pj_skip_ws(&p); }\n    }\n    return j;\n}\nstatic const char *pny_json_get(PnyJson *j, const char *k) {\n    if (!j || !k) return \"\";\n    for (int i = 0; i < j->count; i++)\n        if (strcmp(j->pairs[i].key, k) == 0) return j->pairs[i].val ? j->pairs[i].val : \"\";\n    return \"\";\n}\nstatic void pny_json_set(PnyJson *j, const char *k, const char *v) {\n    if (!j || !k) return;\n    for (int i = 0; i < j->count; i++) {\n        if (strcmp(j->pairs[i].key, k) == 0) {\n            free(j->pairs[i].val);\n            j->pairs[i].val = pj_strdup(v);\n            return;\n        }\n    }\n    if (j->count == j->cap) {\n        j->cap = j->cap ? j->cap * 2 : 8;\n        j->pairs = (PnyJsonPair *)realloc(j->pairs, (size_t)j->cap * sizeof(PnyJsonPair));\n    }\n    j->pairs[j->count].key = pj_strdup(k);\n    j->pairs[j->count].val = pj_strdup(v);\n    j->count++;\n}\nstatic char *pj_escape(const char *s) {\n    size_t cap = 64, len = 0;\n    char *out = (char *)malloc(cap);\n    for (; s && *s; s++) {\n        char c = *s;\n        char buf[2];\n        int n = 1;\n        buf[0] = c;\n        if (c == '\"' || c == '\\\\') { buf[0] = c; n = 2; }\n        if (len + (size_t)n + 3 > cap) { cap = (len + (size_t)n + 3) * 2; out = (char *)realloc(out, cap); }\n        if (n == 2) { out[len++] = '\\\\'; out[len++] = buf[0]; }\n        else if (c == '\\n') { out[len++] = '\\\\'; out[len++] = 'n'; }\n        else if (c == '\\t') { out[len++] = '\\\\'; out[len++] = 't'; }\n        else out[len++] = c;\n    }\n    out[len] = 0;\n    return out;\n}\nstatic const char *pny_json_stringify(PnyJson *j) {\n    if (!j) return \"null\";\n    size_t cap = 128, len = 0;\n    char *out = (char *)malloc(cap);\n    out[len++] = '{';\n    for (int i = 0; i < j->count; i++) {\n        char *k = pj_escape(j->pairs[i].key);\n        char *v = pj_escape(j->pairs[i].val);\n        size_t need = strlen(k) + strlen(v) + 8;\n        if (len + need + 2 > cap) { cap = (len + need + 2) * 2; out = (char *)realloc(out, cap); }\n        if (i) out[len++] = ',';\n        len += (size_t)snprintf(out + len, cap - len, \"\\\"%s\\\":\\\"%s\\\"\", k, v);\n        free(k);\n        free(v);\n    }\n    out[len++] = '}';\n    out[len] = 0;\n    return out;\n}\n/* ===== end inline JSON runtime ===== */\n""";
