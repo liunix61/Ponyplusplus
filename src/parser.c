@@ -838,6 +838,36 @@ static ASTNode *parse_expression_primary(Parser *p) {
                 if (match(p, TK_COMMA)) advance(p);
             }
             if (match(p, TK_PAREN_R)) advance(p);
+            /* Bug#41: 函数返回值后缀方法调用 f(...).method(args) —
+             * 此前 TK_DOT 未消费导致外层表达式循环死等(解析器死循环)。
+             * 新约定: NODE_CALL data=".method", child0=receiver表达式, child1=args */
+            while (p->pos < p->token_count && match(p, TK_DOT)) {
+                advance(p);
+                if (p->pos < p->token_count && cur(p)->type == TK_IDENT) {
+                    char mname[256];
+                    snprintf(mname, sizeof(mname), ".%s", cur(p)->value);
+                    advance(p);
+                    if (match(p, TK_PAREN_L)) {
+                        advance(p);
+                        ASTNode *wrap = ast_node_new(NODE_CALL, line, col);
+                        if (wrap) wrap->data = s_strdup(mname);
+                        if (wrap) ast_node_add_child(wrap, call);
+                        ASTNode *margs = ast_node_new(NODE_EMPTY, line, col);
+                        if (margs) { margs->data = s_strdup("args"); if (wrap) ast_node_add_child(wrap, margs); }
+                        while (p->pos < p->token_count && cur(p)->type != TK_PAREN_R) {
+                            ASTNode *arg2 = parse_expression(p);
+                            if (arg2) ast_node_add_child(margs, arg2);
+                            if (match(p, TK_COMMA)) advance(p);
+                        }
+                        if (match(p, TK_PAREN_R)) advance(p);
+                        if (wrap) call = wrap;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
             return call;
         }
         if (match(p, TK_EQ)) {

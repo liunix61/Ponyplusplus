@@ -73,6 +73,7 @@ Pony++ 是"天生云原生"的并发编程语言，融合：
 | `s.find(sub)` | 子串下标；未找到返回 4294967295（0.2.0 新增） |
 | `s.contains(sub)` | 1/0（0.2.0 新增） |
 | `s.slice(start)` / `s.slice(start, end)` | 子串；end 缺省到尾；越界钳位（0.2.0 新增，Bug#38） |
+| `f(x).len/slice/find/contains(...)` | 链式方法：函数返回值上直接调用 String 内建（0.2.0 新增，Bug#41 — 此前解析器死循环） |
 | `str_replace_all(s, old, new)` | 全量替换（0.2.0 新增，Bug#40） |
 | `list.append(x)` | 追加；`list.len()` / `list.get(i)` / `list.set(i, v)` |
 

@@ -374,6 +374,10 @@ static bool cg_expr_is_string(Codegen *cg, ASTNode *n) {
         const char *f = (const char *)n->data;
         for (int i = 0; str_fns[i]; i++)
             if (strcmp(f, str_fns[i]) == 0) return true;
+        /* Bug#41: 链式 .slice/.find/.contains 返回 String */
+        if (f[0] == '.') {
+            if (strcmp(f, ".slice") == 0 || strcmp(f, ".find") == 0 || strcmp(f, ".contains") == 0) return true;
+        }
         /* Bug#39: recv.slice(...) 点号形态 — 方法名(最后一个 . 后)也查内建 String 返回表 */
         {
             const char *dot = strrchr(f, '.');
@@ -437,6 +441,44 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
         }
         case NODE_CALL: {
             const char *func = (const char *)n->data;
+            /* Bug#41: 链式方法 f(...).method(args) — func=".method",
+             * child0=receiver 表达式, child1=args */
+            if (func && func[0] == '.' && n->child_count >= 2) {
+                ASTNode *recv = n->children[0];
+                ASTNode *margs = n->children[1];
+                const char *m = func + 1;
+                if (strcmp(m, "len") == 0) {
+                    cg_emit_raw(cg, "(long long)strlen(");
+                    cg_expr(cg, recv);
+                    cg_emit_raw(cg, ")");
+                } else if (strcmp(m, "slice") == 0) {
+                    cg_emit_raw(cg, "pny_str_slice(");
+                    cg_expr(cg, recv);
+                    cg_emit_raw(cg, ", ");
+                    if (margs && margs->child_count > 0) cg_expr(cg, margs->children[0]);
+                    else cg_emit_raw(cg, "0");
+                    cg_emit_raw(cg, ", ");
+                    if (margs && margs->child_count > 1) cg_expr(cg, margs->children[1]);
+                    else cg_emit_raw(cg, "-1");
+                    cg_emit_raw(cg, ")");
+                } else if (strcmp(m, "find") == 0) {
+                    cg_emit_raw(cg, "pny_str_find(");
+                    cg_expr(cg, recv);
+                    cg_emit_raw(cg, ", ");
+                    if (margs && margs->child_count > 0) cg_expr(cg, margs->children[0]);
+                    cg_emit_raw(cg, ")");
+                } else if (strcmp(m, "contains") == 0) {
+                    cg_emit_raw(cg, "pny_str_contains(");
+                    cg_expr(cg, recv);
+                    cg_emit_raw(cg, ", ");
+                    if (margs && margs->child_count > 0) cg_expr(cg, margs->children[0]);
+                    cg_emit_raw(cg, ")");
+                } else {
+                    fprintf(stderr, "错误: 不支持的链式方法 .%s (Bug#41 仅支持 len/slice/find/contains)\n", m);
+                    cg_emit_raw(cg, "0");
+                }
+                break;
+            }
             ASTNode *args = (n->child_count > 0 && n->children[0] &&
                              n->children[0]->data &&
                              strcmp((const char *)n->children[0]->data, "args") == 0)

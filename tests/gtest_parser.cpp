@@ -166,3 +166,34 @@ TEST(Parser, MatchMultipleArms) {
     ASSERT_NE(ast, nullptr);
     ast_node_free(ast);
 }
+
+// Bug#41: 函数返回值链式方法调用 f(...).method(args) — 此前解析器死循环
+TEST(Parser, ChainedMethodOnCallResult) {
+    const char* src =
+        "actor main {\n"
+        "  new create() => {\n"
+        "    var s: String = \"hello-world\"\n"
+        "    print(\"X:\" + str_field(s, 0, \"-\").slice(0, 3))\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    // 链式节点: NODE_CALL data=".slice", child0=receiver(call), child1=args
+    bool found = false;
+    // 深度遍历找 ".slice"
+    ASTNode* stack[256]; int sp = 0;
+    stack[sp++] = ast;
+    while (sp > 0) {
+        ASTNode* n = stack[--sp];
+        if (n->type == NODE_CALL && n->data && strcmp((const char*)n->data, ".slice") == 0) {
+            found = true;
+            ASSERT_GE(n->child_count, 2u);
+            ASSERT_NE(n->children[0], nullptr);
+            EXPECT_EQ(n->children[0]->type, NODE_CALL); // receiver = str_field(...)
+        }
+        for (size_t i = 0; i < n->child_count && sp < 250; i++)
+            if (n->children[i]) stack[sp++] = n->children[i];
+    }
+    EXPECT_TRUE(found);
+    ast_node_free(ast);
+}
