@@ -22,8 +22,8 @@ struct Codegen {
     size_t param_count; /* 当前方法的参数数量 */
     char known_actors[16][64]; /* 程序中所有 actor 类型名（构造调用识别用） */
     size_t known_actor_count;
-    char local_vars[32][64];   /* 当前 actor 内局部变量名 */
-    char local_types[32][64];  /* 对应 actor 类型名（方法调用分派用） */
+    char local_vars[256][64]; /* Bug#35: 32 上限静默丢弃致 String 变量被误判 int */   /* 当前 actor 内局部变量名 */
+    char local_types[256][64];  /* 对应 actor 类型名（方法调用分派用） */
     size_t local_var_count;
     char str_ret_methods[64][64]; /* 返回类型为 String 的方法名(扁平) */
     size_t str_ret_count;
@@ -240,7 +240,7 @@ static bool cg_type_has_field(const Codegen *cg, const char *type, const char *f
 }
 
 static void cg_local_add(Codegen *cg, const char *var, const char *type) {
-    if (cg->local_var_count >= 32) return;
+    if (cg->local_var_count >= 256) return;
     snprintf(cg->local_vars[cg->local_var_count], 64, "%s", var ? var : "");
     snprintf(cg->local_types[cg->local_var_count], 64, "%s", type ? type : "");
     cg->local_var_count++;
@@ -505,15 +505,34 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 receiver[recv_len] = 0;
                 strcpy(method_name, dot + 1);
 
+                /* Bug#34: 内建特判(String/List)只对非类 receiver 生效 —
+                   this.append()/this.field.append() 曾被劫持为 pny_list_append */
+                int recv_not_this = (strcmp(receiver, "this") != 0);
+                if (recv_not_this) {
+                    const char *rt = NULL;
+                    char _crecv[192];
+                    if (strchr(receiver, '.') != NULL) {
+                        rt = cg_chain_resolve(cg, receiver, _crecv, sizeof(_crecv));
+                    } else {
+                        rt = cg_local_actor_type(cg, receiver);
+                        if (!rt) rt = cg_field_type(cg, receiver); /* 裸字段名 receiver (this. 已剥离) */
+                    }
+                    if (rt) {
+                        for (size_t i = 0; i < cg->type_count; i++) {
+                            if (cg->type_names[i] && strcmp(cg->type_names[i], rt) == 0) { recv_not_this = 0; break; }
+                        }
+                    }
+                }
+
                 /* String.len() */
-                if (strcmp(method_name, "len") == 0) {
+                if (recv_not_this && strcmp(method_name, "len") == 0) {
                     cg_emit_raw(cg, "(int)strlen(");
                     cg_emit_field_access(cg, receiver);
                     cg_emit_raw(cg, ")");
                     break;
                 }
                 /* String.charAt(i) */
-                if (strcmp(method_name, "charAt") == 0) {
+                if (recv_not_this && strcmp(method_name, "charAt") == 0) {
                     cg_emit_raw(cg, "(int)((");
                     cg_emit_field_access(cg, receiver);
                     cg_emit_raw(cg, ")[");
@@ -523,12 +542,12 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     break;
                 }
                 /* String.to_string() — 直接用原字符串 */
-                if (strcmp(method_name, "to_string") == 0) {
+                if (recv_not_this && strcmp(method_name, "to_string") == 0) {
                     cg_emit_field_access(cg, receiver);
                     break;
                 }
                 /* String.startsWith(s) */
-                if (strcmp(method_name, "startsWith") == 0) {
+                if (recv_not_this && strcmp(method_name, "startsWith") == 0) {
                     cg_emit_raw(cg, "((");
                     cg_emit_field_access(cg, receiver);
                     cg_emit_raw(cg, ") && (");
@@ -538,14 +557,14 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     break;
                 }
                 /* String.toUpperCase() */
-                if (strcmp(method_name, "toUpperCase") == 0) {
+                if (recv_not_this && strcmp(method_name, "toUpperCase") == 0) {
                     cg_emit_raw(cg, "((");
                     cg_emit_field_access(cg, receiver);
                     cg_emit_raw(cg, ") ? 1 : 1)"); /* placeholder — toUpperCase stub */
                     break;
                 }
                 /* List.append(item) → pny_list_append(self->field, item) */
-                if (strcmp(method_name, "append") == 0) {
+                if (recv_not_this && strcmp(method_name, "append") == 0) {
                     cg_emit_raw(cg, "pny_list_append(");
                     cg_emit_field_access(cg, receiver);
                     cg_emit_raw(cg, ", ");
@@ -555,7 +574,7 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     break;
                 }
                 /* List.length → pny_list_len(self->field) */
-                if (strcmp(method_name, "length") == 0) {
+                if (recv_not_this && strcmp(method_name, "length") == 0) {
                     cg_emit_raw(cg, "pny_list_len(");
                     cg_emit_field_access(cg, receiver);
                     cg_emit_raw(cg, ")");
