@@ -72,6 +72,7 @@ Pony++ 是"天生云原生"的并发编程语言，融合：
 | `s.toUpperCase()` | ASCII 大写 |
 | `s.find(sub)` | 子串下标；未找到返回 4294967295（0.2.0 新增） |
 | `s.contains(sub)` | 1/0（0.2.0 新增） |
+| `s.slice(start)` / `s.slice(start, end)` | 子串；end 缺省到尾；越界钳位（0.2.0 新增，Bug#38） |
 | `list.append(x)` | 追加；`list.len()` / `list.get(i)` / `list.set(i, v)` |
 
 特判守卫（0.2.0 起）：receiver 为 `this` 或解析为注册类类型的字段/变量时，**跳过** String/List 特判，走统一方法分派 `{Type}_{method}(recv, ...)` — 否则类方法 `append/len/...` 会被劫持为 List 内建。

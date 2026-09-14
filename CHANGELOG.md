@@ -9,6 +9,7 @@ App-as-test 实证期（PonyHarness H0-H4 + PonyAgents M1/M2 驱动），累计�
 ### Added
 - `str_from_char(c)`：单字符构造内建（Bug#37）
 - `s.find(sub)` / `s.contains(sub)`：String 方法（Bug#37）
+- `s.slice(start[, end])`：子串内建（Bug#38 — 此前未知 String 方法被静默丢弃生成空表达式；现钳位语义 + 缺省 end 到尾）
 - `http_post_h(url, body, extra_headers)`：带自定义头 POST（H2）
 - HTTP 运行时 keep-alive：客户端连接缓存（按 host:port）+ Content-Length 帧读取 + 失败重试 1 次；服务端连接复用（poll 300ms 回退）+ `Connection: close` 语义
 - HTTP 服务端块读优化：请求头/体 1024B/次读取（替代逐字节 read，~150 syscall → ~2）
