@@ -169,7 +169,26 @@ typedef struct {
     size_t string_count;
     size_t string_cap;
     int32_t next_str_addr;
+    /* Bug#33: 局部变量表 (main 函数 locals, i32) */
+    char local_names[64][64];
+    int local_count;
 } WasmGen;
+
+static int wasm_local_lookup(WasmGen *wg, const char *name) {
+    if (!name) return -1;
+    for (int i = 0; i < wg->local_count; i++) {
+        if (strcmp(wg->local_names[i], name) == 0) return i;
+    }
+    return -1;
+}
+
+static int wasm_local_ensure(WasmGen *wg, const char *name) {
+    int idx = wasm_local_lookup(wg, name);
+    if (idx >= 0) return idx;
+    if (wg->local_count >= 64 || !name) return -1;
+    snprintf(wg->local_names[wg->local_count], sizeof(wg->local_names[0]), "%s", name);
+    return wg->local_count++;
+}
 
 /* 前向声明 */
 static void emit_expr(WasmGen *wg, ASTNode *n);
@@ -235,26 +254,27 @@ static void emit_print_i32(WasmGen *wg) {
 static void emit_print_string(WasmGen *wg, const char *s) {
     int32_t str_addr = wasm_lookup_string(wg, s);
     size_t slen = s ? strlen(s) : 0;
-    /* fd_write(fd=1, iovs=8, iovs_len=1, rets=24) */
+    /* fd_write(fd=1, iovs=8, iovs_len=1, rets=24)
+       Bug#32: i32.const 操作数必须 signed LEB128 — 64 (0x40) 被 sLEB 解码为 -64 */
     bv_write_u8(&wg->out, WASM_OPCODE_I32_CONST);
-    bv_write_u32_leb128(&wg->out, 1);              /* fd = 1 (stdout) */
+    bv_write_i32_leb128(&wg->out, 1);              /* fd = 1 (stdout) */
     bv_write_u8(&wg->out, WASM_OPCODE_I32_CONST);
-    bv_write_u32_leb128(&wg->out, 8);              /* iovs offset */
+    bv_write_i32_leb128(&wg->out, 8);              /* iovs offset */
     bv_write_u8(&wg->out, WASM_OPCODE_I32_CONST);
-    bv_write_u32_leb128(&wg->out, 1);              /* iovs count */
+    bv_write_i32_leb128(&wg->out, 1);              /* iovs count */
     bv_write_u8(&wg->out, WASM_OPCODE_I32_CONST);
-    bv_write_u32_leb128(&wg->out, 24);             /* rets offset */
+    bv_write_i32_leb128(&wg->out, 24);             /* rets offset */
     /* iovec: [ptr, len] at address 8 */
     bv_write_u8(&wg->out, WASM_OPCODE_I32_CONST);
-    bv_write_u32_leb128(&wg->out, 8);              /* ptr */
+    bv_write_i32_leb128(&wg->out, 8);              /* ptr */
     bv_write_u8(&wg->out, WASM_OPCODE_I32_CONST);
-    bv_write_u32_leb128(&wg->out, (int32_t)str_addr);
+    bv_write_i32_leb128(&wg->out, (int32_t)str_addr);
     bv_write_u8(&wg->out, WASM_OPCODE_I32_STORE);
     bv_write_u8(&wg->out, 0x02); bv_write_u8(&wg->out, 0x00); /* align=2, offset=0 */
     bv_write_u8(&wg->out, WASM_OPCODE_I32_CONST);
-    bv_write_u32_leb128(&wg->out, 12);             /* len */
+    bv_write_i32_leb128(&wg->out, 12);             /* len */
     bv_write_u8(&wg->out, WASM_OPCODE_I32_CONST);
-    bv_write_u32_leb128(&wg->out, (int32_t)slen);
+    bv_write_i32_leb128(&wg->out, (int32_t)slen);
     bv_write_u8(&wg->out, WASM_OPCODE_I32_STORE);
     bv_write_u8(&wg->out, 0x02); bv_write_u8(&wg->out, 0x00);
     /* call fd_write */
@@ -310,16 +330,47 @@ static void emit_expr(WasmGen *wg, ASTNode *n) {
         case NODE_BOOL:
             emit_i32_const(wg, strcmp((const char *)n->data, "true") == 0 ? 1 : 0);
             break;
-        case NODE_IDENT:
-            emit_i32_const(wg, 0);
+        case NODE_IDENT: {
+            /* Bug#33: 局部变量真实访问 */
+            const char *vn = n->data ? (const char *)n->data : "";
+            int li = wasm_local_lookup(wg, vn);
+            if (li >= 0) {
+                bv_write_u8(&wg->out, WASM_OPCODE_LOCAL_GET);
+                bv_write_u32_leb128(&wg->out, (uint32_t)li);
+            } else {
+                emit_i32_const(wg, 0);
+            }
             break;
+        }
         case NODE_CALL: {
             const char *name = n->data ? (const char *)n->data : "";
             if (strcmp(name, "print") == 0) {
                 emit_print_call(wg, n); /* 已内部平衡, 无需 DROP */
-            } else {
-                emit_i32_const(wg, 0);
+                break;
             }
+            /* Bug#33: 二元运算符真实语义 */
+            {
+                unsigned char opc = 0;
+                if (strcmp(name, "+") == 0) opc = WASM_OPCODE_I32_ADD;
+                else if (strcmp(name, "-") == 0) opc = WASM_OPCODE_I32_SUB;
+                else if (strcmp(name, "*") == 0) opc = WASM_OPCODE_I32_MUL;
+                else if (strcmp(name, "/") == 0) opc = WASM_OPCODE_I32_DIV_S;
+                else if (strcmp(name, "==") == 0) opc = WASM_OPCODE_I32_EQ;
+                else if (strcmp(name, "!=") == 0) opc = WASM_OPCODE_I32_NE;
+                else if (strcmp(name, "<") == 0) opc = WASM_OPCODE_I32_LT_S;
+                else if (strcmp(name, ">") == 0) opc = WASM_OPCODE_I32_GT_S;
+                else if (strcmp(name, "<=") == 0) opc = WASM_OPCODE_I32_LE_S;
+                else if (strcmp(name, ">=") == 0) opc = WASM_OPCODE_I32_GE_S;
+                else if (strcmp(name, "and") == 0) opc = WASM_OPCODE_I32_AND;
+                else if (strcmp(name, "or") == 0) opc = WASM_OPCODE_I32_OR;
+                if (opc && n->child_count >= 2) {
+                    emit_expr(wg, n->children[0]);
+                    emit_expr(wg, n->children[1]);
+                    bv_write_u8(&wg->out, opc);
+                    break;
+                }
+            }
+            emit_i32_const(wg, 0);
             break;
         }
         case NODE_SEND:
@@ -359,6 +410,32 @@ static void emit_expr(WasmGen *wg, ASTNode *n) {
         case NODE_CAP:
             if (n->child_count >= 1) emit_expr(wg, n->children[0]);
             break;
+        case NODE_EMPTY:
+            /* Bug#33b: 二元运算符节点是 NODE_EMPTY(data=op) 而非 NODE_CALL */
+            if (n->data && n->child_count >= 2) {
+                const char *name = (const char *)n->data;
+                unsigned char opc = 0;
+                if (strcmp(name, "+") == 0) opc = WASM_OPCODE_I32_ADD;
+                else if (strcmp(name, "-") == 0) opc = WASM_OPCODE_I32_SUB;
+                else if (strcmp(name, "*") == 0) opc = WASM_OPCODE_I32_MUL;
+                else if (strcmp(name, "/") == 0) opc = WASM_OPCODE_I32_DIV_S;
+                else if (strcmp(name, "==") == 0) opc = WASM_OPCODE_I32_EQ;
+                else if (strcmp(name, "!=") == 0) opc = WASM_OPCODE_I32_NE;
+                else if (strcmp(name, "<") == 0) opc = WASM_OPCODE_I32_LT_S;
+                else if (strcmp(name, ">") == 0) opc = WASM_OPCODE_I32_GT_S;
+                else if (strcmp(name, "<=") == 0) opc = WASM_OPCODE_I32_LE_S;
+                else if (strcmp(name, ">=") == 0) opc = WASM_OPCODE_I32_GE_S;
+                else if (strcmp(name, "and") == 0) opc = WASM_OPCODE_I32_AND;
+                else if (strcmp(name, "or") == 0) opc = WASM_OPCODE_I32_OR;
+                if (opc) {
+                    emit_expr(wg, n->children[0]);
+                    emit_expr(wg, n->children[1]);
+                    bv_write_u8(&wg->out, opc);
+                    break;
+                }
+            }
+            emit_i32_const(wg, 0);
+            break;
         default:
             emit_i32_const(wg, 0);
             break;
@@ -372,15 +449,33 @@ static void emit_stmt(WasmGen *wg, ASTNode *n) {
             emit_expr(wg, n);
             break;
         case NODE_VAR:
-        case NODE_LET:
-            emit_expr(wg, n);
-            bv_write_u8(&wg->out, WASM_OPCODE_DROP);
+        case NODE_LET: {
+            /* Bug#33: var x: T = expr → expr; local.set x */
+            ASTNode *init = NULL;
+            if (n->child_count > 1) init = n->children[1];
+            else if (n->child_count > 0 && n->children[0]->type != NODE_CAP) init = n->children[0];
+            int li = n->data ? wasm_local_ensure(wg, (const char *)n->data) : -1;
+            if (init) {
+                emit_expr(wg, init);
+                if (li >= 0) {
+                    bv_write_u8(&wg->out, WASM_OPCODE_LOCAL_SET);
+                    bv_write_u32_leb128(&wg->out, (uint32_t)li);
+                } else {
+                    bv_write_u8(&wg->out, WASM_OPCODE_DROP);
+                }
+            }
             break;
+        }
         case NODE_IF:
+            /* Bug#33: children[0]=条件, [1]=then块, [2]=else块; blocktype=void */
+            if (n->child_count > 0) emit_expr(wg, n->children[0]);
+            else emit_i32_const(wg, 0);
             bv_write_u8(&wg->out, WASM_OPCODE_IF);
-            bv_write_u8(&wg->out, 0x7F);
-            for (size_t i = 0; i < n->child_count && i < 2; i++) {
-                emit_stmt(wg, n->children[i]);
+            bv_write_u8(&wg->out, 0x40);
+            if (n->child_count > 1) emit_stmt(wg, n->children[1]);
+            if (n->child_count > 2 && n->children[2]) {
+                bv_write_u8(&wg->out, WASM_OPCODE_ELSE);
+                emit_stmt(wg, n->children[2]);
             }
             bv_write_u8(&wg->out, WASM_OPCODE_END);
             break;
@@ -392,6 +487,24 @@ static void emit_stmt(WasmGen *wg, ASTNode *n) {
                 emit_expr(wg, n);
                 bv_write_u8(&wg->out, WASM_OPCODE_DROP);
             }
+            break;
+        }
+        case NODE_WHILE: {
+            /* block { loop { cond; i32.eqz; br_if 1; body; br 0 } } */
+            bv_write_u8(&wg->out, WASM_OPCODE_BLOCK);
+            bv_write_u8(&wg->out, 0x40);
+            bv_write_u8(&wg->out, WASM_OPCODE_LOOP);
+            bv_write_u8(&wg->out, 0x40);
+            if (n->child_count > 0) emit_expr(wg, n->children[0]);
+            else emit_i32_const(wg, 1);
+            bv_write_u8(&wg->out, WASM_OPCODE_I32_EQZ);
+            bv_write_u8(&wg->out, WASM_OPCODE_BR_IF);
+            bv_write_u8(&wg->out, 0x01);
+            if (n->child_count > 1) emit_stmt(wg, n->children[1]);
+            bv_write_u8(&wg->out, WASM_OPCODE_BR);
+            bv_write_u8(&wg->out, 0x00);
+            bv_write_u8(&wg->out, WASM_OPCODE_END);
+            bv_write_u8(&wg->out, WASM_OPCODE_END);
             break;
         }
         case NODE_EMPTY:
@@ -539,10 +652,14 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
     bv_write_u8(&bv, 0x01); /* min = 1 page (64KB) */
 
     /* --- export section --- */
+    /* Bug#31: WASI fd_write 要求 memory export ("missing required memory export") */
     bv_write_u8(&bv, 0x07);
     {
         ByteVec body = {0};
-        bv_write_u8(&body, 0x01);
+        bv_write_u8(&body, 0x02);
+        bv_write_str(&body, "memory");
+        bv_write_u8(&body, 0x02); /* export kind: memory */
+        bv_write_u8(&body, 0x00); /* memory index 0 */
         bv_write_str(&body, "main");
         bv_write_u8(&body, 0x00);
         /* main 的函数索引 = import 数量 (fd_write=0, proc_exit=1, ...) */
@@ -567,10 +684,16 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
 
         bv_write_u32_leb128(&body, 2); /* 2 functions: main + print_i32 */
 
-        /* func 0: main */
+        /* func 0: main (Bug#33: 单 WasmGen 累积 locals + locals 声明头) */
         {
-            ByteVec code = {0};
-            bv_write_u8(&code, 0x00); /* 0 locals */
+            WasmGen fw = {0};
+            fw.print_func_idx = wg.print_func_idx;
+            fw.next_str_addr = wg.next_str_addr;
+            fw.strings = wg.strings;
+            fw.string_lens = wg.string_lens;
+            fw.string_addrs = wg.string_addrs;
+            fw.string_count = wg.string_count;
+            fw.string_cap = wg.string_cap;
 
             if (ast) {
                 for (size_t i = 0; i < ast->child_count; i++) {
@@ -582,21 +705,23 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
                         for (size_t k = 0; k < m->child_count; k++) {
                             ASTNode *c = m->children[k];
                             if (!c) continue;
-                            WasmGen stmt_wg = {0};
-                            stmt_wg.print_func_idx = wg.print_func_idx;
-                            stmt_wg.next_str_addr = wg.next_str_addr;
-                            stmt_wg.strings = wg.strings;
-                            stmt_wg.string_lens = wg.string_lens;
-                            stmt_wg.string_addrs = wg.string_addrs;
-                            stmt_wg.string_count = wg.string_count;
-                            stmt_wg.string_cap = wg.string_cap;
-                            emit_stmt(&stmt_wg, c);
-                            bv_write_raw(&code, stmt_wg.out.data, stmt_wg.out.size);
-                            bv_free(&stmt_wg.out);
+                            emit_stmt(&fw, c);
                         }
                     }
                 }
             }
+
+            ByteVec code = {0};
+            if (fw.local_count > 0) {
+                /* 1 组 locals: N × i32 */
+                bv_write_u8(&code, 0x01);
+                bv_write_u32_leb128(&code, (uint32_t)fw.local_count);
+                bv_write_u8(&code, 0x7F);
+            } else {
+                bv_write_u8(&code, 0x00);
+            }
+            bv_write_raw(&code, fw.out.data, fw.out.size);
+            bv_free(&fw.out);
             bv_write_u8(&code, WASM_OPCODE_I32_CONST);
             bv_write_i32_leb128(&code, 0);
             bv_write_u8(&code, WASM_OPCODE_END);
