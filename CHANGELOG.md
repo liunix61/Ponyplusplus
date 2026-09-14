@@ -8,6 +8,8 @@ App-as-test 实证期（PonyHarness H0-H4 + PonyAgents M1/M2 驱动），累计�
 
 ### Added
 - `str_from_char(c)`：单字符构造内建（Bug#37）
+- `str_replace_all(s, old, new)`：全量替换内建（Bug#40 — 此前无分派被误分派成类方法，现直连运行时）
+- 类型推断修复（Bug#39）：`recv.slice(...)` 点号形态此前绕过 String 返回表，concat 内联被 itoa 包裹成数字
 - `s.find(sub)` / `s.contains(sub)`：String 方法（Bug#37）
 - `s.slice(start[, end])`：子串内建（Bug#38 — 此前未知 String 方法被静默丢弃生成空表达式；现钳位语义 + 缺省 end 到尾）
 - `http_post_h(url, body, extra_headers)`：带自定义头 POST（H2）
