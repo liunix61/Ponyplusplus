@@ -783,10 +783,33 @@ static ASTNode *parse_expression_primary(Parser *p) {
                     }
                     return call;
                 }
-                /* 非调用: 字段访问 b.v → IDENT "b.v" (codegen 依类型字段表生成 b->v) */
-                ASTNode *node = ast_node_new(NODE_IDENT, line, col);
-                if (node) node->data = s_strdup(method_name);
-                return node;
+                /* 非调用: 字段访问 b.v → IDENT "b.v" (支持多段链 b.v.x — Bug#22) */
+                {
+                    char fbuf[512];
+                    snprintf(fbuf, sizeof(fbuf), "%s", method_name);
+                    while (match(p, TK_DOT)) {
+                        /* 只有后面跟 IDENT 且再无括号时才作为字段段消费 */
+                        size_t save = p->pos;
+                        advance(p);
+                        if (p->pos < p->token_count && cur(p)->type == TK_IDENT) {
+                            Token *nx = cur(p);
+                            /* 若是 a.b.c() 方法调用, 交回上层(此处只收纯字段段) */
+                            if (p->pos + 1 < p->token_count && p->tokens[p->pos + 1].type == TK_PAREN_L) {
+                                p->pos = save;
+                                break;
+                            }
+                            advance(p);
+                            size_t fl = strlen(fbuf);
+                            snprintf(fbuf + fl, sizeof(fbuf) - fl, ".%s", nx->value);
+                        } else {
+                            p->pos = save;
+                            break;
+                        }
+                    }
+                    ASTNode *node = ast_node_new(NODE_IDENT, line, col);
+                    if (node) node->data = s_strdup(fbuf);
+                    return node;
+                }
             }
         }
 
@@ -923,6 +946,13 @@ static ASTNode *parse_mul_expr(Parser *p) {
 
 /* 一元: ! - */
 static ASTNode *parse_unary_expr(Parser *p) {
+    /* 括号分组 (Bug#21): (expr) — 调用参数/赋值右侧括号表达式此前 token 不消费导致死循环 */
+    if (cur(p)->type == TK_PAREN_L) {
+        advance(p);
+        ASTNode *inner = parse_expression(p);
+        if (match(p, TK_PAREN_R)) advance(p);
+        return inner;
+    }
     if (cur(p)->type == TK_BANG) {
         advance(p);
         ASTNode *node = ast_node_new(NODE_EMPTY, cur(p)->line, cur(p)->column);
