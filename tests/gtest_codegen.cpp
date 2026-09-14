@@ -154,3 +154,31 @@ TEST(Codegen, CharCodeBuiltin) {
     ast_node_free(ast);
     std::remove("/tmp/ponypp_gen_cc.c");
 }
+
+// M3: env_get 内建 — 环境变量读取 (native/wasi-libc getenv), 返回 String
+TEST(Codegen, EnvGetBuiltin) {
+    const char* src =
+        "actor main {\n"
+        "  new create() => {\n"
+        "    var v: String = env_get(\"HOME\")\n"
+        "    print(\"v=\" + v)\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    FILE* f = fopen("/tmp/ponypp_gen_env.c", "w");
+    ASSERT_NE(f, nullptr);
+    Codegen* cg = codegen_new(f);
+    codegen_program(cg, ast);
+    codegen_free(cg);
+    fclose(f);
+    FILE* rf = fopen("/tmp/ponypp_gen_env.c", "r");
+    ASSERT_NE(rf, nullptr);
+    static char buf[262144] = {0};
+    size_t n = fread(buf, 1, sizeof(buf) - 1, rf);
+    fclose(rf);
+    buf[n] = 0;
+    EXPECT_NE(std::strstr(buf, "pny_env_get("), nullptr);
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen_env.c");
+}
