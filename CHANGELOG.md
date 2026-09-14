@@ -12,6 +12,7 @@ App-as-test 实证期（PonyHarness H0-H4 + PonyAgents M1/M2 驱动），累计�
 - `http_post_h(url, body, extra_headers)`：带自定义头 POST（H2）
 - HTTP 运行时 keep-alive：客户端连接缓存（按 host:port）+ Content-Length 帧读取 + 失败重试 1 次；服务端连接复用（poll 300ms 回退）+ `Connection: close` 语义
 - HTTP 服务端块读优化：请求头/体 1024B/次读取（替代逐字节 read，~150 syscall → ~2）
+- UNIX domain socket 三内建：`http_accept_unix(path)` / `http_respond_unix(json)` / `http_post_unix(path, body)` — 本机零拷贝通道，语义同 TCP 版（keep-alive 复用 + 块读）
 - wasm 后端真实语义（Bug#31-33）：locals 表、二元运算符、if/while、var 初始化、`memory` export、signed LEB i32.const
 - 链式解析基础设施 `cg_chain_resolve` + 全局类型字段表 `type_field_types`（Bug#25/26）
 - String 返回方法注册表 `str_ret_methods`（Bug#16/36）
