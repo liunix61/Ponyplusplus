@@ -47,7 +47,7 @@ Pony++ 是"天生云原生"的并发编程语言，融合：
 |---|---|
 | `http_post(url, body)` | POST；客户端 keep-alive（按 host:port 缓存连接）+ Content-Length 帧读取 + 失败自动重试 1 次 |
 | `http_post_h(url, body, extra_headers)` | 带自定义头（0.2.0 新增，extra_headers 为 `\r\n` 分隔的头行） |
-| `http_accept(port)` / `http_respond(json)` | 服务端：阻塞 accept，连接复用（poll 300ms 无数据回退新连接；请求头含 `Connection: close` 则响应后关闭）。**accept 只返回 body**（路由在头里，需单端点 JSON 分发） |
+| `http_accept(port)` / `http_respond(json)` | 服务端：阻塞 accept，连接复用（poll 300ms 无数据回退新连接；请求头含 `Connection: close` 则响应后关闭）。请求头/体均**块读**（1024B/次）。**accept 只返回 body**（路由在头里，需单端点 JSON 分发） |
 
 ### 系统 / 沙箱 / JSON
 | 函数 | 说明 |
