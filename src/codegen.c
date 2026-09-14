@@ -1191,11 +1191,12 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 } else if (strcmp(d, "==") == 0 || strcmp(d, "!=") == 0 ||
                            strcmp(d, "<") == 0 || strcmp(d, ">") == 0 ||
                            strcmp(d, "<=") == 0 || strcmp(d, ">=") == 0) {
-                    /* 比较运算符; 任一侧是字符串表达式且是等值比较 → strcmp 内容比较
-                       (Bug#30: 字面量判定不够 — var/concat/builtin调用同样可能是 String) */
+                    /* 比较运算符; 任一侧是字符串表达式 → strcmp 内容比较
+                       (Bug#30: 字面量判定不够 — var/concat/builtin调用同样可能是 String)
+                       Bug#43: 此前仅 ==/!= 走 strcmp, < > <= >= 落到裸指针比较
+                       (字面量/同缓冲区偶然正确, 分配字符串必错) — 全部比较统一 strcmp */
                     int str_cmp = 0;
-                    if ((strcmp(d, "==") == 0 || strcmp(d, "!=") == 0) &&
-                        n->child_count >= 2 && n->children[0] && n->children[1] &&
+                    if (n->child_count >= 2 && n->children[0] && n->children[1] &&
                         (n->children[0]->type == NODE_STRING || n->children[1]->type == NODE_STRING ||
                          cg_expr_is_string(cg, n->children[0]) || cg_expr_is_string(cg, n->children[1]))) {
                         str_cmp = 1;
@@ -1205,7 +1206,7 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                         cg_expr(cg, n->children[0]);
                         cg_emit_raw(cg, ", ");
                         cg_expr(cg, n->children[1]);
-                        cg_emit_raw(cg, ") %s 0)", strcmp(d, "==") == 0 ? "==" : "!=");
+                        cg_emit_raw(cg, ") %s 0)", d);
                     } else {
                         cg_emit_raw(cg, "(");
                         if (n->child_count > 0) cg_expr(cg, n->children[0]);

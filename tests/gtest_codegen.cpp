@@ -60,3 +60,37 @@ TEST(Codegen, ActorWithFields) {
     ast_node_free(ast);
     std::remove("/tmp/ponypp_fields.c");
 }
+
+// Bug#43: 字符串 < > <= >= 此前走裸指针比较 (仅 ==/!= 有 strcmp)
+TEST(Codegen, StrRelationalCmp) {
+    const char* src =
+        "actor main {\n"
+        "  new create() => {\n"
+        "    var b: String = str_field(sys_exec(\"printf x\"), 0, \"\\n\")\n"
+        "    var c: String = str_field(sys_exec(\"printf y\"), 0, \"\\n\")\n"
+        "    if b < c { print(\"lt\") }\n"
+        "    if c > b { print(\"gt\") }\n"
+        "    if b <= b { print(\"le\") }\n"
+        "    if c >= b { print(\"ge\") }\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    FILE* f = fopen("/tmp/ponypp_gen43.c", "w");
+    ASSERT_NE(f, nullptr);
+    Codegen* cg = codegen_new(f);
+    codegen_program(cg, ast);
+    codegen_free(cg);
+    fclose(f);
+    FILE* rf = fopen("/tmp/ponypp_gen43.c", "r");
+    ASSERT_NE(rf, nullptr);
+    static char buf[262144] = {0};
+    size_t n = fread(buf, 1, sizeof(buf) - 1, rf);
+    fclose(rf);
+    buf[n] = 0;
+    int cnt = 0;
+    for (const char* p = std::strstr(buf, "strcmp("); p; p = std::strstr(p + 1, "strcmp(")) cnt++;
+    EXPECT_GE(cnt, 4) << "字符串关系比较必须全部走 strcmp";
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen43.c");
+}
