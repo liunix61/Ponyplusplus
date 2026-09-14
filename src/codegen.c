@@ -253,6 +253,7 @@ static char *cg_cstr_escape(const char *s, char *buf, size_t sz) {
         if (c == '\\') { if (j + 2 < sz) { buf[j++] = '\\'; buf[j++] = '\\'; } }
         else if (c == '"') { if (j + 2 < sz) { buf[j++] = '\\'; buf[j++] = '"'; } }
         else if (c == '\n') { if (j + 2 < sz) { buf[j++] = '\\'; buf[j++] = 'n'; } }
+        else if (c == '\r') { if (j + 2 < sz) { buf[j++] = '\\'; buf[j++] = 'r'; } }
         else if (c == '\t') { if (j + 2 < sz) { buf[j++] = '\\'; buf[j++] = 't'; } }
         else buf[j++] = c;
     }
@@ -804,13 +805,14 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 cg_emit_raw(cg, ")");
                 break;
             }
-            /* 内置函数: http_post(url, body) → pny_http_post */
-            if (func && strcmp(func, "http_post") == 0) {
-                cg_emit_raw(cg, "pny_http_post(");
+            /* 内置函数: http_post(url, body) / http_post_h(url, body, extra_headers) */
+            if (func && (strcmp(func, "http_post") == 0 || strcmp(func, "http_post_h") == 0)) {
+                cg_emit_raw(cg, "pny_http_post_h(");
                 for (size_t ai = 0; ai < args->child_count; ai++) {
                     if (ai) cg_emit_raw(cg, ", ");
                     cg_expr(cg, args->children[ai]);
                 }
+                if (args->child_count < 3) cg_emit_raw(cg, ", NULL");
                 cg_emit_raw(cg, ")");
                 break;
             }
@@ -1700,7 +1702,48 @@ static const char *PNY_HTTP_RUNTIME =
 "    char *b = strstr(resp, \"\\r\\n\\r\\n\");\n"
 "    if (b) return b + 4;\n"
 "    return resp;\n"
-"}\n";
+"}\n"
+"static char *pny_http_post_h(const char *url, const char *body, const char *extra_headers) {\n"
+"    if (!url || strncmp(url, \"http://\", 7) != 0) return (char *)\"\";\n"
+"    const char *hp = url + 7;\n"
+"    const char *slash = strchr(hp, '/');\n"
+"    char host[256];\n"
+"    size_t hl = slash ? (size_t)(slash - hp) : strlen(hp);\n"
+"    if (hl >= sizeof(host)) hl = sizeof(host) - 1;\n"
+"    memcpy(host, hp, hl); host[hl] = 0;\n"
+"    const char *path = slash ? slash : \"/\";\n"
+"    int port = 80;\n"
+"    char *colon = strchr(host, ':');\n"
+"    if (colon) { *colon = 0; port = atoi(colon + 1); }\n"
+"    int fd = socket(AF_INET, SOCK_STREAM, 0);\n"
+"    if (fd < 0) return (char *)\"\";\n"
+"    struct hostent *he = gethostbyname(host);\n"
+"    if (!he) { close(fd); return (char *)\"\"; }\n"
+"    struct sockaddr_in addr;\n"
+"    memset(&addr, 0, sizeof(addr));\n"
+"    addr.sin_family = AF_INET;\n"
+"    addr.sin_port = htons((uint16_t)port);\n"
+"    memcpy(&addr.sin_addr, he->h_addr_list[0], (size_t)he->h_length);\n"
+"    if (connect(fd, (struct sockaddr *)&addr, (socklen_t)sizeof(addr)) < 0) { close(fd); return (char *)\"\"; }\n"
+"    size_t blen = body ? strlen(body) : 0;\n"
+"    char hdr[1024];\n"
+"    int hln = snprintf(hdr, sizeof(hdr),\n"
+"        \"POST %s HTTP/1.1\\r\\nHost: %s\\r\\nContent-Type: application/json\\r\\n%sContent-Length: %zu\\r\\nConnection: close\\r\\n\\r\\n\",\n"
+"        path, host, extra_headers ? extra_headers : \"\", blen);\n"
+"    if (write(fd, hdr, (size_t)hln) < 0) { close(fd); return (char *)\"\"; }\n"
+"    if (blen && write(fd, body, blen) < 0) { close(fd); return (char *)\"\"; }\n"
+"    size_t cap = 65536, got = 0;\n"
+"    char *resp = (char *)malloc(cap);\n"
+"    if (!resp) { close(fd); return (char *)\"\"; }\n"
+"    ssize_t r;\n"
+"    while (got < cap - 1 && (r = read(fd, resp + got, cap - 1 - got)) > 0) got += (size_t)r;\n"
+"    resp[got] = 0;\n"
+"    close(fd);\n"
+"    char *b = strstr(resp, \"\\r\\n\\r\\n\");\n"
+"    if (b) return b + 4;\n"
+"    return resp;\n"
+"}\n"
+"#define pny_http_post(u, b) pny_http_post_h(u, b, NULL)\n";
 
 void codegen_program(Codegen *cg, ASTNode *ast) {
     cg_emit_raw(cg, "/* Pony++ native backend generated code */\n");
