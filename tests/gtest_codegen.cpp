@@ -126,3 +126,31 @@ TEST(Codegen, FileSizeAppendBuiltins) {
     ast_node_free(ast);
     std::remove("/tmp/ponypp_gen_fio.c");
 }
+
+// M2: char_code 内建 — 首字节 ASCII (页日志校验和用)
+TEST(Codegen, CharCodeBuiltin) {
+    const char* src =
+        "actor main {\n"
+        "  new create() => {\n"
+        "    var a: U32 = char_code(\"A\")\n"
+        "    print(\"a=\" + a)\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    FILE* f = fopen("/tmp/ponypp_gen_cc.c", "w");
+    ASSERT_NE(f, nullptr);
+    Codegen* cg = codegen_new(f);
+    codegen_program(cg, ast);
+    codegen_free(cg);
+    fclose(f);
+    FILE* rf = fopen("/tmp/ponypp_gen_cc.c", "r");
+    ASSERT_NE(rf, nullptr);
+    static char buf[262144] = {0};
+    size_t n = fread(buf, 1, sizeof(buf) - 1, rf);
+    fclose(rf);
+    buf[n] = 0;
+    EXPECT_NE(std::strstr(buf, "pny_char_code("), nullptr);
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen_cc.c");
+}

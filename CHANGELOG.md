@@ -10,6 +10,7 @@ App-as-test 实证期（PonyHarness H0-H4 + PonyAgents M1/M2 驱动），累计�
 - `str_from_char(c)`：单字符构造内建（Bug#37）
 - `str_replace_all(s, old, new)`：全量替换内建（Bug#40 — 此前无分派被误分派成类方法，现直连运行时）
 - 类型推断修复（Bug#39）：`recv.slice(...)` 点号形态此前绕过 String 返回表，concat 内联被 itoa 包裹成数字
+- `char_code(s): U32` 内建：首字节 ASCII 码（空串=0）— 页日志校验和用
 - `file_size(path)` 内建：返回文件字节数（不存在=0）；`file_append(path, data)` 确认可用（复用 PEX 时代运行时）— PonyDB M2 COW 页文件地基
 - `\xNN` 十六进制转义（Bug#44）：字符串/字符字面量此前无 'x' 分支，反斜杠被吞成字面 x — 现支持真二进制字节
 - 字符串关系比较修复（Bug#43）：`< > <= >=` 对 String 此前落裸 C 指针比较（仅 ==/!= 有 strcmp），字面量/同缓冲区偶然正确、分配字符串必错 — 现全部比较统一 strcmp

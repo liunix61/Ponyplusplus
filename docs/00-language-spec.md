@@ -75,6 +75,7 @@ Pony++ 是"天生云原生"的并发编程语言，融合：
 | `s.slice(start)` / `s.slice(start, end)` | 子串；end 缺省到尾；越界钳位（0.2.0 新增，Bug#38） |
 | `"a\x1fb"` | `\xNN` 十六进制转义（真二进制字节；0.2.0 修复 Bug#44） |
 - **`file_size(path): U32`** — 文件字节数（不存在返回 0）。`file_append(path, data): U32` — 追加写（1=成功）。二者为 PonyDB M2 持久化页日志的内建支撑。
+- **`char_code(s): U32`** — 首字节 ASCII 码（空串返回 0）。用于 PonyDB M2 页日志校验和。
 | `s1 < s2` 等关系比较 | String 关系比较按字典序（strcmp 语义；0.2.0 修复 Bug#43 — 此前裸指针比较） |
 | `f(x).len/slice/find/contains(...)` | 链式方法：函数返回值上直接调用 String 内建（0.2.0 新增，Bug#41 — 此前解析器死循环） |
 | `str_replace_all(s, old, new)` | 全量替换（0.2.0 新增，Bug#40） |

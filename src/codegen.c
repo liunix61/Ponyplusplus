@@ -367,7 +367,7 @@ static bool cg_expr_is_string(Codegen *cg, ASTNode *n) {
     if (n->type == NODE_CALL && n->data) {
         /* 内置函数返回 String (Bug#24) */
         static const char *str_fns[] = {
-            "str_field", "file_read", "file_size", "sandbox_exec", "str_hash", "slice",
+            "str_field", "file_read", "file_size", "char_code", "sandbox_exec", "str_hash", "slice",
             "stdin_line", "json_raw_get", "http_accept", "http_accept_unix", "http_post_unix", "http_respond_unix", "sys_exec",
             "field_get", "str_from_char", "str_replace_all", NULL
         };
@@ -998,6 +998,13 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
             }
             if (func && strcmp(func, "file_size") == 0) {
                 cg_emit_raw(cg, "((int)pny_file_size(");
+                if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
+                cg_emit_raw(cg, "))");
+                break;
+            }
+            if (func && strcmp(func, "char_code") == 0) {
+                /* 首字节 ASCII 码 (校验和用); 空串 = 0 */
+                cg_emit_raw(cg, "((int)pny_char_code(");
                 if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
                 cg_emit_raw(cg, "))");
                 break;
@@ -1810,7 +1817,7 @@ static const char *PNY_EXEC_RUNTIME =
 "\n/* ===== exec 内联运行时 (M2: 真实命令执行, 输出截断8KB) ===== */\nstatic char *pny_exec_capture(const char *cmd) {\n    if (!cmd) return (char *)\"\";\n    FILE *p = popen(cmd, \"r\");\n    if (!p) return (char *)\"EXEC: popen failed\";\n    char *buf = (char *)malloc(8192);\n    if (!buf) { pclose(p); return (char *)\"EXEC: oom\"; }\n    size_t n = fread(buf, 1, 8191, p);\n    buf[n] = 0;\n    int rc = pclose(p);\n    if (n == 0 && rc != 0) {\n        snprintf(buf, 8192, \"EXEC: exit=%d\", rc);\n    }\n    return buf;\n}\n";
 
 static const char *PNY_FILE_RUNTIME =
-"\n/* ===== File IO 内联运行时 ===== */\nstatic char *pny_file_read(const char *path) {\n    if (!path) return (char *)\"\";\n    FILE *f = fopen(path, \"rb\");\n    if (!f) return (char *)\"\";\n    fseek(f, 0, SEEK_END);\n    long n = ftell(f);\n    fseek(f, 0, SEEK_SET);\n    if (n < 0) { fclose(f); return (char *)\"\"; }\n    char *buf = (char *)malloc((size_t)n + 1);\n    if (!buf) { fclose(f); return (char *)\"\"; }\n    size_t rd = fread(buf, 1, (size_t)n, f);\n    buf[rd] = 0;\n    fclose(f);\n    return buf;\n}\nstatic int pny_file_write(const char *path, const char *content) {\n    if (!path) return 0;\n    FILE *f = fopen(path, \"wb\");\n    if (!f) return 0;\n    size_t len = content ? strlen(content) : 0;\n    size_t wr = len ? fwrite(content, 1, len, f) : 0;\n    fclose(f);\n    return wr == len;\n}\nstatic int pny_file_exists(const char *path) {\n    if (!path) return 0;\n    FILE *f = fopen(path, \"rb\");\n    if (!f) return 0;\n    fclose(f);\n    return 1;\n}\nstatic int pny_file_size(const char *path) {\n    if (!path) return 0;\n    FILE *f = fopen(path, \"rb\");\n    if (!f) return 0;\n    fseek(f, 0, SEEK_END);\n    long n = ftell(f);\n    fclose(f);\n    return (int)(n < 0 ? 0 : n);\n}\n";
+"\n/* ===== File IO 内联运行时 ===== */\nstatic char *pny_file_read(const char *path) {\n    if (!path) return (char *)\"\";\n    FILE *f = fopen(path, \"rb\");\n    if (!f) return (char *)\"\";\n    fseek(f, 0, SEEK_END);\n    long n = ftell(f);\n    fseek(f, 0, SEEK_SET);\n    if (n < 0) { fclose(f); return (char *)\"\"; }\n    char *buf = (char *)malloc((size_t)n + 1);\n    if (!buf) { fclose(f); return (char *)\"\"; }\n    size_t rd = fread(buf, 1, (size_t)n, f);\n    buf[rd] = 0;\n    fclose(f);\n    return buf;\n}\nstatic int pny_file_write(const char *path, const char *content) {\n    if (!path) return 0;\n    FILE *f = fopen(path, \"wb\");\n    if (!f) return 0;\n    size_t len = content ? strlen(content) : 0;\n    size_t wr = len ? fwrite(content, 1, len, f) : 0;\n    fclose(f);\n    return wr == len;\n}\nstatic int pny_file_exists(const char *path) {\n    if (!path) return 0;\n    FILE *f = fopen(path, \"rb\");\n    if (!f) return 0;\n    fclose(f);\n    return 1;\n}\nstatic int pny_file_size(const char *path) {\n    if (!path) return 0;\n    FILE *f = fopen(path, \"rb\");\n    if (!f) return 0;\n    fseek(f, 0, SEEK_END);\n    long n = ftell(f);\n    fclose(f);\n    return (int)(n < 0 ? 0 : n);\n}\nstatic int pny_char_code(const char *s) {\n    if (!s || !*s) return 0;\n    return (int)(unsigned char)s[0];\n}\n";
 
 static const char *PNY_STR_RUNTIME =
 "\n/* ===== String concat 内联运行时 ===== */\nstatic char *pny_str_concat(const char *a, const char *b) {\n    if (!a) a = \"\"; if (!b) b = \"\";\n    size_t na = strlen(a), nb = strlen(b);\n    char *r = (char *)malloc(na + nb + 1);\n    if (!r) return (char *)\"\";\n    memcpy(r, a, na); memcpy(r + na, b, nb + 1);\n    return r;\n}\nstatic char *pny_itoa(long long v) {\n    char *out = (char *)malloc(24);\n    if (out) snprintf(out, 24, \"%lld\", v);\n    return out;\n}\nstatic char *pny_str_from_char(int c) {\n    char *out = (char *)malloc(2);\n    if (out) { out[0] = (char)c; out[1] = 0; }\n    return out;\n}\nstatic long long pny_str_find(const char *s, const char *sub) {\n    if (!s || !sub) return 4294967295LL;\n    const char *p = strstr(s, sub);\n    return p ? (long long)(p - s) : 4294967295LL;\n}\nstatic int pny_str_contains(const char *s, const char *sub) {\n    if (!s || !sub) return 0;\n    return strstr(s, sub) != NULL;\n}\nstatic char *pny_str_slice(const char *s, long long start, long long end) {\n    if (!s) return (char *)\"\";\n    size_t n = strlen(s);\n    if (start < 0) start = 0;\n    if ((size_t)start > n) start = (long long)n;\n    if (end < 0 || (size_t)end > n) end = (long long)n;\n    if (end < start) end = start;\n    size_t len = (size_t)(end - start);\n    char *out = (char *)malloc(len + 1);\n    if (!out) return (char *)\"\";\n    memcpy(out, s + start, len);\n    out[len] = 0;\n    return out;\n}\n";
