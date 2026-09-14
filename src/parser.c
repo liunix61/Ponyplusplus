@@ -793,10 +793,23 @@ static ASTNode *parse_expression_primary(Parser *p) {
                         advance(p);
                         if (p->pos < p->token_count && cur(p)->type == TK_IDENT) {
                             Token *nx = cur(p);
-                            /* 若是 a.b.c() 方法调用, 交回上层(此处只收纯字段段) */
+                            /* a.b.m(args): 末段+括号 → NODE_CALL "a.b.m" (Bug#27) */
                             if (p->pos + 1 < p->token_count && p->tokens[p->pos + 1].type == TK_PAREN_L) {
-                                p->pos = save;
-                                break;
+                                advance(p); /* 段名 */
+                                size_t fl = strlen(fbuf);
+                                snprintf(fbuf + fl, sizeof(fbuf) - fl, ".%s", nx->value);
+                                advance(p); /* ( */
+                                ASTNode *call = ast_node_new(NODE_CALL, line, col);
+                                if (call) call->data = s_strdup(fbuf);
+                                ASTNode *margs = ast_node_new(NODE_EMPTY, line, col);
+                                if (margs) { margs->data = s_strdup("args"); ast_node_add_child(call, margs); }
+                                while (p->pos < p->token_count && cur(p)->type != TK_PAREN_R) {
+                                    ASTNode *arg = parse_expression(p);
+                                    if (arg) ast_node_add_child(margs, arg);
+                                    if (match(p, TK_COMMA)) advance(p);
+                                }
+                                if (match(p, TK_PAREN_R)) advance(p);
+                                return call;
                             }
                             advance(p);
                             size_t fl = strlen(fbuf);
