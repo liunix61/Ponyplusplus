@@ -94,3 +94,35 @@ TEST(Codegen, StrRelationalCmp) {
     ast_node_free(ast);
     std::remove("/tmp/ponypp_gen43.c");
 }
+
+// M2: file_size/file_append 内建 (COW 页文件需要) — file_append 复用 PEX 时代运行时
+TEST(Codegen, FileSizeAppendBuiltins) {
+    const char* src =
+        "actor main {\n"
+        "  new create() => {\n"
+        "    var r: U32 = file_append(\"/tmp/x.db\", \"data\")\n"
+        "    var sz: U32 = file_size(\"/tmp/x.db\")\n"
+        "    var ex: U32 = file_exists(\"/tmp/x.db\")\n"
+        "    print(\"r=\" + r)\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    FILE* f = fopen("/tmp/ponypp_gen_fio.c", "w");
+    ASSERT_NE(f, nullptr);
+    Codegen* cg = codegen_new(f);
+    codegen_program(cg, ast);
+    codegen_free(cg);
+    fclose(f);
+    FILE* rf = fopen("/tmp/ponypp_gen_fio.c", "r");
+    ASSERT_NE(rf, nullptr);
+    static char buf[262144] = {0};
+    size_t n = fread(buf, 1, sizeof(buf) - 1, rf);
+    fclose(rf);
+    buf[n] = 0;
+    EXPECT_NE(std::strstr(buf, "pny_file_append("), nullptr);
+    EXPECT_NE(std::strstr(buf, "pny_file_size("), nullptr);
+    EXPECT_NE(std::strstr(buf, "pny_file_exists("), nullptr);
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen_fio.c");
+}
