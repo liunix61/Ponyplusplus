@@ -210,6 +210,24 @@ static char *lex_string(Lexer *lex) {
                 case '\\': buf[i++] = '\\'; break;
                 case '"': buf[i++] = '"'; break;
                 case '\'': buf[i++] = '\''; break;
+                case 'x': {
+                    /* Bug#44: \xNN 十六进制转义 — 此前无 'x' 分支, 反斜杠被吞成字面 x */
+                    int hi = -1, lo = -1;
+                    if (lex->pos + 2 < lex->length) {
+                        char h = lex->source[lex->pos + 1];
+                        char l = lex->source[lex->pos + 2];
+                        hi = (h >= '0' && h <= '9') ? h - '0' : (h >= 'a' && h <= 'f') ? h - 'a' + 10 : (h >= 'A' && h <= 'F') ? h - 'A' + 10 : -1;
+                        lo = (l >= '0' && l <= '9') ? l - '0' : (l >= 'a' && l <= 'f') ? l - 'a' + 10 : (l >= 'A' && l <= 'F') ? l - 'A' + 10 : -1;
+                    }
+                    if (hi >= 0 && lo >= 0) {
+                        buf[i++] = (char)(hi * 16 + lo);
+                        advance_char(lex);
+                        advance_char(lex);
+                    } else {
+                        buf[i++] = 'x';
+                    }
+                    break;
+                }
                 default: buf[i++] = esc; break;
             }
         } else {
@@ -308,6 +326,24 @@ static TokenType advance(Lexer *lex) {
                         case 'r': cval = '\r'; break;
                         case '\\': cval = '\\'; break;
                         case '\'': cval = '\''; break;
+                        case 'x': {
+                            /* Bug#44: \xNN 字符字面量 */
+                            int hi = -1, lo = -1;
+                            if (lex->pos + 2 < lex->length) {
+                                char h = lex->source[lex->pos + 1];
+                                char l = lex->source[lex->pos + 2];
+                                hi = (h >= '0' && h <= '9') ? h - '0' : (h >= 'a' && h <= 'f') ? h - 'a' + 10 : (h >= 'A' && h <= 'F') ? h - 'A' + 10 : -1;
+                                lo = (l >= '0' && l <= '9') ? l - '0' : (l >= 'a' && l <= 'f') ? l - 'a' + 10 : (l >= 'A' && l <= 'F') ? l - 'A' + 10 : -1;
+                            }
+                            if (hi >= 0 && lo >= 0) {
+                                cval = (char)(hi * 16 + lo);
+                                advance_char(lex);
+                                advance_char(lex);
+                            } else {
+                                cval = 'x';
+                            }
+                            break;
+                        }
                         default: cval = esc; break;
                     }
                     advance_char(lex);

@@ -143,3 +143,24 @@ TEST(Lexer, LargeInput) {
     lexer_free(lex);
     free(src);
 }
+
+// Bug#44: \xNN 十六进制转义 — 此前无 'x' 分支, 反斜杠被吞成字面 x
+TEST(Lexer, HexEscape) {
+    const char* src = "actor main { new create() => { var s: String = \"a\\x1fb\" } }";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    // 深度找字符串字面量, 断言长度 3 且中间字节 0x1f
+    ASTNode* stack[256]; int sp = 0; stack[sp++] = ast;
+    bool found = false;
+    while (sp > 0) {
+        ASTNode* n = stack[--sp];
+        if (n->type == NODE_STRING && n->data) {
+            const char* v = (const char*)n->data;
+            if (v[0] == 'a' && (unsigned char)v[1] == 0x1f && v[2] == 'b' && v[3] == 0) found = true;
+        }
+        for (size_t i = 0; i < n->child_count && sp < 250; i++)
+            if (n->children[i]) stack[sp++] = n->children[i];
+    }
+    EXPECT_TRUE(found) << "字符串字面量必须含真 0x1f 字节";
+    ast_node_free(ast);
+}
