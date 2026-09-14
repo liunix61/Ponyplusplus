@@ -374,6 +374,13 @@ static bool cg_expr_is_string(Codegen *cg, ASTNode *n) {
         const char *f = (const char *)n->data;
         for (int i = 0; str_fns[i]; i++)
             if (strcmp(f, str_fns[i]) == 0) return true;
+        /* Bug#36: 方法调用 recv.method() 查 String 返回注册表 */
+        {
+            const char *mdot = strrchr(f, '.');
+            const char *mname = mdot ? mdot + 1 : f;
+            for (size_t i = 0; i < cg->str_ret_count; i++)
+                if (strcmp(cg->str_ret_methods[i], mname) == 0) return true;
+        }
         return false;
     }
     if (n->type == NODE_EMPTY && n->data && strcmp((const char *)n->data, "+") == 0) {
