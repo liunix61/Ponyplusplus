@@ -322,3 +322,63 @@ TEST(Codegen, ModuloOperator) {
     ast_node_free(ast);
     std::remove("/tmp/ponypp_gen_mod.c");
 }
+
+
+// P1-4: GC 模式下纯字符缓冲走 GC_malloc_atomic (免保守扫描)
+TEST(Codegen, GcAtomicStrings) {
+    const char* src =
+        "actor main {\n"
+        "  new create() => {\n"
+        "    print(\"gc-atomic\")\n"
+        "  }\n"
+        "}\n";
+    setenv("PONYPP_GC", "1", 1);
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    FILE* f = fopen("/tmp/ponypp_gen_gca.c", "w");
+    ASSERT_NE(f, nullptr);
+    Codegen* cg = codegen_new(f);
+    codegen_program(cg, ast);
+    codegen_free(cg);
+    fclose(f);
+    unsetenv("PONYPP_GC");
+    FILE* rf = fopen("/tmp/ponypp_gen_gca.c", "r");
+    ASSERT_NE(rf, nullptr);
+    static char buf[262144] = {0};
+    size_t n = fread(buf, 1, sizeof(buf) - 1, rf);
+    fclose(rf);
+    buf[n] = 0;
+    EXPECT_NE(std::strstr(buf, "#define pny_xmalloc(n) GC_malloc_atomic(n)"), nullptr)
+        << "GC 模式必须注入 atomic 分配宏";
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen_gca.c");
+}
+
+// 非 GC 模式: pny_xmalloc 退化为 malloc
+TEST(Codegen, NoGcXmallocFallback) {
+    const char* src =
+        "actor main {\n"
+        "  new create() => {\n"
+        "    print(\"plain\")\n"
+        "  }\n"
+        "}\n";
+    unsetenv("PONYPP_GC");
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    FILE* f = fopen("/tmp/ponypp_gen_gcn.c", "w");
+    ASSERT_NE(f, nullptr);
+    Codegen* cg = codegen_new(f);
+    codegen_program(cg, ast);
+    codegen_free(cg);
+    fclose(f);
+    FILE* rf = fopen("/tmp/ponypp_gen_gcn.c", "r");
+    ASSERT_NE(rf, nullptr);
+    static char buf[262144] = {0};
+    size_t n = fread(buf, 1, sizeof(buf) - 1, rf);
+    fclose(rf);
+    buf[n] = 0;
+    EXPECT_NE(std::strstr(buf, "#define pny_xmalloc(n) malloc(n)"), nullptr)
+        << "非 GC 模式 pny_xmalloc 必须退化为 malloc";
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen_gcn.c");
+}

@@ -2,6 +2,11 @@
 
 All notable changes to Pony++ are documented in this file.
 
+## [0.2.8] - 2026-09-15
+
+### Changed
+- **P1-4：GC atomic 字符串分配** — PONYPP_GC 模式下纯字符缓冲（str_concat/itoa/from_char/slice/field/hash）改走 `GC_malloc_atomic`（免保守扫描），新增 `pny_xmalloc` 宏（非 GC 模式退化为 malloc）。ponydb 实测 10k put 8.2→4.8s / 20k 37.9→22.3s（各 -41%）。gtest GcAtomicStrings + NoGcXmallocFallback。
+
 ## [0.2.7] - 2026-09-15
 
 ### Fixed
