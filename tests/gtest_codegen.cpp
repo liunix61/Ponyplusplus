@@ -2,6 +2,7 @@
 #include <cstdio>
 #include "gtest_helpers.h"
 #include "ponypp/codegen.h"
+#include "ponypp/wasm.h"
 
 TEST(Codegen, GeneratesC) {
     const char* src = "actor main { be run() => { print(\"hi\") } }";
@@ -381,4 +382,33 @@ TEST(Codegen, NoGcXmallocFallback) {
         << "非 GC 模式 pny_xmalloc 必须退化为 malloc";
     ast_node_free(ast);
     std::remove("/tmp/ponypp_gen_gcn.c");
+}
+
+
+// Bug#46 W0: wasi-p2 必须同时导出 _start (wasmtime run 命令入口) 与 main (WAMR/兼容)
+TEST(WasmBackend, WasiStartExport) {
+    const char* src =
+        "actor main {\n"
+        "  new create() => {\n"
+        "    print(\"hi\")\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    int rc = wasm_write_program(ast, "/tmp/ponypp_gen_wstart.wasm", TARGET_WASI_P2);
+    ASSERT_EQ(rc, 0);
+    FILE* rf = fopen("/tmp/ponypp_gen_wstart.wasm", "rb");
+    ASSERT_NE(rf, nullptr);
+    static unsigned char buf[65536] = {0};
+    size_t n = fread(buf, 1, sizeof(buf), rf);
+    fclose(rf);
+    bool has_start = false, has_main = false;
+    for (size_t i = 0; i + 6 < n; i++) {
+        if (memcmp(buf + i, "_start", 6) == 0) has_start = true;
+        if (memcmp(buf + i, "main", 4) == 0) has_main = true;
+    }
+    EXPECT_TRUE(has_start) << "wasi-p2 必须导出 _start";
+    EXPECT_TRUE(has_main) << "wasi-p2 必须保留 main 导出 (WAMR e2e 依赖)";
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen_wstart.wasm");
 }

@@ -2,6 +2,11 @@
 
 All notable changes to Pony++ are documented in this file.
 
+## [0.2.9] - 2026-09-15
+
+### Fixed
+- **Bug#46 W0：wasi-p2 缺 `_start` 导出** — 模块只导出 `main`，`wasmtime run` 找不到命令入口静默零输出。现双导出 `_start`+`main`（WAMR e2e 兼容保留）。wasmtime 25.0.2 已装入 ~/.local/bin（aarch64 预编译，ghfast.top）。gtest WasmBackend.WasiStartExport。
+
 ## [0.2.8] - 2026-09-15
 
 ### Changed

@@ -656,7 +656,7 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
     bv_write_u8(&bv, 0x07);
     {
         ByteVec body = {0};
-        bv_write_u8(&body, 0x02);
+        bv_write_u8(&body, 0x03); /* 3 exports: memory + main + _start (Bug#46: wasmtime run 需 _start) */
         bv_write_str(&body, "memory");
         bv_write_u8(&body, 0x02); /* export kind: memory */
         bv_write_u8(&body, 0x00); /* memory index 0 */
@@ -664,6 +664,10 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
         bv_write_u8(&body, 0x00);
         /* main 的函数索引 = import 数量 (fd_write=0, proc_exit=1, ...) */
         int32_t export_idx = (target == TARGET_WASI_P3) ? 4 : 5;
+        bv_write_u32_leb128(&body, (uint32_t)export_idx);
+        /* Bug#46: _start 别名 — wasmtime run 的命令入口 */
+        bv_write_str(&body, "_start");
+        bv_write_u8(&body, 0x00);
         bv_write_u32_leb128(&body, (uint32_t)export_idx);
         bv_write_vec(&bv, &body);
         bv_free(&body);
