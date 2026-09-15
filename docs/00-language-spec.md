@@ -1,5 +1,15 @@
 # Phase 0: 语言规范设计
 
+## 0.8 String 方法 / String methods
+
+| 方法 | 语义 |
+|---|---|
+| `len()` | 字节数 |
+| `slice(lo, hi)` | 子串（越界钳制） |
+| `find(sub)` | 首次出现下标；未找到 4294967295 |
+| `find_from(sub, off)` | **从 off 起**首次出现下标；未找到/越界 4294967295（单趟增量扫描用） |
+| `contains(sub)` | 1/0 |
+
 ## 0.7 名字解析优先级 / Name resolution precedence
 
 方法体内标识符解析顺序（codegen 强制）：**局部变量/形参 > 类字段 > 全局**。同名遮蔽合法：方法内 `var cur` 遮蔽字段 `cur`，引用即局部；访问被遮蔽字段须 `this.cur`（Bug#47，2026-09-15 修复）。

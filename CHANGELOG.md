@@ -2,6 +2,11 @@
 
 All notable changes to Pony++ are documented in this file.
 
+## [0.2.6] - 2026-09-15
+
+### Added
+- **`str.find_from(sub, off)` 内建**：从偏移 off 起查找子串，未找到/越界返回 4294967295。为单趟增量字段扫描设计（ponydb 解析热点：str_field(i) 每次从头扫 = O(n^2)，find_from 单趟 O(n)）。链式/非链式双分派点（gtest Codegen.FindFromBuiltin）。
+
 ## [0.2.5] - 2026-09-15
 
 ### Fixed

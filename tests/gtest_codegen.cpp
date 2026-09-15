@@ -260,3 +260,35 @@ TEST(Codegen, LocalShadowsField) {
     ast_node_free(ast);
     std::remove("/tmp/ponypp_gen47.c");
 }
+
+
+// P1: find_from(s, sub, off) — 从偏移起查找 (单趟增量扫描, ponydb 解析热点)
+TEST(Codegen, FindFromBuiltin) {
+    const char* src =
+        "actor main {\n"
+        "  new create() => {\n"
+        "    var s: String = \"a|b|c\"\n"
+        "    var i: U32 = s.find_from(\"|\", 1)\n"
+        "    var t: String = s.slice(i + 1, s.len())\n"
+        "    print(t)\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    FILE* f = fopen("/tmp/ponypp_gen_ff.c", "w");
+    ASSERT_NE(f, nullptr);
+    Codegen* cg = codegen_new(f);
+    codegen_program(cg, ast);
+    codegen_free(cg);
+    fclose(f);
+    FILE* rf = fopen("/tmp/ponypp_gen_ff.c", "r");
+    ASSERT_NE(rf, nullptr);
+    static char buf[262144] = {0};
+    size_t n = fread(buf, 1, sizeof(buf) - 1, rf);
+    fclose(rf);
+    buf[n] = 0;
+    EXPECT_NE(std::strstr(buf, "pny_str_find_from(s, \"|\", 1)"), nullptr) << "find_from 必须分派到 pny_str_find_from";
+    EXPECT_NE(std::strstr(buf, "static long long pny_str_find_from"), nullptr) << "运行时必须包含 find_from 实现";
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen_ff.c");
+}
