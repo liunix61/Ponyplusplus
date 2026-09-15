@@ -1,5 +1,9 @@
 # Phase 0: 语言规范设计
 
+## 0.7 名字解析优先级 / Name resolution precedence
+
+方法体内标识符解析顺序（codegen 强制）：**局部变量/形参 > 类字段 > 全局**。同名遮蔽合法：方法内 `var cur` 遮蔽字段 `cur`，引用即局部；访问被遮蔽字段须 `this.cur`（Bug#47，2026-09-15 修复）。
+
 ## 0.6 编译器环境变量 / Compiler environment variables
 
 | 变量 | 作用 |

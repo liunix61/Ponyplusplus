@@ -122,10 +122,19 @@ static int cg_is_param(Codegen *cg, const char *name) {
     return 0;
 }
 
+static bool cg_has_local(Codegen *cg, const char *name) {
+    if (!name) return false;
+    for (size_t i = 0; i < cg->local_var_count; i++)
+        if (strcmp(cg->local_vars[i], name) == 0) return true;
+    for (size_t i = 0; i < cg->param_count; i++)
+        if (cg->params[i] && strcmp(cg->params[i], name) == 0) return true;
+    return false;
+}
+
 static void cg_emit_field_access(Codegen *cg, const char *name) {
     if (name && name[0] == 't' && name[1] == 'h' && name[2] == 'i' && name[3] == 's' && name[4] == '.') {
         cg_emit_raw(cg, "self->%s", name + 5);
-    } else if (name && cg_has_field(cg, name)) {
+    } else if (name && !cg_has_local(cg, name) && cg_has_field(cg, name)) {
         cg_emit_raw(cg, "self->%s", name);
     } else {
         cg_emit_raw(cg, "%s", name ? name : "0");

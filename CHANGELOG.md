@@ -2,6 +2,11 @@
 
 All notable changes to Pony++ are documented in this file.
 
+## [0.2.5] - 2026-09-15
+
+### Fixed
+- **Bug#47：裸局部变量被同名类字段劫持** — `var cur: U32` 在含同名字段 `cur` 的类方法内，引用/传参被 codegen 编译成 `self->cur`（指针当值）。修复：`cg_emit_field_access` 局部变量/参数表优先于字段表（gtest Codegen.LocalShadowsField；ponydb min_key_of 曾被此 bug 打穿，绕行改名 cid 可还原）。
+
 ## [0.2.4] - 2026-09-15
 
 ### Added

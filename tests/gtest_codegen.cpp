@@ -217,3 +217,46 @@ TEST(Codegen, GcModeMacros) {
     ast_node_free(ast);
     std::remove("/tmp/ponypp_gen_gc.c");
 }
+
+
+// Bug#47: 裸局部变量被同名类字段劫持 — `var cur` + 传参 `page_get(cur)` 曾生成 page_get(self, self->cur)
+TEST(Codegen, LocalShadowsField) {
+    const char* src =
+        "class Foo {\n"
+        "  var cur: String = \"WRONG\"\n"
+        "  new create() => {\n"
+        "    var z: U32 = 0\n"
+        "  }\n"
+        "  fun page_get(id: String): String => {\n"
+        "    return id\n"
+        "  }\n"
+        "  fun get(): String => {\n"
+        "    var cur: String = \"RIGHT\"\n"
+        "    return this.page_get(cur)\n"
+        "  }\n"
+        "}\n"
+        "actor main {\n"
+        "  new create() => {\n"
+        "    var f: Foo = Foo()\n"
+        "    print(f.get())\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    FILE* f = fopen("/tmp/ponypp_gen47.c", "w");
+    ASSERT_NE(f, nullptr);
+    Codegen* cg = codegen_new(f);
+    codegen_program(cg, ast);
+    codegen_free(cg);
+    fclose(f);
+    FILE* rf = fopen("/tmp/ponypp_gen47.c", "r");
+    ASSERT_NE(rf, nullptr);
+    static char buf[262144] = {0};
+    size_t n = fread(buf, 1, sizeof(buf) - 1, rf);
+    fclose(rf);
+    buf[n] = 0;
+    EXPECT_NE(std::strstr(buf, "Foo_page_get(self, cur)"), nullptr) << "局部变量必须裸名传参";
+    EXPECT_EQ(std::strstr(buf, "Foo_page_get(self, self->cur)"), nullptr) << "局部变量不得被同名字段劫持";
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen47.c");
+}
