@@ -1286,7 +1286,7 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     cg_emit_raw(cg, ") + (int)(");
                     if (n->child_count > 1) cg_expr(cg, n->children[1]);
                     cg_emit_raw(cg, "))");
-                } else if (strcmp(d, "-") == 0 || strcmp(d, "*") == 0 || strcmp(d, "/") == 0) {
+                } else if (strcmp(d, "-") == 0 || strcmp(d, "*") == 0 || strcmp(d, "/") == 0 || strcmp(d, "%") == 0) {
                     /* 算术运算符 */
                     cg_emit_raw(cg, "((int)(");
                     if (n->child_count > 0) cg_expr(cg, n->children[0]);

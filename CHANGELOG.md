@@ -2,6 +2,11 @@
 
 All notable changes to Pony++ are documented in this file.
 
+## [0.2.7] - 2026-09-15
+
+### Fixed
+- **Bug#48：`%` 取模静默失效** — lexer 有 TK_PERCENT 但 parser 乘法层不含该 token，`pos % 2` 被静默编译成 `pos`（残留 token 被语句恢复吞掉）。修复：parse_mul_expr 接收 `%` + codegen 算术分派含 `%`（gtest Codegen.ModuloOperator；ponydb internal_child 奇偶判定曾被此 bug 打穿）。
+
 ## [0.2.6] - 2026-09-15
 
 ### Added

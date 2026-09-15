@@ -980,11 +980,11 @@ static ASTNode *parse_add_expr(Parser *p) {
     return parse_binary_op(p, ops, 2, names, parse_mul_expr);
 }
 
-/* * / */
+/* * / % (Bug#48: % 此前未被乘法层接收 → pos % 2 静默编译成 pos) */
 static ASTNode *parse_mul_expr(Parser *p) {
-    static const TokenType ops[] = { TK_STAR, TK_SLASH };
-    static const char *const names[] = { "*", "/" };
-    return parse_binary_op(p, ops, 2, names, parse_unary_expr);
+    static const TokenType ops[] = { TK_STAR, TK_SLASH, TK_PERCENT };
+    static const char *const names[] = { "*", "/", "%" };
+    return parse_binary_op(p, ops, 3, names, parse_unary_expr);
 }
 
 /* 一元: ! - */
