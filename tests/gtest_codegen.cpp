@@ -389,7 +389,7 @@ TEST(Codegen, NoGcXmallocFallback) {
 TEST(WasmBackend, WasiStartExport) {
     const char* src =
         "actor main {\n"
-        "  new create() => {\n"
+        "  fun ref main() {\n"
         "    print(\"hi\")\n"
         "  }\n"
         "}\n";
@@ -418,7 +418,7 @@ TEST(WasmBackend, WasiStartExport) {
 TEST(WasmBackend, AssignEmitsLocalSet) {
     const char* src =
         "actor main {\n"
-        "  new create() => {\n"
+        "  fun ref main() {\n"
         "    var i: U32 = 0\n"
         "    i = i + 1\n"
         "    i += 2\n"
@@ -440,4 +440,69 @@ TEST(WasmBackend, AssignEmitsLocalSet) {
     EXPECT_GE(set_count, 3) << "var 声明 + 赋值 + 复合赋值 各需一个 local.set";
     ast_node_free(ast);
     std::remove("/tmp/ponypp_gen_wassign.wasm");
+}
+
+
+// W2: 字符串运行时 — a+"B" 必须分派到 concat (call idx 9), print 到 print_str (idx 13)
+TEST(WasmBackend, StringRuntimeDispatch) {
+    const char* src =
+        "actor main {\n"
+        "  fun ref main() {\n"
+        "    var a: String = \"A\"\n"
+        "    var b: String = a + \"B\"\n"
+        "    print(b)\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    ASSERT_EQ(wasm_write_program(ast, "/tmp/ponypp_gen_wstr.wasm", TARGET_WASI_P2), 0);
+    FILE* rf = fopen("/tmp/ponypp_gen_wstr.wasm", "rb");
+    ASSERT_NE(rf, nullptr);
+    static unsigned char buf[65536] = {0};
+    size_t n = fread(buf, 1, sizeof(buf), rf);
+    fclose(rf);
+    bool call_concat = false, call_print_str = false, has_global = false;
+    for (size_t i = 0; i + 1 < n; i++) {
+        if (buf[i] == 0x10 && buf[i + 1] == 0x09) call_concat = true;   /* call concat */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x0D) call_print_str = true;/* call print_str */
+        if (buf[i] == 0x06) has_global = true;                          /* global section */
+    }
+    EXPECT_TRUE(call_concat) << "字符串 + 必须分派 concat 运行时";
+    EXPECT_TRUE(call_print_str) << "print(String) 必须走 print_str (strlen+fd_write)";
+    EXPECT_TRUE(has_global) << "堆指针 global 段必须存在";
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen_wstr.wasm");
+}
+
+
+// W2: field/slice/find_from 内建分派 (call idx 16/11/15)
+TEST(WasmBackend, StringBuiltinsDispatch) {
+    const char* src =
+        "actor main {\n"
+        "  fun ref main() {\n"
+        "    var s: String = \"k1;v1\"\n"
+        "    print(field(s, 1, \";\"))\n"
+        "    print(slice(s, 0, 2))\n"
+        "    print(find_from(s, \"v\", 0))\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    ASSERT_EQ(wasm_write_program(ast, "/tmp/ponypp_gen_wbi.wasm", TARGET_WASI_P2), 0);
+    FILE* rf = fopen("/tmp/ponypp_gen_wbi.wasm", "rb");
+    ASSERT_NE(rf, nullptr);
+    static unsigned char buf[65536] = {0};
+    size_t n = fread(buf, 1, sizeof(buf), rf);
+    fclose(rf);
+    bool call_field = false, call_slice = false, call_ff = false;
+    for (size_t i = 0; i + 1 < n; i++) {
+        if (buf[i] == 0x10 && buf[i + 1] == 0x10) call_field = true;    /* call field=16 */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x0B) call_slice = true;    /* call slice=11 */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x0F) call_ff = true;       /* call find_from=15 */
+    }
+    EXPECT_TRUE(call_field) << "field() 必须分派到 field 运行时";
+    EXPECT_TRUE(call_slice) << "slice() 必须分派到 slice 运行时";
+    EXPECT_TRUE(call_ff) << "find_from() 必须分派到 find_from 运行时";
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen_wbi.wasm");
 }

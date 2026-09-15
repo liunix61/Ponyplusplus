@@ -120,3 +120,4 @@ Pony++ 是"天生云原生"的并发编程语言，融合：
 5. **局部变量表容量 256**（0.2.0 起，原 32 静默丢弃）；单个 class/actor 作用域内生效。
 6. **WASM 后端**（0.2.0 起真实语义）：locals 表 / 二元运算符 / if / while / var 初始化 / signed LEB i32.const / `memory` export（WASI fd_write 需要）；运算符节点 AST 形状为 `NODE_EMPTY(data=op)`。
 7. **JSON 提取**：`json_raw_get` 对嵌套对象/数组按括号深度整体提取；key 匹配带冒号跟随验证。
+8. **WASM 字符串运行时**（0.2.11 起，M3-W2）：字符串=i32 指针（NUL 结尾）；堆=global 0 bump 分配器（main 开头置为字面量区末尾 8 对齐，静态 16 页）；10 个手写运行时函数（alloc/strlen/concat/itoa/slice/streq/print_str/find/find_from/field）。`+` 分派 concat、`==`/`!=` 分派 streq、print(String)=print_str、print(int)=itoa+print_str、`field/slice/find/find_from/len` 内建调用。实参被解析器打包进单个 NODE_EMPTY 容器（child_count=1，实参在其 children），分派前展开。wasm 比较运算符注意：gt_s=0x4A/le_s=0x4C/ge_s=0x4E（0.2.11 修正旧错位定义）；memop 必须带 align/offset 立即数；if 块内 `br 0` 指向 if 自身而非外层循环。wasm print 不追加换行（native print 追加）。

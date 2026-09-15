@@ -2,6 +2,18 @@
 
 All notable changes to Pony++ are documented in this file.
 
+## [0.2.11] - 2026-09-16
+
+### Added
+- **W2（M3 路线图）：wasm 字符串运行时** — 手写 10 个 wasm 运行时函数（alloc/strlen/concat/itoa/slice/streq/print_str/find/find_from/field）+ global 0 bump 分配器（main 开头初始化为字面量区末尾 8 对齐，内存 16 页）。`+` 自动分派 concat、`==`/`!=` 分派 streq、print(String) 走 print_str（strlen+fd_write）、print(int) 走 itoa。内建 `field/slice/find/find_from/len` 实参为 NODE_EMPTY 容器打包，分派前展开。wasmtime 实测：`PonyDB!42-701`（concat/itoa/负数/streq）与 `v1v2PonyDB37-16`（field/slice/find_from/len）全对。gtest WasmBackend.StringRuntimeDispatch + StringBuiltinsDispatch。
+
+### Fixed
+- **wasm opcode GT_S/LE_S/GE_S 定义错位**（0x49/0x4A/0x4B → 真值 0x4A/0x4C/0x4E；0x49/0x4B/0x4D/0x4F 是无符号变体）。此前 `>=`/`<=` 发射 gt_u/gt_s 错误指令。
+- **wasm main 体空壳** — main 发射 walk 只认 NODE_NEW，`fun ref main` 是 NODE_FUN 从未发射（早前 e2e 通过系 stale binary）。现认 NODE_FUN/NODE_BE/NODE_NEW 且名为 main。
+- **wasm memop 缺 align/offset 立即数**（i32.store/load8_u/store8）——运行时函数写内存全量补齐。
+- **wasm alloc 缺 global.get/set 索引字节**（0x23/0x24 后必须跟 0x00）与函数索引错位一格。
+- **wasm find_from 内层循环 br 0 在 if 块内指向 if 自身**（永远走不匹配路径）→ br 1。
+
 ## [0.2.10] - 2026-09-15
 
 ### Fixed
