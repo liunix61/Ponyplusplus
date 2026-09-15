@@ -89,6 +89,8 @@ Parser *parser_new(const char *filename, Token *tokens, size_t token_count) {
 void parser_free(Parser *p) { free(p); }
 int parser_line(Parser *p) { return (p->pos < p->token_count) ? p->tokens[p->pos].line : 1; }
 const char *parser_error(Parser *p) { return p->error; }
+/* Bug#50: parse 错误曾被静默吞掉 (AST 非 NULL 即通过) — 主程序硬失败用 */
+int parser_has_error(Parser *p) { return p && p->has_error ? 1 : 0; }
 
 /* ---- 辅助解析 ---- */
 

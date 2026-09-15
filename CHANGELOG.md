@@ -2,6 +2,14 @@
 
 All notable changes to Pony++ are documented in this file.
 
+## [0.2.10] - 2026-09-15
+
+### Fixed
+- **Bug#50：parse 错误静默吞掉** — set_error 置标志但 AST 非 NULL 即继续编译，坏语法产出坏二进制（如 `while ... do` 缺 `{`）。新增 `parser_has_error()`，ponyppc 硬失败。gtest Parser.HasErrorFlag + NoErrorOnValidBraces。
+
+### Added
+- **W1（M3 路线图）**：wasm 后端赋值 `x = e`、复合赋值 `+= -= *= /=`、一元 `not`/`neg` 发射（此前赋值被静默丢弃）。wasmtime 实测：while+if/else+负数全通。gtest WasmBackend.AssignEmitsLocalSet。
+
 ## [0.2.9] - 2026-09-15
 
 ### Fixed

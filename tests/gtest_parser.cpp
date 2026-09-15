@@ -197,3 +197,52 @@ TEST(Parser, ChainedMethodOnCallResult) {
     EXPECT_TRUE(found);
     ast_node_free(ast);
 }
+
+
+// Bug#50: parse 错误必须置 has_error (此前 AST 非 NULL 即静默通过, 编译出坏产物)
+TEST(Parser, HasErrorFlag) {
+    const char* src =
+        "actor main {\n"
+        "  new create() => {\n"
+        "    var i: U32 = 0\n"
+        "    while i < 3 do\n"
+        "      i = i + 1\n"
+        "    end\n"
+        "  }\n"
+        "}\n";
+    Lexer* lex = lexer_new("t.pny", src, std::strlen(src));
+    ASSERT_NE(lex, nullptr);
+    Token* tokens = nullptr;
+    size_t count = 0;
+    ASSERT_TRUE(lexer_lex_all(lex, &tokens, &count));
+    Parser* p = parser_new("t.pny", tokens, count);
+    ASTNode* ast = parser_parse_program(p);
+    EXPECT_EQ(parser_has_error(p), 1) << "while ... do 缺 '{' 必须置错误标志";
+    if (ast) ast_node_free(ast);
+    parser_free(p);
+    lexer_free(lex);
+}
+
+TEST(Parser, NoErrorOnValidBraces) {
+    const char* src =
+        "actor main {\n"
+        "  new create() => {\n"
+        "    var i: U32 = 0\n"
+        "    while i < 3 {\n"
+        "      i = i + 1\n"
+        "    }\n"
+        "  }\n"
+        "}\n";
+    Lexer* lex = lexer_new("t2.pny", src, std::strlen(src));
+    ASSERT_NE(lex, nullptr);
+    Token* tokens = nullptr;
+    size_t count = 0;
+    ASSERT_TRUE(lexer_lex_all(lex, &tokens, &count));
+    Parser* p = parser_new("t2.pny", tokens, count);
+    ASTNode* ast = parser_parse_program(p);
+    ASSERT_NE(ast, nullptr);
+    EXPECT_EQ(parser_has_error(p), 0);
+    ast_node_free(ast);
+    parser_free(p);
+    lexer_free(lex);
+}

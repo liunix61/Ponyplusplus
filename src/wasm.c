@@ -411,6 +411,21 @@ static void emit_expr(WasmGen *wg, ASTNode *n) {
             if (n->child_count >= 1) emit_expr(wg, n->children[0]);
             break;
         case NODE_EMPTY:
+            /* W1: 一元 not/neg */
+            if (n->data && n->child_count == 1) {
+                const char *u = (const char *)n->data;
+                if (strcmp(u, "not") == 0) {
+                    emit_expr(wg, n->children[0]);
+                    bv_write_u8(&wg->out, WASM_OPCODE_I32_EQZ);
+                    break;
+                }
+                if (strcmp(u, "neg") == 0) {
+                    emit_i32_const(wg, 0);
+                    emit_expr(wg, n->children[0]);
+                    bv_write_u8(&wg->out, WASM_OPCODE_I32_SUB);
+                    break;
+                }
+            }
             /* Bug#33b: 二元运算符节点是 NODE_EMPTY(data=op) 而非 NODE_CALL */
             if (n->data && n->child_count >= 2) {
                 const char *name = (const char *)n->data;
@@ -513,6 +528,47 @@ static void emit_stmt(WasmGen *wg, ASTNode *n) {
                 for (size_t i = 0; i < n->child_count; i++) {
                     emit_stmt(wg, n->children[i]);
                 }
+            } else if (strcmp((const char *)n->data, "assign") == 0 && n->child_count >= 2) {
+                /* W1: x = expr → expr; local.set x (此前静默丢弃) */
+                ASTNode *lhs = n->children[0];
+                emit_expr(wg, n->children[1]);
+                if (lhs && lhs->type == NODE_IDENT && lhs->data) {
+                    int li = wasm_local_ensure(wg, (const char *)lhs->data);
+                    if (li >= 0) {
+                        bv_write_u8(&wg->out, WASM_OPCODE_LOCAL_SET);
+                        bv_write_u32_leb128(&wg->out, (uint32_t)li);
+                    } else {
+                        bv_write_u8(&wg->out, WASM_OPCODE_DROP);
+                    }
+                } else {
+                    bv_write_u8(&wg->out, WASM_OPCODE_DROP);
+                }
+            } else if ((strcmp((const char *)n->data, "add-assign") == 0 ||
+                        strcmp((const char *)n->data, "sub-assign") == 0 ||
+                        strcmp((const char *)n->data, "mul-assign") == 0 ||
+                        strcmp((const char *)n->data, "div-assign") == 0) && n->child_count >= 2) {
+                /* W1: 复合赋值 x += e → x = x + e */
+                ASTNode *lhs = n->children[0];
+                if (lhs && lhs->type == NODE_IDENT && lhs->data) {
+                    int li = wasm_local_ensure(wg, (const char *)lhs->data);
+                    if (li >= 0) {
+                        bv_write_u8(&wg->out, WASM_OPCODE_LOCAL_GET);
+                        bv_write_u32_leb128(&wg->out, (uint32_t)li);
+                        emit_expr(wg, n->children[1]);
+                        const char *d = (const char *)n->data;
+                        unsigned char opc = WASM_OPCODE_I32_ADD;
+                        if (d[0] == 's') opc = WASM_OPCODE_I32_SUB;
+                        else if (d[0] == 'm') opc = WASM_OPCODE_I32_MUL;
+                        else if (d[0] == 'd') opc = WASM_OPCODE_I32_DIV_S;
+                        bv_write_u8(&wg->out, opc);
+                        bv_write_u8(&wg->out, WASM_OPCODE_LOCAL_SET);
+                        bv_write_u32_leb128(&wg->out, (uint32_t)li);
+                    }
+                }
+            } else {
+                /* 未知 NODE_EMPTY: 作为表达式求值并丢弃 */
+                emit_expr(wg, n);
+                bv_write_u8(&wg->out, WASM_OPCODE_DROP);
             }
             break;
         default:

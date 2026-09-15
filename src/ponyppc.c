@@ -173,6 +173,17 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
         s_free(source);
         return EXIT_FAILURE;
     }
+    /* Bug#50: parse 错误曾被静默吞掉 (AST 非 NULL 即继续编译出坏产物) */
+    if (parser_has_error(parser)) {
+        fprintf(stderr, "语法错误 (第 %d 行): %s\n",
+                parser_line(parser),
+                parser_error(parser) ? parser_error(parser) : "未知");
+        ast_node_free(ast);
+        parser_free(parser);
+        lexer_free(lexer);
+        s_free(source);
+        return EXIT_FAILURE;
+    }
 
     if (cfg->emit_ast) {
         ast_node_print(ast, stderr);

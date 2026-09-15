@@ -412,3 +412,32 @@ TEST(WasmBackend, WasiStartExport) {
     ast_node_free(ast);
     std::remove("/tmp/ponypp_gen_wstart.wasm");
 }
+
+
+// W1: wasm 后端赋值/复合赋值发射 local.set (此前静默丢弃)
+TEST(WasmBackend, AssignEmitsLocalSet) {
+    const char* src =
+        "actor main {\n"
+        "  new create() => {\n"
+        "    var i: U32 = 0\n"
+        "    i = i + 1\n"
+        "    i += 2\n"
+        "    print(\"x\")\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    ASSERT_EQ(wasm_write_program(ast, "/tmp/ponypp_gen_wassign.wasm", TARGET_WASI_P2), 0);
+    FILE* rf = fopen("/tmp/ponypp_gen_wassign.wasm", "rb");
+    ASSERT_NE(rf, nullptr);
+    static unsigned char buf[65536] = {0};
+    size_t n = fread(buf, 1, sizeof(buf), rf);
+    fclose(rf);
+    int set_count = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (buf[i] == 0x21) set_count++; /* local.set */
+    }
+    EXPECT_GE(set_count, 3) << "var 声明 + 赋值 + 复合赋值 各需一个 local.set";
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen_wassign.wasm");
+}

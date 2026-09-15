@@ -18,6 +18,7 @@ ASTNode *parser_parse_program(Parser *p);
 
 /* 获取当前行号 */
 int parser_line(Parser *p);
+int parser_has_error(Parser *p);
 
 /* 获取错误信息 */
 const char *parser_error(Parser *p);
