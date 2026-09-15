@@ -182,3 +182,38 @@ TEST(Codegen, EnvGetBuiltin) {
     ast_node_free(ast);
     std::remove("/tmp/ponypp_gen_env.c");
 }
+
+
+// PONYPP_GC=1: Boehm GC 模式 — 运行时分配全部走 GC_malloc (ponydb 泄漏修复实证)
+TEST(Codegen, GcModeMacros) {
+    const char* src =
+        "actor main {\n"
+        "  new create() => {\n"
+        "    print(\"gc\")\n"
+        "  }\n"
+        "}\n";
+    setenv("PONYPP_GC", "1", 1);
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    FILE* f = fopen("/tmp/ponypp_gen_gc.c", "w");
+    ASSERT_NE(f, nullptr);
+    Codegen* cg = codegen_new(f);
+    codegen_program(cg, ast);
+    codegen_free(cg);
+    fclose(f);
+    unsetenv("PONYPP_GC");
+    FILE* rf = fopen("/tmp/ponypp_gen_gc.c", "r");
+    ASSERT_NE(rf, nullptr);
+    static char buf[262144] = {0};
+    size_t n = fread(buf, 1, sizeof(buf) - 1, rf);
+    fclose(rf);
+    buf[n] = 0;
+    EXPECT_NE(std::strstr(buf, "#include <gc/gc.h>"), nullptr) << "GC 模式必须注入 gc.h";
+    EXPECT_NE(std::strstr(buf, "GC_malloc"), nullptr) << "GC 模式 malloc 必须映射 GC_malloc";
+    EXPECT_NE(std::strstr(buf, "GC_free"), nullptr) << "GC 模式 free 必须映射 GC_free";
+    // 关闭开关时不得注入
+    setenv("PONYPP_GC", "", 1);
+    unsetenv("PONYPP_GC");
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen_gc.c");
+}

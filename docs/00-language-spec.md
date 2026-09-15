@@ -1,5 +1,12 @@
 # Phase 0: 语言规范设计
 
+## 0.6 编译器环境变量 / Compiler environment variables
+
+| 变量 | 作用 |
+|---|---|
+| `PONYPPC_CFLAGS` / `PONYPPC_LDFLAGS` | 追加 gcc 编译/链接旗标（挂外部 C 库） |
+| `PONYPP_GC=1` | **GC 模式**（native）：生成 C 把 malloc/calloc/realloc/free/strdup 宏映射到 Boehm GC（GC_malloc/GC_realloc/GC_free/GC_strdup），并链接 `-lgc`。适用于分配密集长跑程序（泄漏修复）。头文件路径 `PONYPP_GC_CFLAGS`（如 `-I$HOME/.local/include`），库路径 `PONYPP_GC_LDFLAGS`（如 `-L$HOME/.local/lib -Wl,-rpath,$HOME/.local/lib`）。注意：GC 模式下不得混用对同一指针的 libc free。 |
+
 ## 0.1 语言定位
 
 Pony++ 是"天生云原生"的并发编程语言，融合：

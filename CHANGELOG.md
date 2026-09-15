@@ -2,6 +2,11 @@
 
 All notable changes to Pony++ are documented in this file.
 
+## [0.2.4] - 2026-09-15
+
+### Added
+- **PONYPP_GC=1 GC 模式**（native 后端）：生成 C 注入 `#include <gc/gc.h>` + malloc/calloc/realloc/free/strdup 宏映射 Boehm GC（GC_malloc 等），ponyppc 自动加 `-lgc`；头/库路径经 `PONYPP_GC_CFLAGS`/`PONYPP_GC_LDFLAGS`。背景：native 运行时此前纯 malloc 无 free（泄漏引擎），ponydb 800 键耗尽 8GB 机器触发 OOM killer 误杀网关进程；GC 模式实测 20000 键在 1GB 护栏内 52.3s 全量正确（gtest Codegen.GcModeMacros）。
+
 ## [0.2.0] - 2026-09-14
 
 App-as-test 实证期（PonyHarness H0-H4 + PonyAgents M1/M2 驱动），累计修复 13 个真实 bug。

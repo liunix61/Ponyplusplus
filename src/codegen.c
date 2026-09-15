@@ -1884,6 +1884,15 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
     cg_emit_raw(cg, "#include <string.h>\n");
     cg_emit_raw(cg, "#include <stdlib.h>\n");
     cg_emit_raw(cg, "#include <stdint.h>\n\n");
+    /* PONYPP_GC=1: Boehm GC 模式 — 运行时全部分配走 GC_malloc (泄漏修复, App-as-test ponydb 实证) */
+    if (getenv("PONYPP_GC")) {
+        cg_emit_raw(cg, "#include <gc/gc.h>\n");
+        cg_emit_raw(cg, "#define malloc(n) GC_malloc(n)\n");
+        cg_emit_raw(cg, "#define calloc(c, n) GC_malloc((size_t)(c) * (size_t)(n))\n");
+        cg_emit_raw(cg, "#define realloc(p, n) GC_realloc(p, n)\n");
+        cg_emit_raw(cg, "#define free(p) GC_free(p)\n");
+        cg_emit_raw(cg, "#define strdup(s) GC_strdup(s)\n\n");
+    }
     cg_emit_raw(cg, "%s", PNY_HTTP_RUNTIME);
     cg_emit_runtime(cg);
     cg_emit_raw(cg, "%s", PNY_STR_RUNTIME);

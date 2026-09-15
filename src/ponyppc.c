@@ -267,12 +267,27 @@ static int compile_file(const char *input_path, CompilerConfig *cfg) {
         char cmdbuf[8192];
         const char *extra_cflags = getenv("PONYPPC_CFLAGS");
         const char *extra_ldflags = getenv("PONYPPC_LDFLAGS");
+        /* PONYPP_GC=1: 链接 Boehm GC; 头/库路径经 PONYPP_GC_CFLAGS / PONYPP_GC_LDFLAGS */
+        char gc_cflags[2048] = "";
+        char gc_ldflags[2048] = "";
+        if (getenv("PONYPP_GC")) {
+            const char *gci = getenv("PONYPP_GC_CFLAGS");
+            const char *gcl = getenv("PONYPP_GC_LDFLAGS");
+            snprintf(gc_cflags, sizeof(gc_cflags), "%s ", gci ? gci : "");
+            snprintf(gc_ldflags, sizeof(gc_ldflags), "-lgc %s", gcl ? gcl : "");
+        }
         int cmdlen = snprintf(cmdbuf, sizeof(cmdbuf),
-            "gcc -std=c11 -Wall %s %s -o %s %s %s",
+            "gcc -std=c11 -Wall %s %s %s -o %s %s %s",
             opt_flags,
+            gc_cflags,
             extra_cflags ? extra_cflags : "",
             binary_output, c_output,
-            extra_ldflags ? extra_ldflags : "");
+            gc_ldflags[0] ? gc_ldflags : (extra_ldflags ? extra_ldflags : ""));
+        if (getenv("PONYPP_GC") && extra_ldflags) {
+            /* GC 模式下 PONYPPC_LDFLAGS 也要带上 */
+            strncat(cmdbuf, " ", sizeof(cmdbuf) - strlen(cmdbuf) - 1);
+            strncat(cmdbuf, extra_ldflags, sizeof(cmdbuf) - strlen(cmdbuf) - 1);
+        }
         if (cmdlen <= 0 || cmdlen >= (int)sizeof(cmdbuf) || system(cmdbuf) != 0) {
             s_free(binary_output);
             s_free(c_output);
