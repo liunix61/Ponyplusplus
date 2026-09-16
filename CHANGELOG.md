@@ -2,6 +2,15 @@
 
 All notable changes to Pony++ are documented in this file.
 
+## [0.2.12] - 2026-09-16
+
+### Added
+- **W3（M3 路线图）：wasm 类系统** — 类字段布局（4 字节槽顺序排布，String=i32 指针）、构造器（alloc+init，返回 self 指针）、实例方法（self=local 0，独立 wasm 函数）、字段读写（i32.load/store align=2 offset=字段偏移）。表达式层分派：`C()`/`C.create()`→构造器、`c.m(args)`→类方法、`this.m(args)`→self 方法、`this.f`/裸字段名（方法体内）/`c.f`→字段访问。局部变量类类型追踪（local_class）+ 方法返回 String 判定。类收集先于 type/func 段发射（段计数依赖方法数）。wasmtime 实测：`HELLO1`（ctor+inc 字段读写）、`6`（ctor+add 链）、`PonyDBW3-OK7`（String 字段读写/传参/返回）全对。gtest WasmBackend.ClassSystemDispatch（ctor/add 分派 + store/load 字节校验）。
+
+### Fixed
+- **wasm 类调用零参实参容器误发射** — `c.inc()` 的空 args 容器（child_count=0）未展开，容器节点被当表达式发射成 const 0，栈上多一值致函数体校验失败。现容器判断与 child_count 无关。
+- **wasm String 字段在 main 中误判 int** — wasm_expr_is_str 的字段分支带 `cur_class >= 0` 门槛，main（cur_class=-1）里 `h.name` 落 itoa 输出指针值。门槛移除，由 w3_resolve_field 内部判断。
+
 ## [0.2.11] - 2026-09-16
 
 ### Added

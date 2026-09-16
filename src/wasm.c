@@ -189,7 +189,119 @@ typedef struct {
     /* W2: 字符串运行时函数索引 */
     int32_t rt_alloc, rt_strlen, rt_concat, rt_itoa, rt_slice;
     int32_t rt_streq, rt_print_str, rt_find, rt_find_from, rt_field;
+    /* W3: 当前方法所属类索引 (-1=无); 局部变量类名追踪 */
+    int cur_class;
+    char local_class[64][32];
 } WasmGen;
+
+/* ===== W3: 类系统表 ===== */
+typedef struct {
+    char name[64];
+    int is_str;
+    int32_t offset;   /* 字节偏移: 4 * 声明序 */
+} WasmField;
+
+typedef struct {
+    char name[64];
+    int32_t fn_idx;
+    int nargs;        /* 不含 self */
+    int ret_is_str;
+    int is_ctor;
+} WasmMethod;
+
+typedef struct {
+    char name[64];
+    WasmField fields[32];
+    int nfields;
+    WasmMethod methods[32];
+    int nmethods;
+    int32_t ctor_fn;  /* 构造器函数索引, -1=无 */
+} WasmClass;
+
+static WasmClass g_wasm_classes[16];
+static int g_wasm_nclasses = 0;
+
+static WasmClass *w3_find_class(const char *name) {
+    if (!name) return NULL;
+    for (int i = 0; i < g_wasm_nclasses; i++)
+        if (strcmp(g_wasm_classes[i].name, name) == 0) return &g_wasm_classes[i];
+    return NULL;
+}
+
+static int w3_field_idx(WasmClass *c, const char *fname) {
+    if (!c || !fname) return -1;
+    for (int i = 0; i < c->nfields; i++)
+        if (strcmp(c->fields[i].name, fname) == 0) return i;
+    return -1;
+}
+
+static WasmMethod *w3_find_method(WasmClass *c, const char *mname) {
+    if (!c || !mname) return NULL;
+    for (int i = 0; i < c->nmethods; i++)
+        if (strcmp(c->methods[i].name, mname) == 0) return &c->methods[i];
+    return NULL;
+}
+
+/* 递归查找节点树中是否有 NODE_IDENT data==tname */
+static int w3_tree_has_type(ASTNode *n, const char *tname) {
+    if (!n) return 0;
+    if (n->type == NODE_IDENT && n->data && strcmp((const char *)n->data, tname) == 0) return 1;
+    for (size_t i = 0; i < n->child_count; i++)
+        if (w3_tree_has_type(n->children[i], tname)) return 1;
+    return 0;
+}
+
+/* W3: 收集 AST 中所有非 main 的 actor/class 为类定义; fn_base=首个可用函数索引 */
+static void w3_collect_classes(ASTNode *ast, int32_t fn_base) {
+    g_wasm_nclasses = 0;
+    if (!ast) return;
+    int32_t next_fn = fn_base;
+    for (size_t i = 0; i < ast->child_count && g_wasm_nclasses < 16; i++) {
+        ASTNode *ch = ast->children[i];
+        if (!ch || ch->type != NODE_ACTOR || !ch->data) continue;
+        if (strcmp((const char *)ch->data, "main") == 0) continue;  /* main actor 非类 */
+        WasmClass *c = &g_wasm_classes[g_wasm_nclasses];
+        memset(c, 0, sizeof(*c));
+        snprintf(c->name, sizeof(c->name), "%s", (const char *)ch->data);
+        c->ctor_fn = -1;
+        c->nfields = 0;
+        c->nmethods = 0;
+        for (size_t j = 0; j < ch->child_count; j++) {
+            ASTNode *m = ch->children[j];
+            if (!m) continue;
+            if ((m->type == NODE_VAR || m->type == NODE_LET) && m->data && c->nfields < 32) {
+                WasmField *f = &c->fields[c->nfields];
+                snprintf(f->name, sizeof(f->name), "%s", (const char *)m->data);
+                f->is_str = w3_tree_has_type(m, "String");
+                f->offset = (int32_t)c->nfields * 4;
+                c->nfields++;
+            } else if ((m->type == NODE_FUN || m->type == NODE_NEW || m->type == NODE_BE) && m->data && c->nmethods < 32) {
+                WasmMethod *me = &c->methods[c->nmethods];
+                snprintf(me->name, sizeof(me->name), "%s", (const char *)m->data);
+                me->is_ctor = (m->type == NODE_NEW) ? 1 : 0;
+                me->fn_idx = next_fn++;
+                /* params 容器 + ret type 定位 */
+                ASTNode *params = NULL;
+                for (size_t k = 0; k < m->child_count; k++) {
+                    ASTNode *cc2 = m->children[k];
+                    if (cc2 && cc2->type == NODE_EMPTY && cc2->data &&
+                        strcmp((const char *)cc2->data, "params") == 0) { params = cc2; break; }
+                }
+                me->nargs = params ? (int)params->child_count : 0;
+                /* ret: params 后第一位 或 无 params 时的唯一前置 child (非 body=最后) */
+                ASTNode *ret = NULL;
+                if (params && m->child_count >= 3) ret = m->children[1];
+                else if (!params && m->child_count >= 2) ret = m->children[0];
+                me->ret_is_str = (ret && ret->type == NODE_IDENT && ret->data &&
+                                  strcmp((const char *)ret->data, "String") == 0) ? 1 : 0;
+                if (me->is_ctor && c->ctor_fn < 0) c->ctor_fn = me->fn_idx;
+                c->nmethods++;
+            }
+        }
+        g_wasm_nclasses++;
+    }
+}
+
 
 static int wasm_local_lookup(WasmGen *wg, const char *name) {
     if (!name) return -1;
@@ -210,6 +322,10 @@ static int wasm_local_ensure(WasmGen *wg, const char *name) {
 /* 前向声明 */
 static void emit_expr(WasmGen *wg, ASTNode *n);
 static void emit_stmt(WasmGen *wg, ASTNode *n);
+/* W3 前向声明 (定义在 wasm_try_builtin_call 之后) */
+static int w3_split_dot(const char *name, char *recv, size_t rsz, char *meth, size_t msz);
+static int w3_resolve_field(WasmGen *wg, const char *name,
+                            const char **recv_out, int32_t *off_out, int *is_str_out);
 
 /* W2: 表达式字符串类型判定 */
 static int wasm_expr_is_str(WasmGen *wg, ASTNode *n) {
@@ -218,12 +334,37 @@ static int wasm_expr_is_str(WasmGen *wg, ASTNode *n) {
         case NODE_STRING: return 1;
         case NODE_IDENT: {
             int li = n->data ? wasm_local_lookup(wg, (const char *)n->data) : -1;
-            return (li >= 0 && li < 64 && wg->local_is_str[li]) ? 1 : 0;
+            if (li >= 0 && li < 64 && wg->local_is_str[li]) return 1;
+            /* W3: 字符串字段 (this.f / 裸字段 / c.f — cur_class 门槛由 resolve 内部判断) */
+            if (n->data) {
+                const char *recv = NULL; int32_t off = 0; int fs = 0;
+                if (w3_resolve_field(wg, (const char *)n->data, &recv, &off, &fs)) return fs;
+            }
+            return 0;
         }
         case NODE_CALL: {
             const char *name = n->data ? (const char *)n->data : "";
             if (strcmp(name, "concat") == 0 || strcmp(name, "itoa") == 0 ||
                 strcmp(name, "slice") == 0 || strcmp(name, "field") == 0) return 1;
+            /* W3: 方法返回 String */
+            {
+                char recv[128], meth[128];
+                if (w3_split_dot(name, recv, sizeof(recv), meth, sizeof(meth))) {
+                    WasmClass *c = NULL;
+                    if (strcmp(recv, "this") == 0) {
+                        if (wg->cur_class >= 0 && wg->cur_class < g_wasm_nclasses)
+                            c = &g_wasm_classes[wg->cur_class];
+                    } else {
+                        int li = wasm_local_lookup(wg, recv);
+                        if (li >= 0 && li < 64 && wg->local_class[li][0])
+                            c = w3_find_class(wg->local_class[li]);
+                    }
+                    if (c) {
+                        WasmMethod *m = w3_find_method(c, meth);
+                        if (m && m->ret_is_str) return 1;
+                    }
+                }
+            }
             return 0;
         }
         case NODE_EMPTY: {
@@ -263,6 +404,138 @@ static int wasm_try_builtin_call(WasmGen *wg, ASTNode *n) {
         }
     }
     return 0;
+}
+
+/* ===== W3: 类系统发射 helper ===== */
+static void emit_i32_const(WasmGen *wg, int32_t v);
+/* 拆 "recv.meth" → recv/meth; 返回 1=有点 */
+static int w3_split_dot(const char *name, char *recv, size_t rsz, char *meth, size_t msz) {
+    const char *dot = name ? strchr(name, '.') : NULL;
+    if (!dot || dot == name) return 0;
+    size_t rl = (size_t)(dot - name);
+    if (rl >= rsz) rl = rsz - 1;
+    memcpy(recv, name, rl); recv[rl] = 0;
+    snprintf(meth, msz, "%s", dot + 1);
+    return 1;
+}
+
+/* 发射 self/receiver 指针: this→local0; 局部变量→local.get; 否则 const 0 */
+static void w3_emit_recv(WasmGen *wg, const char *recv) {
+    if (strcmp(recv, "this") == 0) {
+        bv_write_u8(&wg->out, WASM_OPCODE_LOCAL_GET);
+        bv_write_u32_leb128(&wg->out, 0);
+        return;
+    }
+    int li = wasm_local_lookup(wg, recv);
+    if (li >= 0) {
+        bv_write_u8(&wg->out, WASM_OPCODE_LOCAL_GET);
+        bv_write_u32_leb128(&wg->out, (uint32_t)li);
+    } else {
+        emit_i32_const(wg, 0);
+    }
+}
+
+/* i32.load offset=N align=2 — 栈顶 ptr → 值 */
+static void w3_emit_load(WasmGen *wg, int32_t offset) {
+    bv_write_u8(&wg->out, WASM_OPCODE_I32_LOAD);
+    bv_write_u8(&wg->out, 0x02); /* align=2 */
+    bv_write_u32_leb128(&wg->out, (uint32_t)offset); /* offset */
+}
+
+/* i32.store offset=N align=2 — 栈顶 [ptr, val] */
+static void w3_emit_store(WasmGen *wg, int32_t offset) {
+    bv_write_u8(&wg->out, WASM_OPCODE_I32_STORE);
+    bv_write_u8(&wg->out, 0x02);
+    bv_write_u32_leb128(&wg->out, (uint32_t)offset);
+}
+
+/* "this.f"/"c.f"/裸字段名(方法体内) → 解析为 (recv_name, field_idx); 返回 1=成功 */
+static char w3_recv_buf[128];
+static int w3_resolve_field(WasmGen *wg, const char *name,
+                            const char **recv_out, int32_t *off_out, int *is_str_out) {
+    if (!name) return 0;
+    WasmClass *c = NULL;
+    char fld[128];
+    if (strncmp(name, "this.", 5) == 0) {
+        if (wg->cur_class < 0 || wg->cur_class >= g_wasm_nclasses) return 0;
+        c = &g_wasm_classes[wg->cur_class];
+        snprintf(w3_recv_buf, sizeof(w3_recv_buf), "this");
+        snprintf(fld, sizeof(fld), "%s", name + 5);
+    } else if (strchr(name, '.')) {
+        /* c.f: 接收者是持有实例的局部变量 (main 或方法体内均适用) */
+        char recv[128];
+        if (!w3_split_dot(name, recv, sizeof(recv), fld, sizeof(fld))) return 0;
+        int li = wasm_local_lookup(wg, recv);
+        if (li < 0 || li >= 64 || !wg->local_class[li][0]) return 0;
+        c = w3_find_class(wg->local_class[li]);
+        if (!c) return 0;
+        snprintf(w3_recv_buf, sizeof(w3_recv_buf), "%s", recv);
+    } else {
+        /* 裸字段名: 仅方法体内、且不在局部表时按 self 字段解析 */
+        if (wg->cur_class < 0 || wg->cur_class >= g_wasm_nclasses) return 0;
+        if (wasm_local_lookup(wg, name) >= 0) return 0;
+        c = &g_wasm_classes[wg->cur_class];
+        snprintf(w3_recv_buf, sizeof(w3_recv_buf), "this");
+        snprintf(fld, sizeof(fld), "%s", name);
+    }
+    int fi = w3_field_idx(c, fld);
+    if (fi < 0) return 0;
+    *recv_out = w3_recv_buf;
+    *off_out = c->fields[fi].offset;
+    *is_str_out = c->fields[fi].is_str;
+    return 1;
+}
+
+/* W3: expr 层的类方法/构造分派; 返回 1=已处理 */
+static int w3_try_class_call(WasmGen *wg, ASTNode *n) {
+    if (!n || n->type != NODE_CALL || !n->data) return 0;
+    const char *name = (const char *)n->data;
+    ASTNode *args = n;
+    /* 解析器把实参打包进单个 NODE_EMPTY("args") 容器 — 空参也要展开 */
+    if (n->child_count == 1 && n->children[0] &&
+        n->children[0]->type == NODE_EMPTY && n->children[0]->data &&
+        strcmp((const char *)n->children[0]->data, "args") == 0) {
+        args = n->children[0];
+    }
+    /* 构造: "Cls" 或 "Cls.create" */
+    {
+        WasmClass *c = w3_find_class(name);
+        char recv[128], meth[128];
+        if (!c && w3_split_dot(name, recv, sizeof(recv), meth, sizeof(meth))) {
+            WasmClass *c2 = w3_find_class(recv);
+            if (c2 && w3_find_method(c2, meth) && w3_find_method(c2, meth)->is_ctor) c = c2;
+        }
+        if (c && c->ctor_fn >= 0) {
+            int32_t sz = c->nfields > 0 ? c->nfields * 4 : 4;
+            emit_i32_const(wg, sz);
+            bv_write_u8(&wg->out, WASM_OPCODE_CALL);
+            bv_write_u32_leb128(&wg->out, (uint32_t)wg->rt_alloc);
+            /* alloc 返回 ptr, 直接作为 self 传入 ctor → 返回 self */
+            bv_write_u8(&wg->out, WASM_OPCODE_CALL);
+            bv_write_u32_leb128(&wg->out, (uint32_t)c->ctor_fn);
+            return 1;
+        }
+    }
+    /* 方法: "this.m" / "recv.m" */
+    char recv[128], meth[128];
+    if (!w3_split_dot(name, recv, sizeof(recv), meth, sizeof(meth))) return 0;
+    WasmClass *c = NULL;
+    if (strcmp(recv, "this") == 0) {
+        if (wg->cur_class >= 0 && wg->cur_class < g_wasm_nclasses)
+            c = &g_wasm_classes[wg->cur_class];
+    } else {
+        int li = wasm_local_lookup(wg, recv);
+        if (li >= 0 && li < 64 && wg->local_class[li][0])
+            c = w3_find_class(wg->local_class[li]);
+    }
+    if (!c) return 0;
+    WasmMethod *m = w3_find_method(c, meth);
+    if (!m || m->is_ctor) return 0;
+    w3_emit_recv(wg, recv);
+    for (size_t a = 0; a < args->child_count; a++) emit_expr(wg, args->children[a]);
+    bv_write_u8(&wg->out, WASM_OPCODE_CALL);
+    bv_write_u32_leb128(&wg->out, (uint32_t)m->fn_idx);
+    return 1;
 }
 
 static void emit_i32_const(WasmGen *wg, int32_t v) {
@@ -408,9 +681,18 @@ static void emit_expr(WasmGen *wg, ASTNode *n) {
             if (li >= 0) {
                 bv_write_u8(&wg->out, WASM_OPCODE_LOCAL_GET);
                 bv_write_u32_leb128(&wg->out, (uint32_t)li);
-            } else {
-                emit_i32_const(wg, 0);
+                break;
             }
+            /* W3: 字段加载 this.f / c.f / 裸字段名(方法体内) */
+            {
+                const char *recv = NULL; int32_t off = 0; int fs = 0;
+                if (w3_resolve_field(wg, vn, &recv, &off, &fs)) {
+                    w3_emit_recv(wg, recv);
+                    w3_emit_load(wg, off);
+                    break;
+                }
+            }
+            emit_i32_const(wg, 0);
             break;
         }
         case NODE_CALL: {
@@ -421,6 +703,8 @@ static void emit_expr(WasmGen *wg, ASTNode *n) {
             }
             /* W2: 字符串内建 (concat/itoa/slice/len/streq/find/find_from/field) */
             if (wasm_try_builtin_call(wg, n)) break;
+            /* W3: 类方法/构造分派 */
+            if (w3_try_class_call(wg, n)) break;
             /* Bug#33: 二元运算符真实语义 */
             {
                 unsigned char opc = 0;
@@ -579,6 +863,27 @@ static void emit_stmt(WasmGen *wg, ASTNode *n) {
                     }
                 }
                 if (init && wasm_expr_is_str(wg, init)) wg->local_is_str[li] = 1;
+                /* W3: 类实例追踪 — 类型标注或构造调用 */
+                if (li < 64) {
+                    for (size_t ci = 0; ci < n->child_count; ci++) {
+                        ASTNode *t = n->children[ci];
+                        if (t && t->type == NODE_CAP && t->data &&
+                            strcmp((const char *)t->data, "type") == 0 && t->child_count > 0 &&
+                            t->children[0] && t->children[0]->data &&
+                            w3_find_class((const char *)t->children[0]->data)) {
+                            snprintf(wg->local_class[li], sizeof(wg->local_class[0]), "%s",
+                                     (const char *)t->children[0]->data);
+                            break;
+                        }
+                    }
+                    if (!wg->local_class[li][0] && init && init->type == NODE_CALL && init->data) {
+                        const char *cn = (const char *)init->data;
+                        WasmClass *c = w3_find_class(cn);
+                        char r2[128], m2[128];
+                        if (!c && w3_split_dot(cn, r2, sizeof(r2), m2, sizeof(m2))) c = w3_find_class(r2);
+                        if (c) snprintf(wg->local_class[li], sizeof(wg->local_class[0]), "%s", c->name);
+                    }
+                }
             }
             if (init) {
                 emit_expr(wg, init);
@@ -641,6 +946,34 @@ static void emit_stmt(WasmGen *wg, ASTNode *n) {
             } else if (strcmp((const char *)n->data, "assign") == 0 && n->child_count >= 2) {
                 /* W1: x = expr → expr; local.set x (此前静默丢弃) */
                 ASTNode *lhs = n->children[0];
+                /* W3: 字段赋值 this.f = v / c.f = v / 裸字段 = v */
+                if (lhs && lhs->type == NODE_IDENT && lhs->data) {
+                    const char *recv = NULL; int32_t off = 0; int fs = 0;
+                    const char *lname = (const char *)lhs->data;
+                    /* c.f 赋值: 接收者是局部变量持有的实例 */
+                    if (strchr(lname, '.') && strncmp(lname, "this.", 5) != 0) {
+                        char r2[128], f2[128];
+                        if (w3_split_dot(lname, r2, sizeof(r2), f2, sizeof(f2))) {
+                            int li2 = wasm_local_lookup(wg, r2);
+                            if (li2 >= 0 && li2 < 64 && wg->local_class[li2][0]) {
+                                WasmClass *c2 = w3_find_class(wg->local_class[li2]);
+                                int fi2 = c2 ? w3_field_idx(c2, f2) : -1;
+                                if (fi2 >= 0) {
+                                    w3_emit_recv(wg, r2);
+                                    emit_expr(wg, n->children[1]);
+                                    w3_emit_store(wg, c2->fields[fi2].offset);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (w3_resolve_field(wg, lname, &recv, &off, &fs)) {
+                        w3_emit_recv(wg, recv);
+                        emit_expr(wg, n->children[1]);
+                        w3_emit_store(wg, off);
+                        break;
+                    }
+                }
                 emit_expr(wg, n->children[1]);
                 if (lhs && lhs->type == NODE_IDENT && lhs->data) {
                     int li = wasm_local_ensure(wg, (const char *)lhs->data);
@@ -688,6 +1021,134 @@ static void emit_stmt(WasmGen *wg, ASTNode *n) {
     }
 }
 
+
+/* ===== W3: 类方法体发射 =====
+ * 每个方法是独立 wasm 函数: local0=self, local1..N=参数, 其后为方法体局部变量。
+ * 参数来自函数类型 (不占 locals 声明); 额外 locals 从 nparam+1 起声明。
+ * 返回值: 显式 return / 尾表达式 / ctor 返回 self / 兜底 0。
+ */
+static int w3_is_value_expr(ASTNode *n) {
+    if (!n) return 0;
+    switch (n->type) {
+        case NODE_INT: case NODE_FLOAT: case NODE_STRING: case NODE_BOOL:
+        case NODE_CHAR: case NODE_IDENT: case NODE_CALL: case NODE_INDEX_ACCESS:
+            return 1;
+        case NODE_EMPTY: {
+            if (!n->data) return 0;
+            const char *d = (const char *)n->data;
+            static const char *ops[] = {"+","-","*","/","%","==","!=","<",">","<=",">=",
+                                        "and","or","not","neg", NULL};
+            for (int i = 0; ops[i]; i++) if (strcmp(d, ops[i]) == 0) return 1;
+            return 0;
+        }
+        default: return 0;
+    }
+}
+
+static void w3_emit_method_body(ByteVec *body, WasmGen *wg, int ci, int mi,
+                                ASTNode *mnode) {
+    WasmClass *c = &g_wasm_classes[ci];
+    WasmMethod *me = &c->methods[mi];
+    WasmGen fw = *wg;
+    fw.out = (ByteVec){0};
+    fw.cur_class = ci;
+    memset(fw.local_is_str, 0, sizeof(fw.local_is_str));
+    memset(fw.local_class, 0, sizeof(fw.local_class));
+
+    /* 参数预注册: self=0, 参数=1..N (来自函数类型, 不声明 locals) */
+    int nparams = me->nargs + 1;
+    wasm_local_ensure(&fw, "this"); /* local 0 = self */
+    /* 找 params 容器注册参数名 + String 标记 */
+    if (mnode) {
+        for (size_t k = 0; k < mnode->child_count; k++) {
+            ASTNode *cc = mnode->children[k];
+            if (cc && cc->type == NODE_EMPTY && cc->data &&
+                strcmp((const char *)cc->data, "params") == 0) {
+                for (size_t pi = 0; pi < cc->child_count && pi < 4; pi++) {
+                    ASTNode *pm = cc->children[pi];
+                    if (!pm || !pm->data) continue;
+                    int li = wasm_local_ensure(&fw, (const char *)pm->data);
+                    if (li >= 0 && li < 64 && pm->child_count > 0 &&
+                        pm->children[0] && pm->children[0]->data &&
+                        strcmp((const char *)pm->children[0]->data, "String") == 0) {
+                        fw.local_is_str[li] = 1;
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    /* 方法体: 除最后子节点外全部 stmt; 最后子节点按值/stmt 分派 */
+    ASTNode *body_node = NULL;
+    if (mnode) {
+        /* body = 最后一个非 params/非返回类型 child */
+        for (size_t k = mnode->child_count; k > 0; k--) {
+            ASTNode *cc = mnode->children[k - 1];
+            if (!cc) continue;
+            if (cc->type == NODE_EMPTY && cc->data &&
+                strcmp((const char *)cc->data, "params") == 0) continue;
+            if (cc->type == NODE_IDENT) continue; /* 返回类型节点 */
+            body_node = cc;
+            break;
+        }
+    }
+    if (body_node) {
+        /* NODE_EMPTY(data=NULL) 即语句块: 逐语句; 单表达式体: 直接发射 */
+        int blocklike = (body_node->type == NODE_EMPTY && !body_node->data);
+        size_t nstmt = blocklike ? body_node->child_count : 1;
+        ASTNode **stmts = blocklike ? body_node->children : &body_node;
+        for (size_t k = 0; k < nstmt; k++) {
+            ASTNode *st = stmts[k];
+            if (!st) continue;
+            if (k + 1 == nstmt && w3_is_value_expr(st)) {
+                emit_expr(&fw, st); /* 尾表达式: 留栈为返回值 */
+            } else {
+                emit_stmt(&fw, st);
+            }
+        }
+    }
+    /* 尾部返回值判定: 非值尾部补 0; ctor 补 self */
+    {
+        int tail_is_value = 0;
+        if (body_node) {
+            int blocklike = (body_node->type == NODE_EMPTY && !body_node->data);
+            ASTNode *last = NULL;
+            if (blocklike && body_node->child_count > 0) last = body_node->children[body_node->child_count - 1];
+            else if (!blocklike) last = body_node;
+            tail_is_value = w3_is_value_expr(last);
+            /* ctor: 返回 self 而非尾值 */
+            if (me->is_ctor) tail_is_value = 0;
+        }
+        if (!tail_is_value) {
+            if (me->is_ctor) {
+                /* local.get 0 → 返回 self 指针 */
+                bv_write_u8(&fw.out, WASM_OPCODE_LOCAL_GET);
+                bv_write_u32_leb128(&fw.out, 0);
+            } else {
+                emit_i32_const(&fw, 0);
+            }
+        }
+    }
+
+    /* 函数体编码: params 占 local 0..nparams-1, 额外 locals 声明 */
+    ByteVec code = {0};
+    int extra = fw.local_count - nparams;
+    if (extra > 0) {
+        bv_write_u8(&code, 0x01);
+        bv_write_u32_leb128(&code, (uint32_t)extra);
+        bv_write_u8(&code, 0x7F);
+    } else {
+        bv_write_u8(&code, 0x00);
+    }
+    bv_write_raw(&code, fw.out.data, fw.out.size);
+    bv_free(&fw.out);
+    bv_write_u8(&code, WASM_OPCODE_END);
+    bv_write_u32_leb128(body, (uint32_t)code.size);
+    bv_write_raw(body, code.data, code.size);
+    bv_free(&code);
+    (void)nparams;
+}
 
 /* ===== W2: 字符串运行时 (手写 wasm 函数体) =====
  * 函数索引布局 (wasip2): main=5 print_i32=6 alloc=7 strlen=8 concat=9 itoa=10
@@ -1013,11 +1474,17 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
     bv_write_u8(&bv, 0x01); bv_write_u8(&bv, 0x00);
     bv_write_u8(&bv, 0x00); bv_write_u8(&bv, 0x00);
 
+    /* W3: 类收集必须先于 type/func 段发射 (段计数依赖类方法数) */
+    {
+        int32_t b = (target == TARGET_WASI_P3) ? 5 : 6;
+        w3_collect_classes(ast, b + 11);
+    }
+
     /* --- type section --- */
     bv_write_u8(&bv, 0x01);
     {
         ByteVec body = {0};
-        bv_write_u8(&body, 0x08); /* 8 types (type 0-4 + W2: 5/6/7) */
+        bv_write_u8(&body, 0x09); /* 9 types (type 0-4 + W2: 5/6/7 + W3: 8) */
         /* type 0: (func (result i32)) */
         bv_write_u8(&body, 0x60);
         bv_write_u8(&body, 0x00);
@@ -1063,6 +1530,13 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
         bv_write_u8(&body, 0x60);
         bv_write_u8(&body, 0x03);
         bv_write_u8(&body, 0x7F); bv_write_u8(&body, 0x7F); bv_write_u8(&body, 0x7F);
+        bv_write_u8(&body, 0x01);
+        bv_write_u8(&body, 0x7F);
+        /* W3: type 8 = (i32,i32,i32,i32)->i32 [3参方法 + self] */
+        bv_write_u8(&body, 0x60);
+        bv_write_u8(&body, 0x04);
+        bv_write_u8(&body, 0x7F); bv_write_u8(&body, 0x7F);
+        bv_write_u8(&body, 0x7F); bv_write_u8(&body, 0x7F);
         bv_write_u8(&body, 0x01);
         bv_write_u8(&body, 0x7F);
         bv_write_vec(&bv, &body);
@@ -1126,8 +1600,12 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
     bv_write_u8(&bv, 0x03);
     {
         ByteVec body = {0};
-        /* W2: main + print_i32 + 10 字符串运行时函数 */
-        bv_write_u8(&body, 0x0C);
+        /* W2: main + print_i32 + 10 字符串运行时函数; W3: + 类方法 */
+        {
+            int ncf = 0;
+            for (int ci = 0; ci < g_wasm_nclasses; ci++) ncf += g_wasm_classes[ci].nmethods;
+            bv_write_u32_leb128(&body, (uint32_t)(12 + ncf));
+        }
         bv_write_u8(&body, 0x00); /* main -> type 0 */
         bv_write_u8(&body, 0x00); /* print_i32 -> type 0 */
         bv_write_u8(&body, 0x05); /* alloc -> type 5 */
@@ -1140,6 +1618,14 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
         bv_write_u8(&body, 0x06); /* find -> type 6 */
         bv_write_u8(&body, 0x07); /* find_from -> type 7 */
         bv_write_u8(&body, 0x07); /* field -> type 7 */
+        /* W3: 类方法类型 (self+0..3 参数) → type 5/6/7/8 */
+        for (int ci = 0; ci < g_wasm_nclasses; ci++) {
+            for (int mi = 0; mi < g_wasm_classes[ci].nmethods; mi++) {
+                int np = g_wasm_classes[ci].methods[mi].nargs; /* 不含 self */
+                static const unsigned char ty[4] = {0x05, 0x06, 0x07, 0x08};
+                bv_write_u8(&body, ty[np < 3 ? np : 3]);
+            }
+        }
         bv_write_vec(&bv, &body);
         bv_free(&body);
     }
@@ -1192,6 +1678,7 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
     }
 
     WasmGen wg = {0};
+    wg.cur_class = -1;
     wg.out = bv;
     wg.print_func_idx = (target == TARGET_WASI_P3) ? 5 : 6; /* import_count + 1 */
     wg.next_str_addr = 64; /* 字符串从地址 64 开始，避开 iovec 区域 (8-24) */
@@ -1212,14 +1699,20 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
     {
         ByteVec body = {0};
 
-        bv_write_u32_leb128(&body, 12); /* W2: 12 functions */
+        {
+            int ncf = 0;
+            for (int ci = 0; ci < g_wasm_nclasses; ci++) ncf += g_wasm_classes[ci].nmethods;
+            bv_write_u32_leb128(&body, (uint32_t)(12 + ncf)); /* W2: 12 + W3: 类方法 */
+        }
 
         /* func 0: main (Bug#33: 单 WasmGen 累积 locals + locals 声明头) */
         {
             WasmGen fw = wg;
             fw.out = (ByteVec){0};
             fw.local_count = 0;
+            fw.cur_class = -1; /* W3: main 不属于任何类 */
             memset(fw.local_is_str, 0, sizeof(fw.local_is_str));
+            memset(fw.local_class, 0, sizeof(fw.local_class));
 
             /* W2: 堆指针初始化 — global 0 = 字面量末尾 8 对齐 (main 体第一条指令) */
             {
@@ -1280,6 +1773,26 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
 
         /* W2: func 2-11 字符串运行时 */
         w2_emit_runtime_bodies(&body, &wg);
+
+        /* W3: 类方法函数体 (func 12+) — 需与 AST 方法节点按收集顺序对应 */
+        if (ast) {
+            for (size_t i = 0; i < ast->child_count; i++) {
+                ASTNode *ch = ast->children[i];
+                if (!ch || ch->type != NODE_ACTOR || !ch->data) continue;
+                if (strcmp((const char *)ch->data, "main") == 0) continue;
+                WasmClass *c = w3_find_class((const char *)ch->data);
+                if (!c) continue;
+                int mi = 0;
+                for (size_t j = 0; j < ch->child_count && mi < c->nmethods; j++) {
+                    ASTNode *m = ch->children[j];
+                    if (!m) continue;
+                    if (m->type != NODE_FUN && m->type != NODE_NEW && m->type != NODE_BE) continue;
+                    int ci = (int)(c - g_wasm_classes);
+                    w3_emit_method_body(&body, &wg, ci, mi, m);
+                    mi++;
+                }
+            }
+        }
 
         bv_write_vec(&bv, &body);
         bv_free(&body);

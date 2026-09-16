@@ -506,3 +506,45 @@ TEST(WasmBackend, StringBuiltinsDispatch) {
     ast_node_free(ast);
     std::remove("/tmp/ponypp_gen_wbi.wasm");
 }
+
+TEST(WasmBackend, ClassSystemDispatch) {
+    /* W3: 类系统 — 构造器/字段读写/方法分派 字节级校验 */
+    const char* src =
+        "class Counter {\n"
+        "  var count: U32\n"
+        "  new create() => {\n"
+        "    count = 42\n"
+        "  }\n"
+        "  fun ref add(v: U32): U32 => {\n"
+        "    count = count + v\n"
+        "    count\n"
+        "  }\n"
+        "}\n"
+        "actor main {\n"
+        "  fun ref main() {\n"
+        "    var c = Counter.create()\n"
+        "    print(c.add(5))\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    ASSERT_EQ(wasm_write_program(ast, "/tmp/ponypp_gen_w3.wasm", TARGET_WASI_P2), 0);
+    FILE* rf = fopen("/tmp/ponypp_gen_w3.wasm", "rb");
+    ASSERT_NE(rf, nullptr);
+    static unsigned char buf[65536] = {0};
+    size_t n = fread(buf, 1, sizeof(buf), rf);
+    fclose(rf);
+    bool call_ctor = false, call_add = false, has_store = false, has_load = false;
+    for (size_t i = 0; i + 1 < n; i++) {
+        if (buf[i] == 0x10 && buf[i + 1] == 0x11) call_ctor = true;  /* call create=17 */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x12) call_add = true;   /* call add=18 */
+        if (buf[i] == 0x36) has_store = true;                        /* i32.store */
+        if (buf[i] == 0x28) has_load = true;                         /* i32.load */
+    }
+    EXPECT_TRUE(call_ctor) << "Counter.create() 必须分派到构造器函数";
+    EXPECT_TRUE(call_add) << "c.add(5) 必须分派到类方法函数";
+    EXPECT_TRUE(has_store) << "字段赋值必须发射 i32.store";
+    EXPECT_TRUE(has_load) << "字段读取必须发射 i32.load";
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen_w3.wasm");
+}
