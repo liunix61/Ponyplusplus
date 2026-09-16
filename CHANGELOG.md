@@ -2,6 +2,20 @@
 
 All notable changes to Pony++ are documented in this file.
 
+## [0.2.13] - 2026-09-16
+
+### Added
+- **W4（M3 路线图）：wasm 内建全集（纯字符串部分）** — 3 个新运行时函数：`chr`（alloc(2)+单字节转串，b+11）、`repl`（find_from/slice/concat 组合扫描替换，b+12）、`json`（`pny_json_raw_get` 语义对齐：找 `"key":` 带后随冒号检查（Bug#29 防键名碰撞）→ `{`/`[` 深度扫描（in_str/esc 跟踪）/ 引号串剥引号 / 标量扫到 `,}]` 尾部去空白，b+13）。分派表新增 `str_from_char/str_replace_all/json_raw_get`，`str_field` 别名到 field。类 fn_base 后移 b+14。wasmtime 实测 w4_probe 五行全对：`Hi,PonyDB`（类+String 字段+return）、`b`（str_field）、`AB`（chr+concat）、`a-b-c`（repl）、`k1`（json 剥引号）。
+
+### Fixed
+- **Bug#51：wasm 端 return 语句静默丢失** — parser 的 return 是 `NODE_EMPTY(data="return")` 而非 `NODE_RETURN`（parser 内 NODE_RETURN 分支是死代码，永不生成），native codegen 认前者而 wasm 端不认，所有带返回值的方法/函数返回兜底 0。emit_expr NODE_EMPTY 分支新增 `"return"` 识别：发射实参表达式（或 0）+ return 指令。wasmtime 实测 w4h=`5|7`、w4g=`Hi|Hi,PonyDB|PonyDB`。
+- **wasm rt_repl 拼接错源** — 替换分支拼的是 old（local 1）而非 what（local 2），输出原样返回。
+- **wasm rt_json 引号串分支未剥引号** — slice 起点用了开引号位置，改为 p+1。
+- **wasm rt_json/rt_repl slice 调用参数错** — 误传 `s+p` 指针算术（2 参），rt_slice 语义是 `(s, st, en)` 绝对坐标 3 参；三处调用点全部修正。
+
+### Changed
+- gtest WasmBackend.ClassSystemDispatch 类方法索引 17/18 → 20/21（fn_base 后移）；新增 WasmBackend.W4BuiltinsAndReturn（chr/repl/json 分派 + return 指令 + ctor/greet 分派字节校验）。
+
 ## [0.2.12] - 2026-09-16
 
 ### Added

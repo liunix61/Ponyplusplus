@@ -535,9 +535,10 @@ TEST(WasmBackend, ClassSystemDispatch) {
     size_t n = fread(buf, 1, sizeof(buf), rf);
     fclose(rf);
     bool call_ctor = false, call_add = false, has_store = false, has_load = false;
+    /* W4(bug#46): fn_base 后移 b+14, wasi-p2(b=6) → 类方法从 20 起 (W3 时为 17) */
     for (size_t i = 0; i + 1 < n; i++) {
-        if (buf[i] == 0x10 && buf[i + 1] == 0x11) call_ctor = true;  /* call create=17 */
-        if (buf[i] == 0x10 && buf[i + 1] == 0x12) call_add = true;   /* call add=18 */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x14) call_ctor = true;  /* call create=20 */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x15) call_add = true;   /* call add=21 */
         if (buf[i] == 0x36) has_store = true;                        /* i32.store */
         if (buf[i] == 0x28) has_load = true;                         /* i32.load */
     }
@@ -547,4 +548,54 @@ TEST(WasmBackend, ClassSystemDispatch) {
     EXPECT_TRUE(has_load) << "字段读取必须发射 i32.load";
     ast_node_free(ast);
     std::remove("/tmp/ponypp_gen_w3.wasm");
+}
+
+TEST(WasmBackend, W4BuiltinsAndReturn) {
+    /* W4(bug#46): 内建全集 — chr/repl/json 分派 + Bug#51 return 语句发射 */
+    const char* src =
+        "class Holder {\n"
+        "  var name: String\n"
+        "  new create() => {\n"
+        "    name = \"PonyDB\"\n"
+        "  }\n"
+        "  fun ref greet(): String => {\n"
+        "    return \"Hi,\" + this.name\n"
+        "  }\n"
+        "}\n"
+        "actor main {\n"
+        "  fun ref main() {\n"
+        "    var h: Holder = Holder()\n"
+        "    print(h.greet())\n"
+        "    print(str_from_char(65))\n"
+        "    print(str_replace_all(\"aXbXc\", \"X\", \"-\"))\n"
+        "    print(json_raw_get(\"{\\\"key\\\":\\\"k1\\\"}\", \"key\"))\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    ASSERT_EQ(wasm_write_program(ast, "/tmp/ponypp_gen_w4.wasm", TARGET_WASI_P2), 0);
+    FILE* rf = fopen("/tmp/ponypp_gen_w4.wasm", "rb");
+    ASSERT_NE(rf, nullptr);
+    static unsigned char buf[65536] = {0};
+    size_t n = fread(buf, 1, sizeof(buf), rf);
+    fclose(rf);
+    /* chr=b+11=17, repl=b+12=18, json=b+13=19 (wasi-p2: b=6) */
+    bool call_chr = false, call_repl = false, call_json = false;
+    bool has_return = false, call_ctor = false, call_greet = false;
+    for (size_t i = 0; i + 1 < n; i++) {
+        if (buf[i] == 0x10 && buf[i + 1] == 0x11) call_chr = true;
+        if (buf[i] == 0x10 && buf[i + 1] == 0x12) call_repl = true;
+        if (buf[i] == 0x10 && buf[i + 1] == 0x13) call_json = true;
+        if (buf[i] == 0x0f) has_return = true;                       /* return */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x14) call_ctor = true;  /* Holder()=20 */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x15) call_greet = true; /* greet=21 */
+    }
+    EXPECT_TRUE(call_chr) << "str_from_char 必须分派到 rt_chr";
+    EXPECT_TRUE(call_repl) << "str_replace_all 必须分派到 rt_repl";
+    EXPECT_TRUE(call_json) << "json_raw_get 必须分派到 rt_json";
+    EXPECT_TRUE(has_return) << "Bug#51: NODE_EMPTY(data=return) 必须发射 return 指令";
+    EXPECT_TRUE(call_ctor) << "Holder() 必须分派到构造器";
+    EXPECT_TRUE(call_greet) << "h.greet() 必须分派到类方法";
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen_w4.wasm");
 }

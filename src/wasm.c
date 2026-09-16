@@ -189,6 +189,8 @@ typedef struct {
     /* W2: 字符串运行时函数索引 */
     int32_t rt_alloc, rt_strlen, rt_concat, rt_itoa, rt_slice;
     int32_t rt_streq, rt_print_str, rt_find, rt_find_from, rt_field;
+    /* W4: 内建全集 */
+    int32_t rt_chr, rt_repl, rt_json;
     /* W3: 当前方法所属类索引 (-1=无); 局部变量类名追踪 */
     int cur_class;
     char local_class[64][32];
@@ -345,7 +347,9 @@ static int wasm_expr_is_str(WasmGen *wg, ASTNode *n) {
         case NODE_CALL: {
             const char *name = n->data ? (const char *)n->data : "";
             if (strcmp(name, "concat") == 0 || strcmp(name, "itoa") == 0 ||
-                strcmp(name, "slice") == 0 || strcmp(name, "field") == 0) return 1;
+                strcmp(name, "slice") == 0 || strcmp(name, "field") == 0 ||
+                strcmp(name, "str_field") == 0 || strcmp(name, "str_from_char") == 0 ||
+                strcmp(name, "str_replace_all") == 0 || strcmp(name, "json_raw_get") == 0) return 1;
             /* W3: 方法返回 String */
             {
                 char recv[128], meth[128];
@@ -393,7 +397,10 @@ static int wasm_try_builtin_call(WasmGen *wg, ASTNode *n) {
         {"slice", 3, wg->rt_slice}, {"len", 1, wg->rt_strlen},
         {"length", 1, wg->rt_strlen}, {"streq", 2, wg->rt_streq},
         {"find", 2, wg->rt_find}, {"find_from", 3, wg->rt_find_from},
-        {"field", 3, wg->rt_field},
+        {"field", 3, wg->rt_field}, {"str_field", 3, wg->rt_field},
+        {"str_from_char", 1, wg->rt_chr},
+        {"str_replace_all", 3, wg->rt_repl},
+        {"json_raw_get", 2, wg->rt_json},
     };
     for (size_t i = 0; i < sizeof(tbl)/sizeof(tbl[0]); i++) {
         if (strcmp(name, tbl[i].nm) == 0 && (int)args->child_count >= tbl[i].nargs) {
@@ -768,6 +775,13 @@ static void emit_expr(WasmGen *wg, ASTNode *n) {
             if (n->child_count >= 1) emit_expr(wg, n->children[0]);
             break;
         case NODE_EMPTY:
+            /* Bug#51: parser 的 return 语句是 NODE_EMPTY(data="return") 而非 NODE_RETURN */
+            if (n->data && strcmp((const char *)n->data, "return") == 0) {
+                if (n->child_count >= 1) emit_expr(wg, n->children[0]);
+                else emit_i32_const(wg, 0);
+                bv_write_u8(&wg->out, WASM_OPCODE_RETURN);
+                break;
+            }
             /* W1: 一元 not/neg */
             if (n->data && n->child_count == 1) {
                 const char *u = (const char *)n->data;
@@ -1460,6 +1474,256 @@ static void w2_emit_runtime_bodies(ByteVec *body, WasmGen *wg) {
     wl(&c, WASM_OPCODE_LOCAL_GET, 8);
     wfn_end(body, &c);
 
+    /* W4: chr(c): alloc(2); p[0]=c; p[1]=0; return p — local 1 */
+    wfn_begin(body, &c, 1);
+    wi32(&c, 2); wfn(&c, wg->rt_alloc); wl(&c, WASM_OPCODE_LOCAL_SET, 1);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 1); wl(&c, WASM_OPCODE_LOCAL_GET, 0); wstore8(&c);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 1); wi32(&c, 1); w8(&c, WASM_OPCODE_I32_ADD);
+    wi32(&c, 0); wstore8(&c);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 1);
+    wfn_end(body, &c);
+
+    /* W4: repl(s,old,new): res=3 pos=4 p=5 — 组合 find_from/slice/concat */
+    wfn_begin(body, &c, 3);
+    wi32(&c, 1); wfn(&c, wg->rt_alloc); wl(&c, WASM_OPCODE_LOCAL_SET, 3);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 3); wi32(&c, 0); wstore8(&c);
+    wi32(&c, 0); wl(&c, WASM_OPCODE_LOCAL_SET, 4);
+    w8(&c, WASM_OPCODE_BLOCK); w8(&c, 0x40); w8(&c, WASM_OPCODE_LOOP); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 1);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 4); wfn(&c, wg->rt_find_from);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 5);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 5); wi32(&c, -1); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 3);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 4);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wfn(&c, wg->rt_strlen);
+    wfn(&c, wg->rt_slice); wfn(&c, wg->rt_concat); wl(&c, WASM_OPCODE_LOCAL_SET, 3);
+    w8(&c, WASM_OPCODE_BR); wu32(&c, 2);
+    w8(&c, WASM_OPCODE_END);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 3);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 4);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 5); wfn(&c, wg->rt_slice);
+    wfn(&c, wg->rt_concat); wl(&c, WASM_OPCODE_LOCAL_SET, 3);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 3); wl(&c, WASM_OPCODE_LOCAL_GET, 2);
+    wfn(&c, wg->rt_concat); wl(&c, WASM_OPCODE_LOCAL_SET, 3);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 5); wl(&c, WASM_OPCODE_LOCAL_GET, 1);
+    wfn(&c, wg->rt_strlen); w8(&c, WASM_OPCODE_I32_ADD);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 4);
+    w8(&c, WASM_OPCODE_BR); wu32(&c, 0);
+    w8(&c, WASM_OPCODE_END); w8(&c, WASM_OPCODE_END);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 3);
+    wfn_end(body, &c);
+
+    /* W4: json(s,key): pat=2 pos=3 p=4 after=5 i=6 ch=7 depth=8 in_str=9 esc=10 c=11 q=12
+     * pny_json_raw_get 语义: 找 "key": 后按 {[/引号/标量 提取原始值 */
+    wfn_begin(body, &c, 11);
+    /* pat = q + (key + q), q=chr(34) */
+    wi32(&c, 34); wfn(&c, wg->rt_chr); wl(&c, WASM_OPCODE_LOCAL_SET, 12);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 12);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 1); wl(&c, WASM_OPCODE_LOCAL_GET, 12);
+    wfn(&c, wg->rt_concat); wfn(&c, wg->rt_concat);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 2);
+    wi32(&c, 0); wl(&c, WASM_OPCODE_LOCAL_SET, 3);
+    /* 搜索循环: find_from 直到后随 ':' */
+    w8(&c, WASM_OPCODE_BLOCK); w8(&c, 0x40); w8(&c, WASM_OPCODE_LOOP); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 2);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 3); wfn(&c, wg->rt_find_from);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 4);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 4); wi32(&c, -1); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wi32(&c, 1); wfn(&c, wg->rt_alloc); wl(&c, WASM_OPCODE_LOCAL_TEE, 12);
+    wi32(&c, 0); wstore8(&c);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 12); w8(&c, WASM_OPCODE_RETURN);
+    w8(&c, WASM_OPCODE_END);
+    /* after = p + len(pat); 跳空白 */
+    wl(&c, WASM_OPCODE_LOCAL_GET, 4); wl(&c, WASM_OPCODE_LOCAL_GET, 2);
+    wfn(&c, wg->rt_strlen); w8(&c, WASM_OPCODE_I32_ADD);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 5);
+    w8(&c, WASM_OPCODE_BLOCK); w8(&c, 0x40); w8(&c, WASM_OPCODE_LOOP); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 5);
+    w8(&c, WASM_OPCODE_I32_ADD); wload8(&c); wl(&c, WASM_OPCODE_LOCAL_SET, 7);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 32); w8(&c, WASM_OPCODE_I32_EQ);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 9); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_I32_OR);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 10); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_I32_OR);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 13); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_I32_OR);
+    w8(&c, WASM_OPCODE_I32_EQZ); w8(&c, WASM_OPCODE_BR_IF); wu32(&c, 1);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 5); wi32(&c, 1); w8(&c, WASM_OPCODE_I32_ADD);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 5);
+    w8(&c, WASM_OPCODE_BR); wu32(&c, 0);
+    w8(&c, WASM_OPCODE_END); w8(&c, WASM_OPCODE_END);
+    /* s[after]==':' → 跳出搜索循环 */
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 5);
+    w8(&c, WASM_OPCODE_I32_ADD); wload8(&c); wi32(&c, 58);
+    w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    w8(&c, WASM_OPCODE_BR); wu32(&c, 2);
+    w8(&c, WASM_OPCODE_END);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 4); wi32(&c, 1); w8(&c, WASM_OPCODE_I32_ADD);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 3);
+    w8(&c, WASM_OPCODE_BR); wu32(&c, 0);
+    w8(&c, WASM_OPCODE_END); w8(&c, WASM_OPCODE_END);
+    /* p = after+1; 再跳空白 (含前导冒号后的空白) */
+    wl(&c, WASM_OPCODE_LOCAL_GET, 5); wi32(&c, 1); w8(&c, WASM_OPCODE_I32_ADD);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 4);
+    w8(&c, WASM_OPCODE_BLOCK); w8(&c, 0x40); w8(&c, WASM_OPCODE_LOOP); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 4);
+    w8(&c, WASM_OPCODE_I32_ADD); wload8(&c); wl(&c, WASM_OPCODE_LOCAL_SET, 7);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 32); w8(&c, WASM_OPCODE_I32_EQ);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 9); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_I32_OR);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 10); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_I32_OR);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 13); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_I32_OR);
+    w8(&c, WASM_OPCODE_I32_EQZ); w8(&c, WASM_OPCODE_BR_IF); wu32(&c, 1);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 4); wi32(&c, 1); w8(&c, WASM_OPCODE_I32_ADD);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 4);
+    w8(&c, WASM_OPCODE_BR); wu32(&c, 0);
+    w8(&c, WASM_OPCODE_END); w8(&c, WASM_OPCODE_END);
+    /* c = s[p] */
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 4);
+    w8(&c, WASM_OPCODE_I32_ADD); wload8(&c); wl(&c, WASM_OPCODE_LOCAL_SET, 11);
+    /* 分支1: { 或 [ → 深度扫描 */
+    wl(&c, WASM_OPCODE_LOCAL_GET, 11); wi32(&c, 123); w8(&c, WASM_OPCODE_I32_EQ);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 11); wi32(&c, 91); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_I32_OR);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wi32(&c, 0); wl(&c, WASM_OPCODE_LOCAL_SET, 8);
+    wi32(&c, 0); wl(&c, WASM_OPCODE_LOCAL_SET, 9);
+    wi32(&c, 0); wl(&c, WASM_OPCODE_LOCAL_SET, 10);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 4); wl(&c, WASM_OPCODE_LOCAL_SET, 6);
+    w8(&c, WASM_OPCODE_BLOCK); w8(&c, 0x40); w8(&c, WASM_OPCODE_LOOP); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 6);
+    w8(&c, WASM_OPCODE_I32_ADD); wload8(&c); wl(&c, WASM_OPCODE_LOCAL_SET, 7);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); w8(&c, WASM_OPCODE_I32_EQZ);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wi32(&c, 1); wfn(&c, wg->rt_alloc); wl(&c, WASM_OPCODE_LOCAL_TEE, 12);
+    wi32(&c, 0); wstore8(&c);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 12); w8(&c, WASM_OPCODE_RETURN);
+    w8(&c, WASM_OPCODE_END);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 9);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 10);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wi32(&c, 0); wl(&c, WASM_OPCODE_LOCAL_SET, 10);
+    w8(&c, WASM_OPCODE_ELSE);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 92); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wi32(&c, 1); wl(&c, WASM_OPCODE_LOCAL_SET, 10);
+    w8(&c, WASM_OPCODE_ELSE);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 34); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wi32(&c, 0); wl(&c, WASM_OPCODE_LOCAL_SET, 9);
+    w8(&c, WASM_OPCODE_END);
+    w8(&c, WASM_OPCODE_END);
+    w8(&c, WASM_OPCODE_END);
+    w8(&c, WASM_OPCODE_ELSE);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 34); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wi32(&c, 1); wl(&c, WASM_OPCODE_LOCAL_SET, 9);
+    w8(&c, WASM_OPCODE_ELSE);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 123); w8(&c, WASM_OPCODE_I32_EQ);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 91); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_I32_OR);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 8); wi32(&c, 1); w8(&c, WASM_OPCODE_I32_ADD);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 8);
+    w8(&c, WASM_OPCODE_ELSE);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 125); w8(&c, WASM_OPCODE_I32_EQ);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 93); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_I32_OR);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 8); wi32(&c, 1); w8(&c, WASM_OPCODE_I32_SUB);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 8);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 8); w8(&c, WASM_OPCODE_I32_EQZ);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 4);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 6); wi32(&c, 1); w8(&c, WASM_OPCODE_I32_ADD);
+    wfn(&c, wg->rt_slice); w8(&c, WASM_OPCODE_RETURN);
+    w8(&c, WASM_OPCODE_END);
+    w8(&c, WASM_OPCODE_END);
+    w8(&c, WASM_OPCODE_END);
+    w8(&c, WASM_OPCODE_END);
+    w8(&c, WASM_OPCODE_END);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 6); wi32(&c, 1); w8(&c, WASM_OPCODE_I32_ADD);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 6);
+    w8(&c, WASM_OPCODE_BR); wu32(&c, 0);
+    w8(&c, WASM_OPCODE_END); w8(&c, WASM_OPCODE_END);
+    w8(&c, WASM_OPCODE_END); /* 分支1 END */
+    /* 分支2: 引号串 */
+    wl(&c, WASM_OPCODE_LOCAL_GET, 11); wi32(&c, 34); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 4); wi32(&c, 1); w8(&c, WASM_OPCODE_I32_ADD);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 6);
+    w8(&c, WASM_OPCODE_BLOCK); w8(&c, 0x40); w8(&c, WASM_OPCODE_LOOP); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 6);
+    w8(&c, WASM_OPCODE_I32_ADD); wload8(&c); wl(&c, WASM_OPCODE_LOCAL_SET, 7);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); w8(&c, WASM_OPCODE_I32_EQZ);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    w8(&c, WASM_OPCODE_BR); wu32(&c, 2);
+    w8(&c, WASM_OPCODE_END);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 92); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 6); wi32(&c, 1); w8(&c, WASM_OPCODE_I32_ADD);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 6);
+    w8(&c, WASM_OPCODE_END);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 34); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 4);
+    wi32(&c, 1); w8(&c, WASM_OPCODE_I32_ADD);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 6);
+    wfn(&c, wg->rt_slice); w8(&c, WASM_OPCODE_RETURN);
+    w8(&c, WASM_OPCODE_END);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 6); wi32(&c, 1); w8(&c, WASM_OPCODE_I32_ADD);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 6);
+    w8(&c, WASM_OPCODE_BR); wu32(&c, 0);
+    w8(&c, WASM_OPCODE_END); w8(&c, WASM_OPCODE_END);
+    w8(&c, WASM_OPCODE_END); /* 分支2 END */
+    /* 分支3: 标量 — 扫到 , } ] 或 NUL, 尾部去空白 */
+    wl(&c, WASM_OPCODE_LOCAL_GET, 4); wl(&c, WASM_OPCODE_LOCAL_SET, 6);
+    w8(&c, WASM_OPCODE_BLOCK); w8(&c, 0x40); w8(&c, WASM_OPCODE_LOOP); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 6);
+    w8(&c, WASM_OPCODE_I32_ADD); wload8(&c); wl(&c, WASM_OPCODE_LOCAL_SET, 7);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 44); w8(&c, WASM_OPCODE_I32_EQ);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 125); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_I32_OR);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 93); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_I32_OR);
+    w8(&c, WASM_OPCODE_IF); w8(&c, 0x40);
+    w8(&c, WASM_OPCODE_BR); wu32(&c, 2);
+    w8(&c, WASM_OPCODE_END);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 6); wi32(&c, 1); w8(&c, WASM_OPCODE_I32_ADD);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 6);
+    w8(&c, WASM_OPCODE_BR); wu32(&c, 0);
+    w8(&c, WASM_OPCODE_END); w8(&c, WASM_OPCODE_END);
+    /* 尾部去空白: while i>p && s[i-1]∈空白: i-- */
+    w8(&c, WASM_OPCODE_BLOCK); w8(&c, 0x40); w8(&c, WASM_OPCODE_LOOP); w8(&c, 0x40);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 6); wl(&c, WASM_OPCODE_LOCAL_GET, 4);
+    w8(&c, WASM_OPCODE_I32_GT_S); w8(&c, WASM_OPCODE_I32_EQZ);
+    w8(&c, WASM_OPCODE_BR_IF); wu32(&c, 1);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 6);
+    wi32(&c, 1); w8(&c, WASM_OPCODE_I32_SUB); w8(&c, WASM_OPCODE_I32_ADD);
+    wload8(&c); wl(&c, WASM_OPCODE_LOCAL_SET, 7);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 32); w8(&c, WASM_OPCODE_I32_EQ);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 9); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_I32_OR);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 10); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_I32_OR);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 7); wi32(&c, 13); w8(&c, WASM_OPCODE_I32_EQ);
+    w8(&c, WASM_OPCODE_I32_OR);
+    w8(&c, WASM_OPCODE_I32_EQZ); w8(&c, WASM_OPCODE_BR_IF); wu32(&c, 1);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 6); wi32(&c, 1); w8(&c, WASM_OPCODE_I32_SUB);
+    wl(&c, WASM_OPCODE_LOCAL_SET, 6);
+    w8(&c, WASM_OPCODE_BR); wu32(&c, 0);
+    w8(&c, WASM_OPCODE_END); w8(&c, WASM_OPCODE_END);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 0); wl(&c, WASM_OPCODE_LOCAL_GET, 4);
+    wl(&c, WASM_OPCODE_LOCAL_GET, 6);
+    wfn(&c, wg->rt_slice); w8(&c, WASM_OPCODE_RETURN);
+    wfn_end(body, &c);
+
 }
 
 /* --- 生成 WASM 模块 --- */
@@ -1477,7 +1741,7 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
     /* W3: 类收集必须先于 type/func 段发射 (段计数依赖类方法数) */
     {
         int32_t b = (target == TARGET_WASI_P3) ? 5 : 6;
-        w3_collect_classes(ast, b + 11);
+        w3_collect_classes(ast, b + 14);
     }
 
     /* --- type section --- */
@@ -1604,7 +1868,7 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
         {
             int ncf = 0;
             for (int ci = 0; ci < g_wasm_nclasses; ci++) ncf += g_wasm_classes[ci].nmethods;
-            bv_write_u32_leb128(&body, (uint32_t)(12 + ncf));
+            bv_write_u32_leb128(&body, (uint32_t)(15 + ncf));
         }
         bv_write_u8(&body, 0x00); /* main -> type 0 */
         bv_write_u8(&body, 0x00); /* print_i32 -> type 0 */
@@ -1618,6 +1882,9 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
         bv_write_u8(&body, 0x06); /* find -> type 6 */
         bv_write_u8(&body, 0x07); /* find_from -> type 7 */
         bv_write_u8(&body, 0x07); /* field -> type 7 */
+        bv_write_u8(&body, 0x05); /* chr -> type 5 */
+        bv_write_u8(&body, 0x07); /* repl -> type 7 */
+        bv_write_u8(&body, 0x06); /* json -> type 6 */
         /* W3: 类方法类型 (self+0..3 参数) → type 5/6/7/8 */
         for (int ci = 0; ci < g_wasm_nclasses; ci++) {
             for (int mi = 0; mi < g_wasm_classes[ci].nmethods; mi++) {
@@ -1689,6 +1956,8 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
         wg.rt_itoa = b + 4; wg.rt_slice = b + 5; wg.rt_streq = b + 6;
         wg.rt_print_str = b + 7; wg.rt_find = b + 8; wg.rt_find_from = b + 9;
         wg.rt_field = b + 10;
+        /* W4: chr/repl/json */
+        wg.rt_chr = b + 11; wg.rt_repl = b + 12; wg.rt_json = b + 13;
     }
 
     /* 预扫描 AST，收集字符串 */
@@ -1702,7 +1971,7 @@ int wasm_write_program(ASTNode *ast, const char *output, TargetKind target) {
         {
             int ncf = 0;
             for (int ci = 0; ci < g_wasm_nclasses; ci++) ncf += g_wasm_classes[ci].nmethods;
-            bv_write_u32_leb128(&body, (uint32_t)(12 + ncf)); /* W2: 12 + W3: 类方法 */
+            bv_write_u32_leb128(&body, (uint32_t)(15 + ncf)); /* W2: 12 + W4: 3 + W3: 类方法 */
         }
 
         /* func 0: main (Bug#33: 单 WasmGen 累积 locals + locals 声明头) */
