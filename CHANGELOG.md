@@ -2,6 +2,25 @@
 
 All notable changes to Pony++ are documented in this file.
 
+## [0.2.14] - 2026-09-16
+
+### Added
+- **W4b（M3 路线图）：wasm 系统接口全集（env/file/sys_exec）+ preopen 绝对路径解析** — 5 个新运行时函数：`env_get`（environ_sizes_get+environ_get 线性扫描 `K=V`，缺省返回 ""，b+14）、`file_exists`（path_filestat_get errno==0 → 1，b+15）、`file_read`（path_open+fd_read 循环防短读+bump alloc 拼接，b+16）、`file_append`（O_CREAT+fd_seek(END)+fd_write，b+17）、`sys_exec`（wasm 沙箱安全返回 ""，ponydb printenv 有 fallback，b+18）。import 11→14（+environ_sizes_get/environ_get/path_open/fd_close/path_filestat_get/fd_filestat_get/fd_prestat_get/fd_prestat_dir_name/fd_seek，P2/P3 统一），type 9→12（+path_open 9 参/path_filestat_get 5 参/fd_seek i64 混参）。分派表+json_raw_get 表各 +5 条目。
+- **rt_resolve：preopen 绝对路径解析（b+19）** — `(path, out_fd_ptr) → relpath_ptr`。wasmtime 25 沙箱硬约束：preopen 目录外绝对路径一律 errno 63=ENOTCAPABLE（fd3+`/tmp/x` 也拒），wasi-libc 的做法是运行时剥前缀。rt_resolve 遍历 fd 3..27 调 fd_prestat_get（tag==0 目录）→ fd_prestat_dir_name 取目录名 → 最长前缀匹配（边界检查：路径后继须 `/`/NUL，或目录名自带 `/`）→ 返回 (preopen fd 写 *out_fd_ptr, 相对路径指针)。arena 技巧：存/恢复堆指针（global 0）实现 namebuf 零泄漏。三个文件调用点（fexists/fread/fappend）先 resolve 再操作。
+- **wasm 内存布局**：iovec@8/12、nwritten@24、environ 计数@28/大小@32、fd_seek newoff@32、fd 槽@36、prestat tag@40/name_len@44、resolve out_fd@48、statbuf/sz/数据区 alloc 从 bump 堆。
+
+### Fixed
+- **wasmtime 25 的 fdflags=APPEND 不生效**（fd_write 从偏移 0 覆盖写）— wat 级探针实锤（O_CREAT|APPEND 两次写只留后者）；fd_seek(fd,0,SEEK_END=2) 官方语义兜底，rights 相应加 FD_SEEK。ponydb persist 日志从此无丢行。
+- http.c 缺 `_POSIX_C_SOURCE 200809L`/`<strings.h>`、incremental.c 缺 `<time.h>`（预存构建问题）。
+- `WASM_OPCODE_EQZ` 宏不存在 → `WASM_OPCODE_I32_EQZ`（2 处）。
+
+### Changed
+- 索引全体后移两次：W4b 基线（11 imports → main=11/print=12）→ preopen 解析（13 imports → main=13/print=14）→ fd_seek（14 imports → main=14/print=15，类 fn_base=b+20=35）。w3_collect_classes 硬编码基址同步。gtest 字节断言全量更新（concat=18/print_str=22/field=25/slice=20/find_from=24/chr=26/repl=27/json=28/ctor=35/add·greet=36），19/19 ✓。
+- ponydb 49/49 回归 ✓；wasmtime e2e 全绿：env_get（需 `--env` 显式注入）、file_exists/read/append（`--dir=/tmp`）、sys_exec→""。
+
+### Known Issues
+- Bug#52：单字符字符串字面量 `print("[")` 在 wasi-p2 无输出（疑似 lexer/字符串池 bug，待查）。
+
 ## [0.2.13] - 2026-09-16
 
 ### Added

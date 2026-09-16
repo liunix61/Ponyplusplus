@@ -3,12 +3,14 @@
  *
  * Phase 4: 生态 — HTTP/1.1 客户端 (POSIX sockets)
  */
+#define _POSIX_C_SOURCE 200809L
 
 #include "ponypp/http.h"
 #include "ponypp/util.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>

@@ -463,8 +463,8 @@ TEST(WasmBackend, StringRuntimeDispatch) {
     fclose(rf);
     bool call_concat = false, call_print_str = false, has_global = false;
     for (size_t i = 0; i + 1 < n; i++) {
-        if (buf[i] == 0x10 && buf[i + 1] == 0x09) call_concat = true;   /* call concat */
-        if (buf[i] == 0x10 && buf[i + 1] == 0x0D) call_print_str = true;/* call print_str */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x12) call_concat = true;   /* call concat=18 (b=15) */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x16) call_print_str = true;/* call print_str=22 (b=15) */
         if (buf[i] == 0x06) has_global = true;                          /* global section */
     }
     EXPECT_TRUE(call_concat) << "字符串 + 必须分派 concat 运行时";
@@ -496,9 +496,9 @@ TEST(WasmBackend, StringBuiltinsDispatch) {
     fclose(rf);
     bool call_field = false, call_slice = false, call_ff = false;
     for (size_t i = 0; i + 1 < n; i++) {
-        if (buf[i] == 0x10 && buf[i + 1] == 0x10) call_field = true;    /* call field=16 */
-        if (buf[i] == 0x10 && buf[i + 1] == 0x0B) call_slice = true;    /* call slice=11 */
-        if (buf[i] == 0x10 && buf[i + 1] == 0x0F) call_ff = true;       /* call find_from=15 */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x19) call_field = true;    /* call field=25 (b=15) */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x14) call_slice = true;    /* call slice=20 (b=15) */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x18) call_ff = true;       /* call find_from=24 (b=15) */
     }
     EXPECT_TRUE(call_field) << "field() 必须分派到 field 运行时";
     EXPECT_TRUE(call_slice) << "slice() 必须分派到 slice 运行时";
@@ -535,10 +535,10 @@ TEST(WasmBackend, ClassSystemDispatch) {
     size_t n = fread(buf, 1, sizeof(buf), rf);
     fclose(rf);
     bool call_ctor = false, call_add = false, has_store = false, has_load = false;
-    /* W4(bug#46): fn_base 后移 b+14, wasi-p2(b=6) → 类方法从 20 起 (W3 时为 17) */
+    /* W4b: fn_base 后移 b+19, wasi-p2(b=12) → 类方法从 31 起 */
     for (size_t i = 0; i + 1 < n; i++) {
-        if (buf[i] == 0x10 && buf[i + 1] == 0x14) call_ctor = true;  /* call create=20 */
-        if (buf[i] == 0x10 && buf[i + 1] == 0x15) call_add = true;   /* call add=21 */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x23) call_ctor = true;  /* call create=35 (b=15) */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x24) call_add = true;   /* call add=36 (b=15) */
         if (buf[i] == 0x36) has_store = true;                        /* i32.store */
         if (buf[i] == 0x28) has_load = true;                         /* i32.load */
     }
@@ -579,16 +579,16 @@ TEST(WasmBackend, W4BuiltinsAndReturn) {
     static unsigned char buf[65536] = {0};
     size_t n = fread(buf, 1, sizeof(buf), rf);
     fclose(rf);
-    /* chr=b+11=17, repl=b+12=18, json=b+13=19 (wasi-p2: b=6) */
+    /* chr=b+11=26, repl=b+12=27, json=b+13=28 (b=15) */
     bool call_chr = false, call_repl = false, call_json = false;
     bool has_return = false, call_ctor = false, call_greet = false;
     for (size_t i = 0; i + 1 < n; i++) {
-        if (buf[i] == 0x10 && buf[i + 1] == 0x11) call_chr = true;
-        if (buf[i] == 0x10 && buf[i + 1] == 0x12) call_repl = true;
-        if (buf[i] == 0x10 && buf[i + 1] == 0x13) call_json = true;
+        if (buf[i] == 0x10 && buf[i + 1] == 0x1A) call_chr = true;
+        if (buf[i] == 0x10 && buf[i + 1] == 0x1B) call_repl = true;
+        if (buf[i] == 0x10 && buf[i + 1] == 0x1C) call_json = true;
         if (buf[i] == 0x0f) has_return = true;                       /* return */
-        if (buf[i] == 0x10 && buf[i + 1] == 0x14) call_ctor = true;  /* Holder()=20 */
-        if (buf[i] == 0x10 && buf[i + 1] == 0x15) call_greet = true; /* greet=21 */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x23) call_ctor = true;  /* Holder()=35 (b=15) */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x24) call_greet = true; /* greet=36 (b=15) */
     }
     EXPECT_TRUE(call_chr) << "str_from_char 必须分派到 rt_chr";
     EXPECT_TRUE(call_repl) << "str_replace_all 必须分派到 rt_repl";
