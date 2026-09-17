@@ -13,6 +13,9 @@ All notable changes to Pony++ are documented in this file.
   - gtest：Codegen.ExternFunFFI（原型字节+直调分派）
   - wasi-p2 端暂不支持（NODE_EXTERN 被忽略，后续 W 阶段映射 wasm import）
 
+### Fixed
+- **点链左值赋值 `a.f = x` 在非 this 上下文发裸点访问**（nanonode S3 实测：main 中 `g.signature = sig` 生成 `g.signature = sig` 而非 `g->signature = sig` → gcc "is a pointer; did you mean ->"）。赋值 LHS 分派链补 `strchr(lhs,'.')` 分支：经 cg_chain_resolve 解析 receiver+字段 → `recv->field`。与 Bug#25/26 链式读取同族，此为写路径。gtest：Codegen.DottedLValueAssign。
+
 ## [0.2.15] - 2026-09-17
 
 ### Added

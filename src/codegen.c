@@ -1373,6 +1373,13 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
                     /* 裸字段名 (如 pos = 0) → self->pos = 0 */
                     cg_emit_raw(cg, "/* stmt */self->%s = ", lhs);
                     if (compound_op) cg_emit_raw(cg, "self->%s %s ", lhs, compound_op);
+                } else if (strchr(lhs, '.')) {
+                    /* 点链左值 (g.signature / a.b.c): 经 cg_chain_resolve → recv->field (nanonode S3) */
+                    char chain_recv[256];
+                    chain_recv[0] = 0;
+                    cg_chain_resolve(cg, lhs, chain_recv, sizeof(chain_recv));
+                    cg_emit_raw(cg, "/* stmt */%s = ", chain_recv[0] ? chain_recv : lhs);
+                    if (compound_op) cg_emit_raw(cg, "%s %s ", chain_recv[0] ? chain_recv : lhs, compound_op);
                 } else {
                     /* 普通标识符 (局部变量) */
                     cg_emit_raw(cg, "/* stmt */%s = ", lhs);
