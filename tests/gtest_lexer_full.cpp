@@ -51,9 +51,10 @@ TEST(LexerFull, Keywords) {
     EXPECT_EQ(lex_one("import"), TK_KEYWORD);
     EXPECT_EQ(lex_one("use"), TK_KEYWORD);
     EXPECT_EQ(lex_one("as"), TK_KEYWORD);
-    EXPECT_EQ(lex_one("and"), TK_KEYWORD);
-    EXPECT_EQ(lex_one("or"), TK_KEYWORD);
-    EXPECT_EQ(lex_one("not"), TK_KEYWORD);
+    /* Bug#62: and/or/not 映射为 &&/||/! 运算符 token */
+    EXPECT_EQ(lex_one("and"), TK_AMPAMP);
+    EXPECT_EQ(lex_one("or"), TK_PIPEPIPE);
+    EXPECT_EQ(lex_one("not"), TK_BANG);
     EXPECT_EQ(lex_one("is"), TK_KEYWORD);
     EXPECT_EQ(lex_one("in"), TK_KEYWORD);
     EXPECT_EQ(lex_one("where"), TK_KEYWORD);

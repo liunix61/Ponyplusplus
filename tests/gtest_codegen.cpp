@@ -298,6 +298,82 @@ TEST(Codegen, DottedLValueAssign) {
 
 
 // P1: find_from(s, sub, off) — 从偏移起查找 (单趟增量扫描, ponydb 解析热点)
+/* Bug#61: a.b.c.method() 点链 receiver 内建发射曾发裸点 a.b.c → 链解析全箭头 */
+TEST(Codegen, DottedReceiverBuiltin) {
+    const char* src =
+        "class Box {\n"
+        "  var v: String\n"
+        "  new create() => { v = \"hello\" }\n"
+        "}\n"
+        "class Holder {\n"
+        "  var item: Box\n"
+        "  new create() => { item = Box() }\n"
+        "}\n"
+        "actor main {\n"
+        "  new create() => {\n"
+        "    var h: Holder = Holder()\n"
+        "    var n: U32 = h.item.v.len()\n"
+        "    print(n)\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    FILE* f = fopen("/tmp/ponypp_gen_drb.c", "w");
+    ASSERT_NE(f, nullptr);
+    Codegen* cg = codegen_new(f);
+    codegen_program(cg, ast);
+    codegen_free(cg);
+    fclose(f);
+    FILE* rf = fopen("/tmp/ponypp_gen_drb.c", "r");
+    ASSERT_NE(rf, nullptr);
+    static char buf[262144] = {0};
+    size_t n = fread(buf, 1, sizeof(buf) - 1, rf);
+    fclose(rf);
+    buf[n] = 0;
+    std::string c(buf);
+    /* 全箭头链, 无裸点接收 */
+    EXPECT_NE(c.find("h->item->v"), std::string::npos);
+    EXPECT_EQ(c.find("strlen(h.item.v)"), std::string::npos);
+}
+
+/* Bug#62: and/or/not 曾无解析分支 → if 条件 and 可编译 */
+TEST(Parser, AndOrNotConditions) {
+    const char* src =
+        "actor main {\n"
+        "  new create() => {\n"
+        "    var a: Bool = true\n"
+        "    var b: Bool = false\n"
+        "    if a and b {\n"
+        "      print(\"both\")\n"
+        "    }\n"
+        "    if a or b {\n"
+        "      print(\"any\")\n"
+        "    }\n"
+        "    if not b {\n"
+        "      print(\"none\")\n"
+        "    }\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    FILE* f = fopen("/tmp/ponypp_gen_aon.c", "w");
+    ASSERT_NE(f, nullptr);
+    Codegen* cg = codegen_new(f);
+    codegen_program(cg, ast);
+    codegen_free(cg);
+    fclose(f);
+    FILE* rf = fopen("/tmp/ponypp_gen_aon.c", "r");
+    ASSERT_NE(rf, nullptr);
+    static char buf2[262144] = {0};
+    size_t n2 = fread(buf2, 1, sizeof(buf2) - 1, rf);
+    fclose(rf);
+    buf2[n2] = 0;
+    std::string c(buf2);
+    EXPECT_NE(c.find("&&"), std::string::npos);
+    EXPECT_NE(c.find("||"), std::string::npos);
+    EXPECT_NE(c.find("!"), std::string::npos);
+}
+
 TEST(Codegen, FindFromBuiltin) {
     const char* src =
         "actor main {\n"

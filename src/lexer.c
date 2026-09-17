@@ -37,7 +37,8 @@ static const struct {
     {"for", TK_KEYWORD}, {"match", TK_KEYWORD}, {"return", TK_KEYWORD},
     {"supervise", TK_KEYWORD}, {"supertree", TK_KEYWORD},
     {"import", TK_KEYWORD}, {"use", TK_KEYWORD}, {"as", TK_KEYWORD},
-    {"and", TK_KEYWORD}, {"or", TK_KEYWORD}, {"not", TK_KEYWORD},
+    /* Bug#62: and/or/not 曾注册 TK_KEYWORD 但无解析器分支 → 映射为 &&/||/! 运算符 */
+    {"and", TK_AMPAMP}, {"or", TK_PIPEPIPE}, {"not", TK_BANG},
     {"is", TK_KEYWORD}, {"in", TK_KEYWORD}, {"where", TK_KEYWORD},
     {"then", TK_KEYWORD}, {"try", TK_KEYWORD}, {"catch", TK_KEYWORD},
     {"finally", TK_KEYWORD}, {"throw", TK_KEYWORD},

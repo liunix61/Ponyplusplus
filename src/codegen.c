@@ -343,6 +343,20 @@ static const char *cg_chain_resolve(Codegen *cg, const char *name, char *recv_ou
     }
 }
 
+/* Bug#61: 点链 receiver 发射 — a.b.c 形态用链解析(recv->seg), 替代裸点 fallback */
+static void cg_emit_receiver(Codegen *cg, const char *receiver) {
+    if (receiver && strchr(receiver, '.')) {
+        char _r[192];
+        _r[0] = 0;
+        cg_chain_resolve(cg, receiver, _r, sizeof(_r));
+        if (_r[0]) {
+            cg_emit_raw(cg, "%s", _r);
+            return;
+        }
+    }
+    cg_emit_field_access(cg, receiver);
+}
+
 static bool cg_expr_is_string(Codegen *cg, ASTNode *n) {
     if (!n) return false;
     if (n->type == NODE_STRING) return true;
@@ -624,14 +638,14 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 /* String.len() */
                 if (recv_not_this && strcmp(method_name, "len") == 0) {
                     cg_emit_raw(cg, "(int)strlen(");
-                    cg_emit_field_access(cg, receiver);
+                    cg_emit_receiver(cg, receiver);
                     cg_emit_raw(cg, ")");
                     break;
                 }
                 /* String.charAt(i) */
                 if (recv_not_this && strcmp(method_name, "charAt") == 0) {
                     cg_emit_raw(cg, "(int)((");
-                    cg_emit_field_access(cg, receiver);
+                    cg_emit_receiver(cg, receiver);
                     cg_emit_raw(cg, ")[");
                     if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
                     else cg_emit_raw(cg, "0");
@@ -640,13 +654,13 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 }
                 /* String.to_string() — 直接用原字符串 */
                 if (recv_not_this && strcmp(method_name, "to_string") == 0) {
-                    cg_emit_field_access(cg, receiver);
+                    cg_emit_receiver(cg, receiver);
                     break;
                 }
                 /* String.startsWith(s) */
                 if (recv_not_this && strcmp(method_name, "startsWith") == 0) {
                     cg_emit_raw(cg, "((");
-                    cg_emit_field_access(cg, receiver);
+                    cg_emit_receiver(cg, receiver);
                     cg_emit_raw(cg, ") && (");
                     if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
                     else cg_emit_raw(cg, "\"\"");
@@ -656,7 +670,7 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 /* String.find(sub) — 未找到返回 4294967295 (Bug#37) */
                 if (recv_not_this && strcmp(method_name, "find") == 0) {
                     cg_emit_raw(cg, "pny_str_find(");
-                    cg_emit_field_access(cg, receiver);
+                    cg_emit_receiver(cg, receiver);
                     cg_emit_raw(cg, ", ");
                     if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
                     else cg_emit_raw(cg, "\"\"");
@@ -666,7 +680,7 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 /* String.find_from(sub, off) — P1 单趟增量扫描 */
                 if (recv_not_this && strcmp(method_name, "find_from") == 0) {
                     cg_emit_raw(cg, "pny_str_find_from(");
-                    cg_emit_field_access(cg, receiver);
+                    cg_emit_receiver(cg, receiver);
                     cg_emit_raw(cg, ", ");
                     if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
                     else cg_emit_raw(cg, "\"\"");
@@ -679,7 +693,7 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 /* String.contains(sub) (Bug#37) */
                 if (recv_not_this && strcmp(method_name, "contains") == 0) {
                     cg_emit_raw(cg, "pny_str_contains(");
-                    cg_emit_field_access(cg, receiver);
+                    cg_emit_receiver(cg, receiver);
                     cg_emit_raw(cg, ", ");
                     if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
                     else cg_emit_raw(cg, "\"\"");
@@ -689,7 +703,7 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 /* String.slice(start[, end]) — end 缺省到尾; 越界钳位 (Bug#38) */
                 if (recv_not_this && strcmp(method_name, "slice") == 0) {
                     cg_emit_raw(cg, "pny_str_slice(");
-                    cg_emit_field_access(cg, receiver);
+                    cg_emit_receiver(cg, receiver);
                     cg_emit_raw(cg, ", ");
                     if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
                     else cg_emit_raw(cg, "0");
@@ -705,14 +719,14 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 /* String.toUpperCase() */
                 if (recv_not_this && strcmp(method_name, "toUpperCase") == 0) {
                     cg_emit_raw(cg, "((");
-                    cg_emit_field_access(cg, receiver);
+                    cg_emit_receiver(cg, receiver);
                     cg_emit_raw(cg, ") ? 1 : 1)"); /* placeholder — toUpperCase stub */
                     break;
                 }
                 /* List.append(item) → pny_list_append(self->field, item) */
                 if (recv_not_this && strcmp(method_name, "append") == 0) {
                     cg_emit_raw(cg, "pny_list_append(");
-                    cg_emit_field_access(cg, receiver);
+                    cg_emit_receiver(cg, receiver);
                     cg_emit_raw(cg, ", ");
                     if (args && args->child_count > 0) cg_expr(cg, args->children[0]);
                     else cg_emit_raw(cg, "NULL");
@@ -722,7 +736,7 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 /* List.length → pny_list_len(self->field) */
                 if (recv_not_this && strcmp(method_name, "length") == 0) {
                     cg_emit_raw(cg, "pny_list_len(");
-                    cg_emit_field_access(cg, receiver);
+                    cg_emit_receiver(cg, receiver);
                     cg_emit_raw(cg, ")");
                     break;
                 }
