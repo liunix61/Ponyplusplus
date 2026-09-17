@@ -20,17 +20,17 @@ struct Codegen {
     char actor_name[64]; /* 当前 Actor 名称, 用于方法调用 */
     char **params;      /* 当前方法的参数名 */
     size_t param_count; /* 当前方法的参数数量 */
-    char known_actors[16][64]; /* 程序中所有 actor 类型名（构造调用识别用） */
+    char known_actors[32][64]; /* 程序中所有 actor 类型名（构造调用识别用） */
     size_t known_actor_count;
     char local_vars[256][64]; /* Bug#35: 32 上限静默丢弃致 String 变量被误判 int */   /* 当前 actor 内局部变量名 */
     char local_types[256][64];  /* 对应 actor 类型名（方法调用分派用） */
     size_t local_var_count;
     char str_ret_methods[64][64]; /* 返回类型为 String 的方法名(扁平) */
     size_t str_ret_count;
-    char type_names[16][64];   /* 所有 actor/class 类型名 */
-    char type_fields[16][32][64]; /* 每个类型的字段名 */
-    char type_field_types[16][32][64]; /* 每个类型的字段类型 (Bug#25/26 链式解析) */
-    size_t type_field_counts[16];
+    char type_names[32][64];   /* 所有 actor/class 类型名 */
+    char type_fields[32][32][64]; /* 每个类型的字段名 */
+    char type_field_types[32][32][64]; /* 每个类型的字段类型 (Bug#25/26 链式解析) */
+    size_t type_field_counts[32];
     size_t type_count;
     char extern_funcs[64][64];  /* extern fun FFI 名 (0.2.16) */
     char extern_rets[64][64];   /* 对应返回类型名 */
@@ -2078,7 +2078,7 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
                 atn_count++;
                 actor_type_names = (const char **)realloc(actor_type_names, atn_count * sizeof(char *));
                 actor_type_names[atn_count - 1] = nm;
-                if (cg->known_actor_count < 16) {
+                if (cg->known_actor_count < 32) {
                     snprintf(cg->known_actors[cg->known_actor_count], 64, "%s", nm);
                     cg->known_actor_count++;
                 }
@@ -2100,7 +2100,7 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
                     }
                 }
                 /* 类型字段注册表 */
-                if (cg->type_count < 16) {
+                if (cg->type_count < 32) {
                     size_t ti = cg->type_count++;
                     snprintf(cg->type_names[ti], 64, "%s", nm);
                     cg->type_field_counts[ti] = 0;
