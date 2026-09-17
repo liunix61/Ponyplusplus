@@ -295,6 +295,38 @@ TEST(Codegen, FindFromBuiltin) {
 }
 
 
+// extern fun FFI (0.2.16): 顶层 extern 声明 → C 原型 + 直调分派
+TEST(Codegen, ExternFunFFI) {
+    const char* src =
+        "extern fun toy_hash(data: String, len: U32): I64\n"
+        "actor main {\n"
+        "  new create() => {\n"
+        "    var h: I64 = toy_hash(\"blk\", 3)\n"
+        "    print(h)\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    FILE* f = fopen("/tmp/ponypp_gen_ext.c", "w");
+    ASSERT_NE(f, nullptr);
+    Codegen* cg = codegen_new(f);
+    codegen_program(cg, ast);
+    codegen_free(cg);
+    fclose(f);
+    FILE* rf = fopen("/tmp/ponypp_gen_ext.c", "r");
+    ASSERT_NE(rf, nullptr);
+    static char buf[262144] = {0};
+    size_t n = fread(buf, 1, sizeof(buf) - 1, rf);
+    fclose(rf);
+    buf[n] = 0;
+    EXPECT_NE(std::strstr(buf, "extern signed long long toy_hash(const char *, unsigned int);"), nullptr)
+        << "extern fun 必须发射 C 原型";
+    EXPECT_NE(std::strstr(buf, "toy_hash(\"blk\", 3)"), nullptr)
+        << "调用点必须直发 C 调用";
+    ast_node_free(ast);
+    std::remove("/tmp/ponypp_gen_ext.c");
+}
+
 // Bug#48: % 取模 — parser 乘法层此前不含 TK_PERCENT, `pos % 2` 静默编译成 `pos`
 TEST(Codegen, ModuloOperator) {
     const char* src =

@@ -2,6 +2,17 @@
 
 All notable changes to Pony++ are documented in this file.
 
+## [0.2.16] - 2026-09-17
+
+### Added
+- **`extern fun` FFI 声明（nanonode P1 地基）**：顶层 `extern fun name(p: T, ...): Ret` 声明外部 C 函数。
+  - lexer：`extern` 关键字；parser：parse_program extern 分支 → NODE_EXTERN（data=函数名，children=[params容器, 返回类型]）
+  - native codegen：发射 C 原型（Pony 类型→C 类型经 cg_builtin_type：String→`const char *`/U32→`unsigned int`/I64→`signed long long` 等）+ 调用点直发 C 调用（NODE_CALL 命中 extern 注册表优先于内建分派）
+  - 链接外部库：`PONYPPC_LDFLAGS=/path/lib.o`（已有通道）
+  - 实测：toy_hash/toy_verify 双函数 FFI 调用输出正确（nanonode probe/ffi2.pny）
+  - gtest：Codegen.ExternFunFFI（原型字节+直调分派）
+  - wasi-p2 端暂不支持（NODE_EXTERN 被忽略，后续 W 阶段映射 wasm import）
+
 ## [0.2.15] - 2026-09-17
 
 ### Added

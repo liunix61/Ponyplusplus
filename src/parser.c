@@ -1295,6 +1295,34 @@ ASTNode *parser_parse_program(Parser *p) {
                 ast_node_add_child(program, imp);
             }
             if (match(p, TK_SEMI)) advance(p);
+        } else if (is_keyword_token(t, "extern")) {
+            /* extern fun name(params): Ret — FFI 声明 (0.2.16) */
+            advance(p);
+            if (is_keyword_token(cur(p), "fun")) {
+                advance(p);
+                if (cur(p)->type == TK_CAP) advance(p);
+                if (!match(p, TK_IDENT)) {
+                    set_error(p, "期望 extern fun 名称");
+                    return program;
+                }
+                Token *name_tok = advance(p);
+                ASTNode *node = ast_node_new(NODE_EXTERN, name_tok->line, name_tok->column);
+                if (node) {
+                    node->data = s_strdup(name_tok->value);
+                    ASTNode *params = parse_params(p);
+                    if (params) {
+                        if (params->child_count > 0) ast_node_add_child(node, params);
+                        else ast_node_free(params);
+                    }
+                    if (match(p, TK_COLON)) {
+                        advance(p);
+                        ASTNode *ret_type = parse_type(p);
+                        if (ret_type) ast_node_add_child(node, ret_type);
+                    }
+                    ast_node_add_child(program, node);
+                }
+            }
+            if (match(p, TK_SEMI)) advance(p);
         } else {
             /* 跳过未知内容 */
             advance(p);

@@ -53,6 +53,7 @@ typedef enum {
     NODE_TYPE_PARAM,    /* 泛型类型参数 T/U */
     NODE_TYPE_ALIAS,    /* 类型别名 type Foo = Bar */
     NODE_WIT_WORLD,     /* WIT world 声明 */
+    NODE_EXTERN,        /* extern fun FFI 声明 (0.2.16) */
 } ASTNodeType;
 
 /* AST 节点 */

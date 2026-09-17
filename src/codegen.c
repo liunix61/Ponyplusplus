@@ -32,6 +32,9 @@ struct Codegen {
     char type_field_types[16][32][64]; /* 每个类型的字段类型 (Bug#25/26 链式解析) */
     size_t type_field_counts[16];
     size_t type_count;
+    char extern_funcs[64][64];  /* extern fun FFI 名 (0.2.16) */
+    char extern_rets[64][64];   /* 对应返回类型名 */
+    size_t extern_count;
 };
 
 Codegen *codegen_new(FILE *out) {
@@ -502,6 +505,24 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                              n->children[0]->data &&
                              strcmp((const char *)n->children[0]->data, "args") == 0)
                              ? n->children[0] : NULL;
+            /* extern fun FFI 调用 (0.2.16): 命中注册表直发 C 调用 */
+            if (func) {
+                int ext_idx = -1;
+                for (size_t ei = 0; ei < cg->extern_count; ei++) {
+                    if (strcmp(cg->extern_funcs[ei], func) == 0) { ext_idx = (int)ei; break; }
+                }
+                if (ext_idx >= 0) {
+                    cg_emit_raw(cg, "%s(", func);
+                    if (args) {
+                        for (size_t k = 0; k < args->child_count; k++) {
+                            if (k) cg_emit_raw(cg, ", ");
+                            if (args->children[k]) cg_expr(cg, args->children[k]);
+                        }
+                    }
+                    cg_emit_raw(cg, ")");
+                    break;
+                }
+            }
             if (func && strcmp(func, "print") == 0) {
                 if (args && args->child_count == 1 && args->children[0]) {
                     ASTNode *a0 = args->children[0];
@@ -1946,6 +1967,66 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
         if (ast->children[i] && ast->children[i]->type == NODE_IMPORT) {
             const char *mod = (const char *)ast->children[i]->data;
             cg_emit_raw(cg, "// import %s\n", mod ? mod : "?");
+        }
+    }
+
+    /* extern fun FFI 声明 (0.2.16): 发 C 原型 + 注册调用表 */
+    for (size_t i = 0; ast && i < ast->child_count; i++) {
+        ASTNode *ex = ast->children[i];
+        if (!ex || ex->type != NODE_EXTERN || !ex->data) continue;
+        const char *ret_c = "long long";
+        ASTNode *params = NULL;
+        for (size_t k = 0; k < ex->child_count; k++) {
+            ASTNode *ch = ex->children[k];
+            if (ch && ch->data && strcmp((const char *)ch->data, "params") == 0) params = ch;
+        }
+        /* 子节点序: [params容器?] [返回类型?] — 返回类型是最后一个非 params 子节点 */
+        for (size_t k = ex->child_count; k > 0; k--) {
+            ASTNode *ch = ex->children[k - 1];
+            if (ch && ch->data && strcmp((const char *)ch->data, "params") != 0) {
+                ret_c = cg_builtin_type((const char *)ch->data);
+                break;
+            }
+        }
+        cg_emit_raw(cg, "extern %s %s(", ret_c, (const char *)ex->data);
+        if (params) {
+            for (size_t k = 0; k < params->child_count; k++) {
+                ASTNode *pm = params->children[k];
+                if (!pm) continue;
+                const char *pt = "long long";
+                for (size_t j = 0; j < pm->child_count; j++) {
+                    if (pm->children[j] && pm->children[j]->data) {
+                        pt = cg_builtin_type((const char *)pm->children[j]->data);
+                        break;
+                    }
+                }
+                cg_emit_raw(cg, "%s%s", k ? ", " : "", pt);
+            }
+        } else {
+            cg_emit_raw(cg, "void");
+        }
+        cg_emit_raw(cg, ");\n");
+        if (cg->extern_count < 64) {
+            snprintf(cg->extern_funcs[cg->extern_count], 64, "%s", (const char *)ex->data);
+            /* 返回类型名登记（String 感知用） */
+            const char *ret_src = "";
+            for (size_t k = ex->child_count; k > 0; k--) {
+                ASTNode *ch = ex->children[k - 1];
+                if (ch && ch->data && strcmp((const char *)ch->data, "params") != 0) {
+                    ret_src = (const char *)ch->data;
+                    break;
+                }
+            }
+            snprintf(cg->extern_rets[cg->extern_count], 64, "%s", ret_src);
+            cg->extern_count++;
+        }
+    }
+    if (ast) {
+        for (size_t i = 0; i < ast->child_count; i++) {
+            if (ast->children[i] && ast->children[i]->type == NODE_EXTERN) {
+                cg_emit_raw(cg, "\n");
+                break;
+            }
         }
     }
 

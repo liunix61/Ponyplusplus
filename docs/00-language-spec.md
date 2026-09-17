@@ -134,3 +134,4 @@ Pony++ 是"天生云原生"的并发编程语言，融合：
     - **相对路径**：rt_resolve 对非 `/` 开头路径直接 (fd=3, 原路径)，不再走前缀匹配。
     - **rt_alloc memory.grow 兜底**：`global0+n > memory.size<<16` 时 grow；memory 段页数=16+字符串池页数（动态预扫描）。
     - **fields/methods 容量 64**（0.2.15，原 32 静默丢弃）；超出仍静默丢——待加编译警告。
+13. **`extern fun` FFI 声明**（0.2.16 起，nanonode 地基）：顶层 `extern fun name(p: T, ...): Ret` 声明外部 C 函数（lexer 关键字 `extern` → parser NODE_EXTERN → native 发 C 原型+直调）。类型映射经 cg_builtin_type：String→`const char *`、U32→`unsigned int`、I64→`signed long long`、Bool→`int`、None→`void`。调用点 NODE_CALL 命中 extern 注册表优先于内建分派。链接外部库：`PONYPPC_LDFLAGS=/path/lib.o`（可选 `PONYPPC_CFLAGS`）。**限制**：①wasi-p2 端暂不支持（NODE_EXTERN 被忽略）；②FFI 名避开 libc 已有声明（strlen/abs 等会 conflicting types）；③仅支持标量/String 参数与返回值（结构体指针走 String/ActorRef 通道）。

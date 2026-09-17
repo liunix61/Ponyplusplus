@@ -42,6 +42,7 @@ static const struct {
     {"then", TK_KEYWORD}, {"try", TK_KEYWORD}, {"catch", TK_KEYWORD},
     {"finally", TK_KEYWORD}, {"throw", TK_KEYWORD},
     {"true", TK_BOOL}, {"false", TK_BOOL}, {"None", TK_TYPE},
+    {"extern", TK_KEYWORD}, /* extern fun FFI 声明 (0.2.16) */
     /* 能力 */
     {"iso", TK_CAP}, {"trn", TK_CAP}, {"ref", TK_CAP},
     {"val", TK_CAP}, {"box", TK_CAP}, {"tag", TK_CAP},
