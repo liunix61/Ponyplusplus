@@ -410,7 +410,15 @@ static ASTNode *parse_statement(Parser *p) {
         if (!node) return NULL;
         ASTNode *cond = parse_expression(p);
         if (cond) ast_node_add_child(node, cond);
-        ASTNode *body = parse_block(p);
+        /* while cond do ... end */
+        if (match_keyword(p, "do")) advance(p);
+        ASTNode *body;
+        if (match(p, TK_BRACE_L)) {
+            body = parse_block(p);
+        } else {
+            body = parse_indented_block(p);
+            if (match_keyword(p, "end")) advance(p);
+        }
         if (body) ast_node_add_child(node, body);
         return node;
     }
@@ -436,7 +444,13 @@ static ASTNode *parse_statement(Parser *p) {
         /* do 关键字 (可选) */
         if (match_keyword(p, "do")) advance(p);
         /* 循环体 */
-        ASTNode *body = parse_block(p);
+        ASTNode *body;
+        if (match(p, TK_BRACE_L)) {
+            body = parse_block(p);
+        } else {
+            body = parse_indented_block(p);
+            if (match_keyword(p, "end")) advance(p);
+        }
         if (body) ast_node_add_child(node, body);
         return node;
     }
@@ -454,6 +468,7 @@ static ASTNode *parse_statement(Parser *p) {
         } else {
             ASTNode *body = parse_indented_block(p);
             if (body && node) ast_node_add_child(node, body);
+            if (match_keyword(p, "end")) advance(p);
         }
         if (match_keyword(p, "else")) {
             advance(p);
@@ -463,6 +478,7 @@ static ASTNode *parse_statement(Parser *p) {
             } else {
                 ASTNode *else_body = parse_indented_block(p);
                 if (else_body && node) ast_node_add_child(node, else_body);
+                if (match_keyword(p, "end")) advance(p);
             }
         }
         if (match_keyword(p, "then")) {
@@ -543,6 +559,43 @@ static ASTNode *parse_statement(Parser *p) {
             ASTNode *expr = parse_expression(p);
             if (expr) ast_node_add_child(node, expr);
         }
+        if (match(p, TK_SEMI)) advance(p);
+        return node;
+    }
+
+    /* recover expr end — 透明包裹, 直接返回内部表达式 */
+    if (is_keyword_token(t, "recover")) {
+        advance(p);
+        /* recover Array[U8] end / recover Array[U8].init(0, n) end */
+        ASTNode *inner = parse_expression(p);
+        /* 跳过 end 关键字 */
+        if (match_keyword(p, "end")) advance(p);
+        return inner;
+    }
+
+    /* error 语句 */
+    if (is_keyword_token(t, "error")) {
+        advance(p);
+        ASTNode *node = ast_node_new(NODE_EMPTY, line, col);
+        if (node) node->data = s_strdup("error");
+        if (match(p, TK_SEMI)) advance(p);
+        return node;
+    }
+
+    /* break 语句 */
+    if (is_keyword_token(t, "break")) {
+        advance(p);
+        ASTNode *node = ast_node_new(NODE_EMPTY, line, col);
+        if (node) node->data = s_strdup("break");
+        if (match(p, TK_SEMI)) advance(p);
+        return node;
+    }
+
+    /* continue 语句 */
+    if (is_keyword_token(t, "continue")) {
+        advance(p);
+        ASTNode *node = ast_node_new(NODE_EMPTY, line, col);
+        if (node) node->data = s_strdup("continue");
         if (match(p, TK_SEMI)) advance(p);
         return node;
     }
@@ -642,6 +695,40 @@ static ASTNode *parse_expression_primary(Parser *p) {
     if (t->type == TK_BOOL) {
         advance(p);
         ASTNode *node = ast_bool_new(strcmp(t->value, "true") == 0, line, col);
+        return node;
+    }
+
+    /* recover expr end — 透明包裹 */
+    if (is_keyword_token(t, "recover")) {
+        advance(p);
+        ASTNode *inner = parse_expression(p);
+        if (match_keyword(p, "end")) advance(p);
+        return inner;
+    }
+
+    /* error 表达式 */
+    if (is_keyword_token(t, "error")) {
+        advance(p);
+        ASTNode *node = ast_node_new(NODE_EMPTY, line, col);
+        if (node) node->data = s_strdup("error");
+        return node;
+    }
+
+    /* if 表达式: if cond then expr else expr end */
+    if (is_keyword_token(t, "if")) {
+        ASTNode *node = ast_node_new(NODE_IF, line, col);
+        advance(p);
+        ASTNode *cond = parse_expression(p);
+        if (cond && node) ast_node_add_child(node, cond);
+        if (match_keyword(p, "then")) advance(p);
+        ASTNode *then_expr = parse_expression(p);
+        if (then_expr && node) ast_node_add_child(node, then_expr);
+        if (match_keyword(p, "else")) {
+            advance(p);
+            ASTNode *else_expr = parse_expression(p);
+            if (else_expr && node) ast_node_add_child(node, else_expr);
+        }
+        if (match_keyword(p, "end")) advance(p);
         return node;
     }
 
@@ -1112,7 +1199,7 @@ static ASTNode *parse_expression(Parser *p) {
 static ASTNode *parse_method(Parser *p, bool is_be) {
     advance(p); /* 跳过 be/fun */
     if (cur(p)->type == TK_CAP) advance(p); /* fun ref name() — 方法能力标注 */
-    if (!match(p, TK_IDENT)) {
+    if (!match(p, TK_IDENT) && cur(p)->type != TK_KEYWORD) {
         set_error(p, "期望方法名");
         return NULL;
     }
@@ -1163,7 +1250,7 @@ static ASTNode *parse_method(Parser *p, bool is_be) {
 /* 解析 Actor 构造函数 */
 static ASTNode *parse_constructor(Parser *p) {
     advance(p); /* 跳过 new */
-    if (!match(p, TK_IDENT)) {
+    if (!match(p, TK_IDENT) && cur(p)->type != TK_KEYWORD) {
         set_error(p, "期望构造函数名");
         return NULL;
     }

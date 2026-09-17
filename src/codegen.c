@@ -175,6 +175,8 @@ static const char *cg_type_of(ASTNode *n, const char **actor_types, size_t atc) 
     if (strcmp(name, "I64") == 0) return "signed long long";
     if (strcmp(name, "F32") == 0) return "float";
     if (strcmp(name, "F64") == 0) return "double";
+    if (strcmp(name, "USize") == 0) return "size_t";
+    if (strcmp(name, "ISize") == 0) return "ptrdiff_t";
     if (strcmp(name, "ActorRef") == 0) return "void *";
     if (strcmp(name, "String") == 0) return "const char *";
     if (strcmp(name, "Char") == 0) return "char";
@@ -199,6 +201,8 @@ static const char *cg_builtin_type(const char *name) {
     if (strcmp(name, "I64") == 0) return "signed long long";
     if (strcmp(name, "F32") == 0) return "float";
     if (strcmp(name, "F64") == 0) return "double";
+    if (strcmp(name, "USize") == 0) return "size_t";
+    if (strcmp(name, "ISize") == 0) return "ptrdiff_t";
     if (strcmp(name, "String") == 0) return "const char *";
     if (strcmp(name, "Char") == 0) return "char";
     if (strcmp(name, "Bool") == 0) return "int";
@@ -1394,6 +1398,18 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
             cg_emit_raw(cg, "return ");
             if (n->child_count > 0) cg_expr(cg, n->children[0]);
             cg_emit_raw(cg, ";\n");
+            return;
+        }
+        if (n->data && strcmp((const char *)n->data, "break") == 0) {
+            cg_emit(cg, "break;\n");
+            return;
+        }
+        if (n->data && strcmp((const char *)n->data, "continue") == 0) {
+            cg_emit(cg, "continue;\n");
+            return;
+        }
+        if (n->data && strcmp((const char *)n->data, "error") == 0) {
+            cg_emit(cg, "/* error */ return 0;\n");
             return;
         }
         /* 赋值: assign(ident, rhs) 及复合赋值 add/sub/mul/div-assign → lhs = lhs op rhs */

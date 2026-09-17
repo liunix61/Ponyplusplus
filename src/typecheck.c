@@ -35,6 +35,7 @@ static int tc_is_builtin_type(const char *name) {
         "U8", "U16", "U32", "U64",
         "I8", "I16", "I32", "I64",
         "F32", "F64",
+        "USize", "ISize",
         "String", "Bool",
         "None", "NoneType", "Any", "AnyType",
         "Reply", "List", "Set", "Array", "Option",
@@ -120,7 +121,8 @@ static int tc_is_int_type(const char *name) {
         strcmp(name, "U8") == 0 || strcmp(name, "U16") == 0 ||
         strcmp(name, "U32") == 0 || strcmp(name, "U64") == 0 ||
         strcmp(name, "I8") == 0 || strcmp(name, "I16") == 0 ||
-        strcmp(name, "I32") == 0 || strcmp(name, "I64") == 0
+        strcmp(name, "I32") == 0 || strcmp(name, "I64") == 0 ||
+        strcmp(name, "USize") == 0 || strcmp(name, "ISize") == 0
     );
 }
 
