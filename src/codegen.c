@@ -830,6 +830,24 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                         break;
                     }
                 }
+                /* primitive/class 静态方法: Receiver.method() → {Receiver}_{method}(NULL, args) */
+                {
+                    int recv_is_type = 0;
+                    for (size_t i = 0; i < cg->known_actor_count; i++) {
+                        if (strcmp(cg->known_actors[i], receiver) == 0) { recv_is_type = 1; break; }
+                    }
+                    if (recv_is_type) {
+                        cg_emit_raw(cg, "%s_%s(NULL", receiver, method_name);
+                        if (args) {
+                            for (size_t k = 0; k < args->child_count; k++) {
+                                cg_emit_raw(cg, ", ");
+                                if (args->children[k]) cg_expr(cg, args->children[k]);
+                            }
+                        }
+                        cg_emit_raw(cg, ")");
+                        break;
+                    }
+                }
                 /* Generic method: receiver->method(...) — stub for now */
                 cg_emit_raw(cg, "0"); /* stub: unknown method returns 0 */
                 break;
@@ -1510,6 +1528,17 @@ static void cg_stmt(Codegen *cg, ASTNode *n) {
                 }
             } else {
                 /* val y = expr → void *y = expr; */
+                /* 登记局部变量类型: 从构造函数调用推断类型 */
+                if (n->child_count > 0 && n->children[0]->type == NODE_CALL && n->children[0]->data) {
+                    const char *ctor = (const char *)n->children[0]->data;
+                    /* Counter() → Counter */
+                    for (size_t i = 0; i < cg->known_actor_count; i++) {
+                        if (strcmp(cg->known_actors[i], ctor) == 0) {
+                            cg_local_add(cg, n->data, ctor);
+                            break;
+                        }
+                    }
+                }
                 cg_emit_raw(cg, "void *%s", n->data);
                 if (n->child_count > 0) {
                     cg_emit_raw(cg, " = ");
@@ -1696,6 +1725,13 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
             cg_set_ctor(cg, 1);
             /* 找到构造体 (跳过 params 节点) */
             ASTNode *body = NULL;
+            if (getenv("PONYPP_DEBUG_MAIN")) {
+                fprintf(stderr, "[DEBUG-CTOR] name=%s child_count=%zu\n", name, ch->child_count);
+                for (size_t bi = 0; bi < ch->child_count; bi++) {
+                    ASTNode *bc = ch->children[bi];
+                    fprintf(stderr, "[DEBUG-CTOR] child[%zu] type=%d data=%s cc=%zu\n", bi, bc ? bc->type : -1, bc && bc->data ? (const char*)bc->data : "(null)", bc ? bc->child_count : 0);
+                }
+            }
             for (size_t bi = 0; bi < ch->child_count; bi++) {
                 if (ch->children[bi]->type == NODE_EMPTY && ch->children[bi]->child_count > 0 &&
                     !(ch->children[bi]->data && strcmp((const char *)ch->children[bi]->data, "params") == 0)) {
@@ -1792,12 +1828,36 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
                 cg_set_params(cg, pc, param_names);
             }
             cg_set_ctor(cg, 0);
+            int _fun_ret_handled = 0;
             if (body) {
-                for (size_t j = 0; j < body->child_count; j++) cg_stmt(cg, body->children[j]);
+                /* fun 返回值: 如果 body 只有一个子节点且是表达式类型, 生成 return */
+                if (ch->type == NODE_FUN && body->child_count == 1 && rtype && strcmp(rtype, "void") != 0) {
+                    ASTNode *last = body->children[0];
+                    int last_is_return = (last && last->type == NODE_RETURN);
+                    if (last && last->type == NODE_EMPTY && last->data && strcmp((const char *)last->data, "return") == 0) last_is_return = 1;
+                    if (last && !last_is_return && last->type != NODE_IF && last->type != NODE_WHILE && last->type != NODE_FOR && last->type != NODE_MATCH && last->type != NODE_PRINT && last->type != NODE_ASSERT) {
+                        cg_emit(cg, "return ");
+                        cg_expr(cg, last);
+                        cg_emit(cg, ";\n");
+                        _fun_ret_handled = 1;
+                    }
+                }
+                if (!_fun_ret_handled) {
+                    for (size_t j = 0; j < body->child_count; j++) cg_stmt(cg, body->children[j]);
+                }
             }
-            if (strcmp(rtype, "void") != 0) {
-                if (strcmp(rtype, "const char *") == 0) cg_emit(cg, "return NULL;\n");
-                else cg_emit(cg, "return 0;\n");
+            if (!_fun_ret_handled && strcmp(rtype, "void") != 0) {
+                /* 检查 body 最后一个子节点是否是 NODE_RETURN */
+                int has_return = 0;
+                if (body && body->child_count > 0) {
+                    ASTNode *last_stmt = body->children[body->child_count - 1];
+                    if (last_stmt && last_stmt->type == NODE_RETURN) has_return = 1;
+                    if (last_stmt && last_stmt->type == NODE_EMPTY && last_stmt->data && strcmp((const char *)last_stmt->data, "return") == 0) has_return = 1;
+                }
+                if (!has_return) {
+                    if (strcmp(rtype, "const char *") == 0) cg_emit(cg, "return NULL;\n");
+                    else cg_emit(cg, "return 0;\n");
+                }
             }
             cg_pop(cg);
             cg_emit(cg, "}\n\n");
@@ -1969,6 +2029,13 @@ static const char *PNY_HTTP_RUNTIME =
 "#define pny_http_post(u, b) pny_http_post_h(u, b, NULL)\n";
 
 void codegen_program(Codegen *cg, ASTNode *ast) {
+    if (getenv("PONYPP_DEBUG_MAIN")) {
+        fprintf(stderr, "[DEBUG-PROG] ast=%p type=%d child_count=%zu\n", (void*)ast, ast ? ast->type : -1, ast ? ast->child_count : 0);
+        for (size_t di = 0; ast && di < ast->child_count && di < 10; di++) {
+            ASTNode *dch = ast->children[di];
+            fprintf(stderr, "[DEBUG-PROG] child[%zu] type=%d data=%s child_count=%zu\n", di, dch ? dch->type : -1, dch && dch->data ? (const char*)dch->data : "(null)", dch ? dch->child_count : 0);
+        }
+    }
     cg_emit_raw(cg, "/* Pony++ native backend generated code */\n");
     cg_emit_raw(cg, "#define _DEFAULT_SOURCE\n#define _POSIX_C_SOURCE 200809L\n");
     cg_emit_raw(cg, "#include <stdio.h>\n");
@@ -2072,7 +2139,7 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
     const char **actor_type_names = NULL;
     size_t atn_count = 0;
     for (size_t i = 0; ast && i < ast->child_count; i++) {
-        if (ast->children[i] && ast->children[i]->type == NODE_ACTOR) {
+        if (ast->children[i] && (ast->children[i]->type == NODE_ACTOR || ast->children[i]->type == NODE_CLASS || ast->children[i]->type == NODE_TRAIT || ast->children[i]->type == NODE_INTERFACE)) {
             const char *nm = (const char *)ast->children[i]->data;
             if (nm) {
                 atn_count++;
@@ -2121,8 +2188,8 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
     }
 
     for (size_t i = 0; ast && i < ast->child_count; i++) {
-        if (ast->children[i] && ast->children[i]->type == NODE_ACTOR) {
-            cg->local_var_count = 0; /* 新 actor 作用域: 重置局部变量表 */
+        if (ast->children[i] && (ast->children[i]->type == NODE_ACTOR || ast->children[i]->type == NODE_CLASS || ast->children[i]->type == NODE_TRAIT || ast->children[i]->type == NODE_INTERFACE)) {
+            cg->local_var_count = 0; /* 新类型作用域: 重置局部变量表 */
             cg_actor(cg, ast->children[i], actor_type_names, atn_count);
         }
     }
@@ -2191,6 +2258,13 @@ static void cg_emit_main(Codegen *cg, ASTNode *ast) {
     ASTNode *entry_actor = NULL;
     const char *entry_name = NULL;
     int entry_has_run = 0;
+    if (getenv("PONYPP_DEBUG_MAIN")) {
+        fprintf(stderr, "[DEBUG-MAIN] ast=%p child_count=%zu\n", (void*)ast, ast ? ast->child_count : 0);
+        for (size_t di = 0; ast && di < ast->child_count; di++) {
+            ASTNode *dch = ast->children[di];
+            fprintf(stderr, "[DEBUG-MAIN] child[%zu] type=%d data=%s\n", di, dch ? dch->type : -1, dch && dch->data ? (const char*)dch->data : "(null)");
+        }
+    }
     for (int pass = 0; pass < 2 && !entry_actor; pass++) {
         for (size_t i = 0; ast && i < ast->child_count; i++) {
             ASTNode *ch = ast->children[i];
