@@ -1184,7 +1184,24 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 } else if (rt && cg_type_has_field(cg, rt, dot + 1)) {
                     cg_emit_raw(cg, "%s->%s", recv, dot + 1);
                 } else {
-                    cg_emit_field_access(cg, name);
+                    /* Bug#63: 首段非局部变量 — 检查是否 self 字段 */
+                    int is_self_field = 0;
+                    for (size_t i = 0; i < cg->field_count; i++) {
+                        if (cg->fields[i] && strcmp(cg->fields[i], recv) == 0) {
+                            is_self_field = 1;
+                            break;
+                        }
+                    }
+                    if (is_self_field) {
+                        /* self.pt.peers → self->pt->peers */
+                        cg_emit_raw(cg, "self->%s->", recv);
+                        for (const char *q = dot + 1; *q; q++) {
+                            if (*q == '.') cg_emit_raw(cg, "->");
+                            else cg_emit_raw(cg, "%c", *q);
+                        }
+                    } else {
+                        cg_emit_field_access(cg, name);
+                    }
                 }
             } else if (name) {
                 cg_emit_field_access(cg, name);

@@ -374,6 +374,52 @@ TEST(Parser, AndOrNotConditions) {
     EXPECT_NE(c.find("!"), std::string::npos);
 }
 
+/* Bug#63: self 字段两段链 (pt.peers 在类方法内) 发裸点 → self->pt->peers */
+TEST(Codegen, SelfFieldChainAccess) {
+    const char* src =
+        "class Inner {\n"
+        "  var v: String\n"
+        "  new create() => { v = \"hello\" }\n"
+        "}\n"
+        "class Outer {\n"
+        "  var item: Inner\n"
+        "  var name: String\n"
+        "  new create() => { item = Inner() name = \"x\" }\n"
+        "  fun ref get_v(): String => {\n"
+        "    return item.v\n"
+        "  }\n"
+        "  fun ref get_name(): String => {\n"
+        "    var s: String = name\n"
+        "    return s\n"
+        "  }\n"
+        "}\n"
+        "actor main {\n"
+        "  new create() => {\n"
+        "    var o: Outer = Outer()\n"
+        "    print(o.get_v())\n"
+        "    print(o.get_name())\n"
+        "  }\n"
+        "}\n";
+    ASTNode* ast = parse_to_ast(src);
+    ASSERT_NE(ast, nullptr);
+    FILE* f = fopen("/tmp/ponypp_gen_sfc.c", "w");
+    ASSERT_NE(f, nullptr);
+    Codegen* cg = codegen_new(f);
+    codegen_program(cg, ast);
+    codegen_free(cg);
+    fclose(f);
+    FILE* rf = fopen("/tmp/ponypp_gen_sfc.c", "r");
+    ASSERT_NE(rf, nullptr);
+    static char buf[262144] = {0};
+    size_t n = fread(buf, 1, sizeof(buf) - 1, rf);
+    fclose(rf);
+    buf[n] = 0;
+    std::string c(buf);
+    /* self 字段链: self->item->v (非裸点 item.v) */
+    EXPECT_NE(c.find("self->item->v"), std::string::npos);
+    EXPECT_EQ(c.find("item.v"), std::string::npos);
+}
+
 TEST(Codegen, FindFromBuiltin) {
     const char* src =
         "actor main {\n"
