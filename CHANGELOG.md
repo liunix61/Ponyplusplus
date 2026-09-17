@@ -2,6 +2,39 @@
 
 All notable changes to Pony++ are documented in this file.
 
+## [0.2.15] - 2026-09-17
+
+### Added
+- **W5（M3 路线图收尾）：ponydb 全功能 wasi-p2 通过** — 16 项编译器修复驱动 928 行 ponydb.pny（B+树/MVCC 快照/WASI 持久化）在 wasmtime 25 上全链正确：put/get/del/count/stat/dump/snapshot/getat/rangeat/close/readers + 重启恢复 + 相对/绝对路径落盘。
+- **break/continue 语句（Bug#55）** — break/continue 非 lexer 关键字，parser 产出 `NODE_IDENT(data="break/continue")`；native 靠 C 关键字裸输出蒙对，wasm 端被当变量静默丢弃（`while i < 1000000 { ... if e > 4000000000 { break } }` 退不出循环 → okc 恒 512 → 每个 put 误 split → get MISS）。WasmGen 新增 loop/if 深度追踪栈（loop_depth/brk_tgt/cont_tgt），NODE_WHILE/NODE_IF 发射点维护相对深度，break=br 跳出外层 block、continue=br 回 loop 头。
+- **main actor 方法分派（Bug#56）** — 收集器显式跳过 main actor，其方法不进类表不发射，`this.m()` 在 main 上下文（cur_class=-1）静默发 `i32.const 0`（`this.u32_to_str(v.len())` 整体消失）。main 收为伪类（`is_main` 标记）：入口方法（`fun ref main`/`new create`）不入表不发射（已由 func 0 承担）、方法无 self 签名（参数从 local 0 起，0 参→type 0，N 参→ty[N-1]）、分派时不发 receiver；w3_try_class_call/wasm_expr_is_str 的 `this` 分支增加 main 类 fallback。
+- **rt_strcmp 字符串字典序比较（Bug#58，b+20）** — 6 种比较运算（`==/!=/</>/<=/>=`）此前对 String 操作数直接发 i32 指针比较（比地址），`leaf_put` 的 `k > key` 有序插入全乱（新键永远排最前 → root 页只剩最后一个键 → 多键 get 全 MISS）。新增 strcmp 运行时（逐字节无符号，返回 -1/0/1），二元比较发射点两处（emit_expr/emit_stmt）在两操作数均为 String 时改发 `call strcmp; i32.const 0; <cmp>`。类 fn_base 后移 b+21。
+- **rt_resolve 相对路径支持（Bug#59）** — resolve 只做 preopen 前缀匹配，相对路径（`PONYDB_PATH=w5db`）无匹配返回 0 → file_append 全失败（文件从未创建）。非 `/` 开头路径直接走 preopen fd=3 + 原路径。
+
+### Fixed
+- **wasm 端 else 块整块发射失败（Bug#57）** — parser 把 else 包进 `NODE_ELSE` 节点（child[2]=NODE_ELSE→block），wasm emit_stmt 没有 NODE_ELSE case → fallback `i32.const 0; drop`，else 分支静默死亡（`if v == "" { MISS } else { VAL }` 永远走不出 else → get 恒 MISS）。NODE_IF 发射处解包 NODE_ELSE 的 block。
+- **2 参 slice 形态** — `data.slice(1)`（省略 end=到末尾）不满足 3 参分派条件发 0；两处分派点（裸名+recv 形态）补 2 参 → rt_slice en=-1 末尾语义。
+- **`e > 4000000000` 字面量超 int32** — `if e > 4000000000 { break }` 发有符号比较恒 false（哨兵值判断失效）；U32 局部变量比较改发 GT_U/LT_U/GE_U/LE_U（local_is_u32[64] + wasm_expr_is_u32 两处发射点）。
+- **wasm_expr_is_str 缺 recv String 判定** — `this.f.slice()`/String 字段 receiver 的 builtin 方法被当整数；wasm_try_builtin_call/wasm_expr_is_str 的 split_dot 分支增加 local_is_str/字段 is_str 判定。
+- **NODE_BOOL 发射** — `done == false` 中 Bool 字面量被当字符串处理（strcmp 比较），改为 bool 字节语义。
+- **contains 内联** — `raw.contains("\x01")` 分派缺失 → find 组合内联。
+- **fields/methods[32]→[64]** — ponydb BTree 40+ 方法静默丢弃（分派发 0）。
+- **rt_alloc memory.grow 兜底** — ponydb 大字符串拼接超 16 页静态内存即 trap；alloc 前检查 `global0+n > size<<16` 则 grow。
+- **memory 段页数动态化** — 静态 16 页不够装 ponydb 字面量区；预扫描字符串池算页数。
+- **wasm 入口 create fallback** — ponydb 入口是 `new create()` 而非 `fun ref main()`，入口查找增加 main actor create 兜底。
+- **type 段 12 = 5 参方法** — 4 参类方法（self+4）钳位错位。
+
+### Changed
+- 索引终态（wasi-p2 b=15）：import 0-14、main=14、print=15、itoa=16、alloc=17、strlen=18、concat→19…（W4b 布局）+ strcmp=b+20，类方法从 b+21=36 起；type 13 个；func/code 段计数 22+ncf。gtest 字节断言更新（ctor=36/add·greet=37），175/175 ✓。
+- ponydb native 49/49 回归 ✓；wasmtime e2e：put×3/get×3/count/stat/del/dump/snapshot/getat/rangeat/close/readers/重启恢复 全绿。
+- ponydb.wasm 76+ bodies，w5scan violations=0。
+
+### Known Issues
+- Bug#52：单字符字符串字面量 `print("[")` 在 wasi-p2 无输出（疑似 lexer/字符串池 bug，待查）。
+- 输出尾杂散 `0`（每次 print 后多一个 0，疑 drop 缺失，不影响功能判定）。
+- main actor 字段（this.f）在伪类模式下未初始化——ponydb main 无字段，通用场景待补。
+- Bug#53（NODE_BOOL strcmp）、#54（字段名 tag 撞能力关键字）沿袭。
+
 ## [0.2.14] - 2026-09-16
 
 ### Added

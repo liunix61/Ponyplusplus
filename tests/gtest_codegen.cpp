@@ -535,10 +535,10 @@ TEST(WasmBackend, ClassSystemDispatch) {
     size_t n = fread(buf, 1, sizeof(buf), rf);
     fclose(rf);
     bool call_ctor = false, call_add = false, has_store = false, has_load = false;
-    /* W4b: fn_base 后移 b+19, wasi-p2(b=12) → 类方法从 31 起 */
+    /* Bug#58: fn_base b+21 (b+20=strcmp), wasi-p2(b=15) → 类方法从 36 起 */
     for (size_t i = 0; i + 1 < n; i++) {
-        if (buf[i] == 0x10 && buf[i + 1] == 0x23) call_ctor = true;  /* call create=35 (b=15) */
-        if (buf[i] == 0x10 && buf[i + 1] == 0x24) call_add = true;   /* call add=36 (b=15) */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x24) call_ctor = true;  /* call create=36 (b=15) */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x25) call_add = true;   /* call add=37 (b=15) */
         if (buf[i] == 0x36) has_store = true;                        /* i32.store */
         if (buf[i] == 0x28) has_load = true;                         /* i32.load */
     }
@@ -587,8 +587,8 @@ TEST(WasmBackend, W4BuiltinsAndReturn) {
         if (buf[i] == 0x10 && buf[i + 1] == 0x1B) call_repl = true;
         if (buf[i] == 0x10 && buf[i + 1] == 0x1C) call_json = true;
         if (buf[i] == 0x0f) has_return = true;                       /* return */
-        if (buf[i] == 0x10 && buf[i + 1] == 0x23) call_ctor = true;  /* Holder()=35 (b=15) */
-        if (buf[i] == 0x10 && buf[i + 1] == 0x24) call_greet = true; /* greet=36 (b=15) */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x24) call_ctor = true;  /* Bug#58: Holder()=36 (b=15) */
+        if (buf[i] == 0x10 && buf[i + 1] == 0x25) call_greet = true; /* Bug#58: greet=37 (b=15) */
     }
     EXPECT_TRUE(call_chr) << "str_from_char 必须分派到 rt_chr";
     EXPECT_TRUE(call_repl) << "str_replace_all 必须分派到 rt_repl";
