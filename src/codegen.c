@@ -25,7 +25,7 @@ struct Codegen {
     char local_vars[256][64]; /* Bug#35: 32 上限静默丢弃致 String 变量被误判 int */   /* 当前 actor 内局部变量名 */
     char local_types[256][64];  /* 对应 actor 类型名（方法调用分派用） */
     size_t local_var_count;
-    char str_ret_methods[64][64]; /* 返回类型为 String 的方法名(扁平) */
+    char str_ret_methods[256][64]; /* 返回类型为 String 的方法名(扁平) */
     size_t str_ret_count;
     char type_names[32][64];   /* 所有 actor/class 类型名 */
     char type_fields[32][32][64]; /* 每个类型的字段名 */
@@ -1225,6 +1225,9 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                         cg_emit_field_access(cg, name);
                     }
                 }
+            } else if (name && cg_is_known_actor(cg, name)) {
+                /* primitive 单例值引用: var f: Fmt = Fmt → NULL (无实例) */
+                cg_emit_raw(cg, "NULL");
             } else if (name) {
                 cg_emit_field_access(cg, name);
             }
@@ -2257,7 +2260,7 @@ void codegen_program(Codegen *cg, ASTNode *ast) {
                 for (size_t k = 0; k < ast->children[i]->child_count; k++) {
                     ASTNode *mch = ast->children[i]->children[k];
                     if (mch && (mch->type == NODE_FUN || mch->type == NODE_BE) && mch->data &&
-                        cg->str_ret_count < 64) {
+                        cg->str_ret_count < 256) {
                         for (size_t ci = 0; ci < mch->child_count; ci++) {
                             ASTNode *cch = mch->children[ci];
                             if (cch && cch->data && cch->type != NODE_EMPTY &&
