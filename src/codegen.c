@@ -1757,25 +1757,26 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
             const char *rtype = (ch->type == NODE_FUN) ? "int" : "void";
             ASTNode *params = NULL;
             ASTNode *body = NULL;
+            int rtype_locked = 0; /* 返回类型标注识别后锁定, body内ident不再覆盖 */
             for (size_t j = 0; j < ch->child_count; j++) {
                 ASTNode *c2 = ch->children[j];
                 if (c2->type == NODE_EMPTY && params == NULL &&
                     c2->data && strcmp((const char *)c2->data, "params") == 0) {
                     params = c2;
-                } else if (c2->type == NODE_STRING) {
+                } else if (c2->type == NODE_STRING && body == NULL && !rtype_locked) {
                     rtype = "const char *";
-                } else if (c2->type == NODE_IDENT && c2->data && body == NULL) {
+                } else if (c2->type == NODE_IDENT && c2->data && body == NULL && !rtype_locked) {
                     const char *tn = (const char *)c2->data;
-                    if (strcmp(tn, "Bool") == 0) rtype = "int";
-                    else if (strcmp(tn, "String") == 0) rtype = "const char *";
-                    else if (strcmp(tn, "I64") == 0) rtype = "signed long long";
-                    else if (strcmp(tn, "I32") == 0) rtype = "signed int";
-                    else if (strcmp(tn, "U64") == 0) rtype = "unsigned long long";
-                    else if (strcmp(tn, "U32") == 0) rtype = "unsigned int";
-                    else if (strcmp(tn, "F64") == 0) rtype = "double";
-                    else if (strcmp(tn, "F32") == 0) rtype = "float";
-                    else if (strcmp(tn, "ActorRef") == 0) rtype = "void *";
-                    else if (strcmp(tn, "Char") == 0) rtype = "char";
+                    if (strcmp(tn, "Bool") == 0) { rtype = "int"; rtype_locked = 1; }
+                    else if (strcmp(tn, "String") == 0) { rtype = "const char *"; rtype_locked = 1; }
+                    else if (strcmp(tn, "I64") == 0) { rtype = "signed long long"; rtype_locked = 1; }
+                    else if (strcmp(tn, "I32") == 0) { rtype = "signed int"; rtype_locked = 1; }
+                    else if (strcmp(tn, "U64") == 0) { rtype = "unsigned long long"; rtype_locked = 1; }
+                    else if (strcmp(tn, "U32") == 0) { rtype = "unsigned int"; rtype_locked = 1; }
+                    else if (strcmp(tn, "F64") == 0) { rtype = "double"; rtype_locked = 1; }
+                    else if (strcmp(tn, "F32") == 0) { rtype = "float"; rtype_locked = 1; }
+                    else if (strcmp(tn, "ActorRef") == 0) { rtype = "void *"; rtype_locked = 1; }
+                    else if (strcmp(tn, "Char") == 0) { rtype = "char"; rtype_locked = 1; }
                     else {
                         int is_actor = 0;
                         for (size_t k = 0; k < atc; k++) {
