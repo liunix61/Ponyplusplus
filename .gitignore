@@ -26,3 +26,4 @@ ponypp-native.c
 # Temp
 /tmp/*
 Testing/
+third_party/

@@ -26,7 +26,7 @@ LIB_OBJS = $(filter-out $(DRIVER_OBJS), $(ALL_OBJS))
 
 TARGET = $(BINDIR)/ponyppc
 
-.PHONY: all clean test run help lint
+.PHONY: all clean test run help lint regression gtest matrix coverage
 
 all: $(TARGET)
 
@@ -61,6 +61,25 @@ test: all
 
 run: all
 	@./$(TARGET) --version
+
+# ---- 工程化自动化（nanonode 式）----
+regression: all
+	@bash scripts/regression.sh
+
+gtest:
+	@cmake -S . -B build-cmake -DCMAKE_BUILD_TYPE=Debug > /dev/null
+	@cmake --build build-cmake -j4
+	@cd build-cmake && ctest -j4 --timeout 180 --output-on-failure | tail -5
+
+matrix: all
+	@bash scripts/regression.sh --san
+
+coverage:
+	@cmake -S . -B build-cov -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="--coverage" > /dev/null
+	@cmake --build build-cov -j4 > /dev/null
+	@cd build-cov && ctest -j4 --timeout 180 > /dev/null 2>&1 || true
+	@cd build-cov && gcovr -r .. --html --html-details -o coverage.html ../src 2>/dev/null | tail -3
+	@echo "report: build-cov/coverage.html"
 
 clean:
 	rm -rf $(OBJDIR) $(BINDIR)

@@ -152,7 +152,7 @@ target_link_libraries(ponyppc PRIVATE ponypp_lib m dl)
 # ---- GTest discovery ----
 # Prefer locally built static libs (system GCC libstdc++, no conda mismatch)
 set(GTEST_LIB_DIR /home/liunix/Ponyplusplus/third_party/gtest/lib)
-set(GTEST_INCLUDE_DIR /home/liunix/nanoapi/build/_deps/googletest-src/googletest/include)
+set(GTEST_INCLUDE_DIR /home/liunix/Ponyplusplus/third_party/gtest/include)
 
 find_library(GTEST_LIB NAMES gtest PATHS "${GTEST_LIB_DIR}" NO_DEFAULT_PATH)
 find_library(GTEST_MAIN_LIB NAMES gtest_main PATHS "${GTEST_LIB_DIR}" NO_DEFAULT_PATH)
