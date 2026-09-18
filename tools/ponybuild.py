@@ -107,8 +107,11 @@ def build_one(base, sources, entry, link, target, output):
 
     env = os.environ.copy()
     if link:
-        # link 路径相对于项目根目录
-        env["PONYPPC_LDFLAGS"] = " ".join(str(base / l) for l in link)
+        # link 路径相对于项目根目录; "-lxxx"/绝对路径 直接透传 (系统库支持)
+        env["PONYPPC_LDFLAGS"] = " ".join(
+            l if l.startswith("-") or l.startswith("/") else str(base / l)
+            for l in link
+        )
     else:
         env.pop("PONYPPC_LDFLAGS", None)
 
