@@ -1691,6 +1691,94 @@ static void cg_actor(Codegen *cg, ASTNode *actor,
         cg_emit(cg, "}\n\n");
     }
 
+    /* 前向声明: 允许方法在定义前被调用 (Bug: implicit int 冲突) */
+    for (size_t i = 0; i < actor->child_count; i++) {
+        ASTNode *ch = actor->children[i];
+        if (!ch) continue;
+        if (ch->type == NODE_NEW) {
+            const char *ctor = (const char *)ch->data;
+            cg_emit(cg, "static %s_t * %s_%s(", name, name, ctor ? ctor : "new");
+            if (ch->child_count > 0 && ch->children[0] && ch->children[0]->data &&
+                strcmp((const char *)ch->children[0]->data, "params") == 0) {
+                for (size_t j = 0; j < ch->children[0]->child_count; j++) {
+                    ASTNode *p = ch->children[0]->children[j];
+                    if (j) cg_emit_raw(cg, ", ");
+                    const char *pt_raw = (p->child_count > 0 && p->children[0]) ? cg_type_of(p->children[0], actor_types, atc) : "int";
+                    const char *pt = pt_raw;
+                    {
+                        static char pbuf[80];
+                        int pt_actor = 0;
+                        for (size_t ai = 0; ai < atc; ai++) {
+                            if (actor_types && actor_types[ai] && strcmp(actor_types[ai], pt_raw) == 0) { pt_actor = 1; break; }
+                        }
+                        if (pt_actor) { snprintf(pbuf, sizeof(pbuf), "%s_t *", pt_raw); pt = pbuf; }
+                    }
+                    cg_emit_raw(cg, "%s %s", pt, p->data ? (const char *)p->data : "a");
+                }
+            }
+            cg_emit_raw(cg, ");\n");
+        } else if (ch->type == NODE_BE || ch->type == NODE_FUN) {
+            const char *fn = (const char *)ch->data;
+            const char *rtype = (ch->type == NODE_FUN) ? "int" : "void";
+            ASTNode *params = NULL;
+            ASTNode *body = NULL;
+            for (size_t j = 0; j < ch->child_count; j++) {
+                ASTNode *c2 = ch->children[j];
+                if (c2->type == NODE_EMPTY && params == NULL &&
+                    c2->data && strcmp((const char *)c2->data, "params") == 0) {
+                    params = c2;
+                } else if (c2->type == NODE_STRING) {
+                    rtype = "const char *";
+                } else if (c2->type == NODE_IDENT && c2->data && body == NULL) {
+                    const char *tn = (const char *)c2->data;
+                    if (strcmp(tn, "Bool") == 0) rtype = "int";
+                    else if (strcmp(tn, "String") == 0) rtype = "const char *";
+                    else if (strcmp(tn, "I64") == 0) rtype = "signed long long";
+                    else if (strcmp(tn, "I32") == 0) rtype = "signed int";
+                    else if (strcmp(tn, "U64") == 0) rtype = "unsigned long long";
+                    else if (strcmp(tn, "U32") == 0) rtype = "unsigned int";
+                    else if (strcmp(tn, "F64") == 0) rtype = "double";
+                    else if (strcmp(tn, "F32") == 0) rtype = "float";
+                    else if (strcmp(tn, "ActorRef") == 0) rtype = "void *";
+                    else if (strcmp(tn, "Char") == 0) rtype = "char";
+                    else {
+                        int is_actor = 0;
+                        for (size_t k = 0; k < atc; k++) {
+                            if (actor_types && actor_types[k] && strcmp(actor_types[k], tn) == 0) {
+                                is_actor = 1; break;
+                            }
+                        }
+                        rtype = is_actor ? "void *" : cg_type_of(c2, actor_types, atc);
+                    }
+                } else if (c2->type == NODE_TYPE_PARAM && body == NULL) {
+                    rtype = cg_type_of(c2, actor_types, atc);
+                } else if (c2->type == NODE_EMPTY && !c2->data && body == NULL) {
+                    body = c2;
+                }
+            }
+            cg_emit(cg, "static %s %s_%s(%s_t *self", rtype, name, fn ? fn : "m", name);
+            if (params && params->data && strcmp((const char *)params->data, "params") == 0 && params->child_count > 0) {
+                for (size_t j = 0; j < params->child_count; j++) {
+                    ASTNode *p = params->children[j];
+                    cg_emit_raw(cg, ", ");
+                    const char *pt_raw = (p->child_count > 0 && p->children[0]) ? cg_type_of(p->children[0], actor_types, atc) : "int";
+                    const char *pt = pt_raw;
+                    {
+                        static char pbuf[80];
+                        int pt_actor = 0;
+                        for (size_t ai = 0; ai < atc; ai++) {
+                            if (actor_types && actor_types[ai] && strcmp(actor_types[ai], pt_raw) == 0) { pt_actor = 1; break; }
+                        }
+                        if (pt_actor) { snprintf(pbuf, sizeof(pbuf), "%s_t *", pt_raw); pt = pbuf; }
+                    }
+                    cg_emit_raw(cg, "%s %s", pt, p->data ? (const char *)p->data : "a");
+                }
+            }
+            cg_emit_raw(cg, ");\n");
+        }
+    }
+    cg_emit(cg, "\n");
+
     for (size_t i = 0; i < actor->child_count; i++) {
         ASTNode *ch = actor->children[i];
         if (!ch) continue;
