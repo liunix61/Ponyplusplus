@@ -48,7 +48,7 @@ static int test_codegen_generates_c(void) {
             FILE *rf = fopen("/tmp/ponypp_gen.c", "r");
             CHECK(rf != NULL, "生成文件可打开");
             if (rf) {
-                char buf[8192] = {0};
+                char buf[65536] = {0};
                 fread(buf, 1, sizeof(buf) - 1, rf);
                 fclose(rf);
                 CHECK(strstr(buf, "typedef struct") != NULL, "包含结构体定义");

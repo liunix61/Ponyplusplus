@@ -422,6 +422,8 @@ static bool cg_expr_is_string(Codegen *cg, ASTNode *n) {
             const char *mname = mdot ? mdot + 1 : f;
             for (size_t i = 0; i < cg->str_ret_count; i++)
                 if (strcmp(cg->str_ret_methods[i], mname) == 0) return true;
+            /* 内建转换 .string()/to_string() 返回 String */
+            if (strcmp(mname, "string") == 0 || strcmp(mname, "to_string") == 0) return true;
         }
         return false;
     }
@@ -852,6 +854,33 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                         break;
                     }
                 }
+                /* 内建转换 .string(): 数值→pny_itoa(recv), String→原值 */
+                if (method_name && strcmp(method_name, "string") == 0) {
+                    const char *rlt = receiver ? cg_local_actor_type(cg, receiver) : NULL;
+                    int r_is_str = rlt && (strcmp(rlt, "String") == 0 || strcmp(rlt, "const char *") == 0);
+                    if (!r_is_str && receiver && receiver[0]) {
+                        const char *flt = cg_field_type(cg, receiver);
+                        if (flt && (strcmp(flt, "String") == 0 || strcmp(flt, "const char *") == 0)) r_is_str = 1;
+                    }
+                    /* receiver 表达式输出 (receiver 在本作用域, 618行定义) */
+                    if (!r_is_str) cg_emit_raw(cg, "pny_itoa(");
+                    if (receiver && strcmp(receiver, "this") == 0) {
+                        cg_emit_raw(cg, "self");
+                    } else if (receiver && strncmp(receiver, "this.", 5) == 0) {
+                        cg_emit_raw(cg, "self->%s", receiver + 5);
+                    } else if (receiver && strchr(receiver, '.')) {
+                        cg_emit_field_access(cg, receiver);
+                    } else if (receiver && (cg_is_param(cg, receiver) || cg_has_local(cg, receiver))) {
+                        cg_emit_raw(cg, "%s", receiver);
+                    } else if (receiver && receiver[0]) {
+                        cg_emit_raw(cg, "self->%s", receiver);
+                    } else {
+                        if (!r_is_str) cg_emit_raw(cg, "0)");
+                        break;
+                    }
+                    if (!r_is_str) cg_emit_raw(cg, ")");
+                    break;
+                }
                 /* Generic method: receiver->method(...) — stub for now */
                 cg_emit_raw(cg, "0"); /* stub: unknown method returns 0 */
                 break;
@@ -1186,6 +1215,9 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                 cg_emit_raw(cg, "NULL");
             } else if (name && cg_is_param(cg, name)) {
                 /* 参数名: 直接输出变量名, 不加 self-> */
+                cg_emit_raw(cg, "%s", name);
+            } else if (name && cg_has_local(cg, name)) {
+                /* 局部变量 (var r: I32 = f()): 直接输出变量名 */
                 cg_emit_raw(cg, "%s", name);
             } else if (name && strchr(name, '.')) {
                 /* 局部变量字段访问: b.v → b->v (类型字段表分派) */
