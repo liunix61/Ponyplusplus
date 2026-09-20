@@ -97,6 +97,7 @@ typedef enum {
     TK_CARET,     /* ^ (TLS ChaCha20 bitwise xor) */
     TK_SHL,       /* << */
     TK_SHR,       /* >> */
+    TK_TILDE,     /* ~ (bitwise NOT) */
     TK_CHAR,      /* 字符字面量 'a' */
     TK_PLUS_ASSIGN,  /* += */
     TK_MINUS_ASSIGN, /* -= */

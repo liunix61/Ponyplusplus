@@ -1215,6 +1215,15 @@ static ASTNode *parse_unary_expr(Parser *p) {
         }
         return node;
     }
+    if (cur(p)->type == TK_TILDE) {
+        advance(p);
+        ASTNode *node = ast_node_new(NODE_EMPTY, cur(p)->line, cur(p)->column);
+        if (node) {
+            node->data = s_strdup("bitnot");
+            ast_node_add_child(node, parse_unary_expr(p));
+        }
+        return node;
+    }
     return parse_expression_primary(p);
 }
 

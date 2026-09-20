@@ -189,6 +189,7 @@ const char *token_type_name(TokenType type) {
         case TK_COLONCOLON: return "::";
         case TK_ARROW_ARR: return "=>";
         case TK_CARET: return "^";
+        case TK_TILDE: return "~";
         case TK_SHL: return "<<";
         case TK_SHR: return ">>";
         default: return "?";

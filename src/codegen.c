@@ -1425,6 +1425,11 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     cg_emit_raw(cg, "-(");
                     if (n->child_count > 0) cg_expr(cg, n->children[0]);
                     cg_emit_raw(cg, ")");
+                } else if (strcmp(d, "bitnot") == 0) {
+                    /* 位非 ~ (U32 位级补码语义) */
+                    cg_emit_raw(cg, "(unsigned int)~(");
+                    if (n->child_count > 0) cg_expr(cg, n->children[0]);
+                    cg_emit_raw(cg, ")");
                 } else {
                     cg_emit_raw(cg, "%s", d);
                 }

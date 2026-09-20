@@ -565,6 +565,7 @@ static TokenType advance(Lexer *lex) {
         case '?': lex->current.type = TK_QUESTION; return TK_QUESTION;
         case '&': lex->current.type = TK_AMP; return TK_AMP;
         case '^': lex->current.type = TK_CARET; return TK_CARET;
+        case '~': lex->current.type = TK_TILDE; return TK_TILDE;
         case '%': lex->current.type = TK_PERCENT; return TK_PERCENT;
         case '$': lex->current.type = TK_DOLLAR; return TK_DOLLAR;
         case '#': lex->current.type = TK_HASH; return TK_HASH;
