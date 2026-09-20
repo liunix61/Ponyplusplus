@@ -459,6 +459,26 @@ static TokenType advance(Lexer *lex) {
         return TK_PIPEPIPE;
     }
 
+    /* TLS ChaCha20 位移: << >> */
+    if (c == '<' && peek_next(lex) == '<') {
+        advance_char(lex); advance_char(lex);
+        lex->current.type = TK_SHL;
+        lex->current.value = s_strdup("<<");
+        lex->current.line = start_line;
+        lex->current.column = start_col;
+        lex->current.length = 2;
+        return TK_SHL;
+    }
+    if (c == '>' && peek_next(lex) == '>') {
+        advance_char(lex); advance_char(lex);
+        lex->current.type = TK_SHR;
+        lex->current.value = s_strdup(">>");
+        lex->current.line = start_line;
+        lex->current.column = start_col;
+        lex->current.length = 2;
+        return TK_SHR;
+    }
+
     /* 多字符: range operator .. */
     if (c == '.' && lex->pos + 1 < lex->length && lex->source[lex->pos + 1] == '.') {
         advance_char(lex); advance_char(lex);
@@ -544,6 +564,7 @@ static TokenType advance(Lexer *lex) {
         case '|': lex->current.type = TK_PIPE; return TK_PIPE;
         case '?': lex->current.type = TK_QUESTION; return TK_QUESTION;
         case '&': lex->current.type = TK_AMP; return TK_AMP;
+        case '^': lex->current.type = TK_CARET; return TK_CARET;
         case '%': lex->current.type = TK_PERCENT; return TK_PERCENT;
         case '$': lex->current.type = TK_DOLLAR; return TK_DOLLAR;
         case '#': lex->current.type = TK_HASH; return TK_HASH;

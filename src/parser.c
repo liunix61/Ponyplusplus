@@ -1133,17 +1133,45 @@ static ASTNode *parse_or_expr(Parser *p) {
 }
 
 /* && */
-static ASTNode *parse_and_expr(Parser *p) {
-    static const TokenType ops[] = { TK_AMPAMP };
-    static const char *const names[] = { "and" };
+/* & | ^ — C 优先级: && > | > ^ > & > compare (TLS ChaCha20) */
+static ASTNode *parse_bitand_expr(Parser *p) {
+    static const TokenType ops[] = { TK_AMP };
+    static const char *const names[] = { "bitand" };
     return parse_binary_op(p, ops, 1, names, parse_compare_expr);
 }
 
+static ASTNode *parse_bitxor_expr(Parser *p) {
+    static const TokenType ops[] = { TK_CARET };
+    static const char *const names[] = { "bitxor" };
+    return parse_binary_op(p, ops, 1, names, parse_bitand_expr);
+}
+
+static ASTNode *parse_bitor_expr(Parser *p) {
+    static const TokenType ops[] = { TK_PIPE };
+    static const char *const names[] = { "bitor" };
+    return parse_binary_op(p, ops, 1, names, parse_bitxor_expr);
+}
+
+static ASTNode *parse_and_expr(Parser *p) {
+    static const TokenType ops[] = { TK_AMPAMP };
+    static const char *const names[] = { "and" };
+    return parse_binary_op(p, ops, 1, names, parse_bitor_expr);
+}
+
 /* == != < > <= >= */
+static ASTNode *parse_shift_expr(Parser *p); /* TLS: << >> 层前向声明 */
+
 static ASTNode *parse_compare_expr(Parser *p) {
     static const TokenType ops[] = { TK_EQEQ, TK_NEQ, TK_LT, TK_GT, TK_LE, TK_GE };
     static const char *const names[] = { "==", "!=", "<", ">", "<=", ">=" };
-    return parse_binary_op(p, ops, 6, names, parse_add_expr);
+    return parse_binary_op(p, ops, 6, names, parse_shift_expr);
+}
+
+/* << >> (TLS ChaCha20 rotates) — C 优先级: compare > shift > add */
+static ASTNode *parse_shift_expr(Parser *p) {
+    static const TokenType ops[] = { TK_SHL, TK_SHR };
+    static const char *const names[] = { "shl", "shr" };
+    return parse_binary_op(p, ops, 2, names, parse_add_expr);
 }
 
 /* + - */

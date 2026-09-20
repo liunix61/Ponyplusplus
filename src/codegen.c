@@ -1395,6 +1395,19 @@ static void cg_expr(Codegen *cg, ASTNode *n) {
                     cg_emit_raw(cg, ") + (int)(");
                     if (n->child_count > 1) cg_expr(cg, n->children[1]);
                     cg_emit_raw(cg, "))");
+                } else if (strcmp(d, "bitor") == 0 || strcmp(d, "bitxor") == 0 ||
+                           strcmp(d, "bitand") == 0 || strcmp(d, "shl") == 0 ||
+                           strcmp(d, "shr") == 0) {
+                    /* 位运算/移位 (TLS ChaCha20): 裸 C 运算符 — U32 位级语义 */
+                    const char *bop = strcmp(d, "bitor") == 0 ? "|" :
+                                      strcmp(d, "bitxor") == 0 ? "^" :
+                                      strcmp(d, "bitand") == 0 ? "&" :
+                                      strcmp(d, "shl") == 0 ? "<<" : ">>";
+                    cg_emit_raw(cg, "(");
+                    if (n->child_count > 0) cg_expr(cg, n->children[0]);
+                    cg_emit_raw(cg, " %s ", bop);
+                    if (n->child_count > 1) cg_expr(cg, n->children[1]);
+                    cg_emit_raw(cg, ")");
                 } else if (strcmp(d, "-") == 0 || strcmp(d, "*") == 0 || strcmp(d, "/") == 0 || strcmp(d, "%") == 0) {
                     /* 算术运算符 */
                     cg_emit_raw(cg, "((int)(");
