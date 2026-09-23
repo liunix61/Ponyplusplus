@@ -215,15 +215,33 @@ static ASTNode *parse_block(Parser *p) {
     ASTNode *block = ast_node_new(NODE_EMPTY, cur(p)->line, cur(p)->column);
     if (!block) return NULL;
 
+    int no_advance_count = 0;
     while (p->pos < p->token_count && cur(p)->type != TK_BRACE_R) {
         if (match(p, TK_SEMI)) { advance(p); continue; }
+        int pos_before = p->pos;
+        if (getenv("PPC_DEBUG_PARSE")) {
+            fprintf(stderr, "  [parse_block pos=%zu line=%d col=%d tok='%s' type=%d]\n",
+                    p->pos, cur(p)->line, cur(p)->column,
+                    cur(p)->value ? cur(p)->value : "(null)", (int)cur(p)->type);
+        }
         ASTNode *stmt = parse_statement(p);
         if (stmt) {
             ast_node_add_child(block, stmt);
         } else {
             if (cur(p)->type != TK_BRACE_R && p->pos < p->token_count) {
-                advance(p); /* 跳过未知 token */
+                if (getenv("PPC_DEBUG_PARSE")) fprintf(stderr, "    [parse_block: stmt NULL, forcing advance]\n");
+                advance(p);
             }
+        }
+        if (p->pos == pos_before) {
+            no_advance_count++;
+            if (no_advance_count > 5) {
+                if (getenv("PPC_DEBUG_PARSE")) fprintf(stderr, "    [DEADLOOP: forcing advance]\n");
+                if (p->pos < p->token_count) advance(p);
+                no_advance_count = 0;
+            }
+        } else {
+            no_advance_count = 0;
         }
     }
     if (match(p, TK_BRACE_R)) advance(p);
